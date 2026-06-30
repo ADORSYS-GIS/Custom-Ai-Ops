@@ -5,10 +5,10 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 maintainers:
-  - name: onnx-ai-helm
-home: https://github.com/onnx-ai/onnx-ai-helm
+- name: Custom-Ai-Ops
+  home: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops
 sources:
-  - https://github.com/onnx-ai/onnx-ai-helm
+  - https://github.com/Custom-Ai-Ops/Custom-Ai-Ops
 keywords:
   - ml
   - inference

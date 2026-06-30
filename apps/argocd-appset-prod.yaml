@@ -6,7 +6,7 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
         revision: HEAD
         directories:
           - path: environments/prod
@@ -18,7 +18,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
         targetRevision: HEAD
         path: charts/model-serving-engine
         helm:
@@ -72,7 +72,7 @@ spec:
     spec:
       project: infrastructure
       source:
-        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
         targetRevision: HEAD
         path: '{{path}}'
       destination:
@@ -111,7 +111,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
         targetRevision: HEAD
         path: environments/prod
         helm:

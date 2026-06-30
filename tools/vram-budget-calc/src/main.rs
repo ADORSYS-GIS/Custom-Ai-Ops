@@ -128,7 +128,6 @@ struct VramBudget {
 )]
 struct Cli {
     #[arg(
-        short = 'V',
         long,
         help = "Total VRAM of the GPU in GB",
         value_name = "GB"
@@ -150,10 +149,10 @@ struct Cli {
     #[arg(long, help = "Context length for KV cache calculation", default_value_t = 4096)]
     context: u32,
 
-    #[arg(long, help = "Number of transformer layers")]
+    #[arg(long, help = "Number of transformer layers", default_value_t = 0)]
     layers: u32,
 
-    #[arg(long, help = "Number of attention heads")]
+    #[arg(long, help = "Number of attention heads", default_value_t = 0)]
     heads: u32,
 
     #[arg(

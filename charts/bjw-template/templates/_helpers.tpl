@@ -9,6 +9,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+Common annotations applied to all resources rendered by model-serving charts.
+*/}}
+{{- define "bjw-template.annotations" -}}
+{{- with .Values.commonAnnotations }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
 Selector labels for matching pods.
 */}}
 {{- define "bjw-template.selectorLabels" -}}
@@ -43,10 +52,14 @@ Chart label value.
 Service account name.
 */}}
 {{- define "bjw-template.serviceAccountName" -}}
+{{- if .Values.serviceAccount }}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "bjw-template.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- else }}
+{{- include "bjw-template.fullname" . }}
 {{- end }}
 {{- end }}
 
@@ -55,8 +68,9 @@ Common pod security context.
 */}}
 {{- define "bjw-template.podSecurityContext" -}}
 runAsNonRoot: true
-runAsUser: {{ .Values.global.securityContext.runAsUser | default 1000 }}
-fsGroup: {{ .Values.global.securityContext.fsGroup | default 1000 }}
+{{- $secCtx := (default (dict) .Values.global.securityContext) }}
+runAsUser: {{ $secCtx.runAsUser | default 1000 }}
+fsGroup: {{ $secCtx.fsGroup | default 1000 }}
 {{- end }}
 
 {{/*

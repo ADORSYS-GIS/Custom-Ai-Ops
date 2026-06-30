@@ -96,6 +96,11 @@ tolerations:
     operator: Exists
     effect: NoSchedule
 
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
 affinity: {}
 
 topologySpreadConstraints: []

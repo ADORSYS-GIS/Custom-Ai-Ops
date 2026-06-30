@@ -13,7 +13,7 @@ A highly resilient, long-term, multi-format ML Model Serving Platform with tripl
 ## Repository Structure
 
 ```
-onnx-ai-helm/
+Custom-Ai-Ops/
 ├── tools/                    # Rust CLI tools
 │   ├── engine-selector/      # Engine selection decision tree
 │   └── vram-budget-calc/     # VRAM footprint calculator
