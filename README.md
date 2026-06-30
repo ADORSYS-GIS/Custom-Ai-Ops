@@ -1,3 +1,5 @@
+<img width="1408" height="768" alt="Gemini_Generated_Image_ap2fanap2fanap2f" src="https://github.com/user-attachments/assets/85769069-eacf-485c-8b28-4aca4298abd0" />
+
 # Ultimate Reference Architecture — Cloud-Scale Multi-Format ML Model Serving Platform
 
 ## License
