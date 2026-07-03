@@ -11,9 +11,6 @@ data:
   {{- if eq .Values.engine.type "vllm" }}
   VLLM_HOST: "0.0.0.0"
   VLLM_PORT: "8000"
-  {{- else if eq .Values.engine.type "llamacpp" }}
-  LLAMACPP_HOST: "0.0.0.0"
-  LLAMACPP_PORT: "8080"
   {{- else if eq .Values.engine.type "onnxGenai" }}
   ONNX_GENAI_PORT: "8080"
   {{- end }}

@@ -20,7 +20,7 @@ Guiding principle: **a system is never "roughly ready"**. Each test below has a 
 **Objective**: verify that the selected engine actually matches the model's declared format.
 **Method**: automated test running `engine-selector` on each registry entry and comparing the proposed engine to the engine actually configured in the chart.
 **Pass criterion**: 0 discrepancies detected.
-**Reinforces**: prevents a GGUF model from accidentally being configured on a vLLM chart (total incompatibility), the most frequent manual configuration error.
+**Reinforces**: prevents an ONNX model from accidentally being configured on a vLLM chart (total incompatibility), the most frequent manual configuration error.
 
 ### T1.3 — Memory Budget Validation Before Deployment
 **Objective**: guarantee that no model is deployed without mathematical proof that it fits in the target VRAM.
@@ -118,7 +118,7 @@ Guiding principle: **a system is never "roughly ready"**. Each test below has a 
 ## Category 5 — Serving API Functional Tests
 
 ### T5.1 — Strict OpenAI-Compatible Conformance
-**Method**: contract test suite (schema validation) on `/v1/chat/completions` covering all engines (llama.cpp, vLLM, ONNX Runtime GenAI, Triton), comparing response structure to the official OpenAI schema.
+**Method**: contract test suite (schema validation) on `/v1/chat/completions` covering all engines (vLLM, ONNX Runtime GenAI), comparing response structure to the official OpenAI schema.
 **Pass criterion**: 100% schema conformance, regardless of the underlying engine.
 **Reinforces**: guarantees real engine interchangeability from the client's perspective, the fundamental principle of the architecture (section 4.1 of the architecture document).
 
@@ -282,7 +282,7 @@ Guiding principle: **a system is never "roughly ready"**. Each test below has a 
 ## Category 11 — End-to-End Tests (Final Synthesis)
 
 ### T11.1 — Complete User Journey, Multi-Engine
-**Method**: scenario simulating a real user sending successive requests routed to models of different engines (llama.cpp, vLLM, ONNX), verifying experience consistency (comparable perceived latency, identical response format).
+**Method**: scenario simulating a real user sending successive requests routed to models of different engines (vLLM, ONNX Runtime GenAI), verifying experience consistency (comparable perceived latency, identical response format).
 **Pass criterion**: no perceptible difference on the client side between engines, per the abstraction principle in section 4 of the architecture.
 **Reinforces**: final validation that the modularity promise is kept in practice, not just in design theory.
 

@@ -41,23 +41,17 @@ jobs:
           version: "3.14"
       - name: Lint bjw-template
         run: helm lint charts/bjw-template
-      - name: Lint model-serving-llamacpp
-        run: helm lint charts/model-serving-llamacpp
       - name: Lint model-serving-vllm
         run: helm lint charts/model-serving-vllm
       - name: Lint model-serving-onnx-rust
         run: helm lint charts/model-serving-onnx-rust
-      - name: Lint model-serving-triton
-        run: helm lint charts/model-serving-triton
-      - name: Lint model-serving-rayserve
-        run: helm lint charts/model-serving-rayserve
       - name: Lint model-serving-engine
         run: helm lint charts/model-serving-engine
       - name: Lint ai-gateway
         run: helm lint charts/ai-gateway
       - name: Template dry-run all charts
         run: |
-          for chart in charts/model-serving-llamacpp charts/model-serving-vllm charts/model-serving-onnx-rust charts/model-serving-triton charts/model-serving-rayserve charts/ai-gateway; do
+          for chart in charts/model-serving-vllm charts/model-serving-onnx-rust charts/ai-gateway; do
             helm template test-release "$chart" --set model.name=test-model > /dev/null
           done
 

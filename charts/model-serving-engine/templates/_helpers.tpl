@@ -76,8 +76,6 @@ Engine image config for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.image | toJson -}}
-{{- else if eq $type "llamacpp" -}}
-{{- .Values.engine.llamacpp.image | toJson -}}
 {{- else if eq $type "onnxGenai" -}}
 {{- .Values.engine.onnxGenai.image | toJson -}}
 {{- end -}}
@@ -90,8 +88,6 @@ Engine args for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.args | toJson -}}
-{{- else if eq $type "llamacpp" -}}
-{{- .Values.engine.llamacpp.args | toJson -}}
 {{- else if eq $type "onnxGenai" -}}
 {{- .Values.engine.onnxGenai.args | toJson -}}
 {{- end -}}
@@ -104,8 +100,6 @@ Engine command for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.command | toJson -}}
-{{- else if eq $type "llamacpp" -}}
-{{- .Values.engine.llamacpp.command | toJson -}}
 {{- else if eq $type "onnxGenai" -}}
 {{- .Values.engine.onnxGenai.command | toJson -}}
 {{- end -}}
@@ -118,8 +112,6 @@ Engine resource limits/requests for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.resources | toJson -}}
-{{- else if eq $type "llamacpp" -}}
-{{- .Values.engine.llamacpp.resources | toJson -}}
 {{- else if eq $type "onnxGenai" -}}
 {{- .Values.engine.onnxGenai.resources | toJson -}}
 {{- end -}}
@@ -132,8 +124,6 @@ Engine container port for the selected type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 8000
-{{- else if eq $type "llamacpp" -}}
-8080
 {{- else if eq $type "onnxGenai" -}}
 8080
 {{- end -}}

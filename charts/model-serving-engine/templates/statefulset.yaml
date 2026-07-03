@@ -95,11 +95,6 @@ spec:
             {{- toYaml .Values.engine.vllm.livenessProbe | nindent 12 }}
           startupProbe:
             {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
-          {{- else if eq $engineType "llamacpp" }}
-          livenessProbe:
-            {{- toYaml .Values.engine.llamacpp.livenessProbe | nindent 12 }}
-          startupProbe:
-            {{- toYaml .Values.engine.llamacpp.startupProbe | nindent 12 }}
           {{- else if eq $engineType "onnxGenai" }}
           livenessProbe:
             {{- toYaml .Values.engine.onnxGenai.livenessProbe | nindent 12 }}

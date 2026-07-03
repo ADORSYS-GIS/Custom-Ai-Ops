@@ -1,11 +1,11 @@
 # Architecture Overview
 
-This platform serves ML models of multiple formats (GGUF, Safetensors, ONNX, TensorRT, PyTorch) through a unified OpenAI-compatible API, using the optimal inference engine for each format.
+This platform serves ML models of multiple formats (Safetensors, ONNX, AWQ, GPTQ) through a unified OpenAI-compatible API, using the optimal inference engine for each format.
 
 ## Three-Plane Architecture
 
-1. **Model Plane** — Model weights + format (GGUF, Safetensors, ONNX, AWQ, GPTQ, TensorRT, PyTorch)
-2. **Engine Plane** — Runtime that executes a given format (llama.cpp, vLLM, ONNX Runtime GenAI, Triton, Ray Serve)
+1. **Model Plane** — Model weights + format (Safetensors, ONNX, AWQ, GPTQ)
+2. **Engine Plane** — Runtime that executes a given format (vLLM, ONNX Runtime GenAI)
 3. **Exposure Plane** — OpenAI-compatible endpoint via Envoy AI Gateway (uniform API regardless of engine)
 
 ## Key Decisions

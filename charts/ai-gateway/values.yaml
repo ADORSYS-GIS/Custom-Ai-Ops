@@ -5,20 +5,20 @@ gateway:
   tlsSecret: inference-tls
 
 backends: []
-  # - name: llama3-8b-local
+  # - name: mistral-7b-local
   #   schema: OpenAI
   #   prefix: /v1
-  #   hostname: model-serving-llamacpp.model-serving-prod.svc.cluster.local
+  #   hostname: model-serving-vllm.model-serving-prod.svc.cluster.local
   #   port: 80
   #   securityType: APIKey
   #   tlsHostname: ""
 
 models: []
-  # - name: llama3-8b-local
-  #   displayName: "LLaMA 3 8B (self-hosted)"
-  #   contextLength: 8192
+  # - name: mistral-7b-local
+  #   displayName: "Mistral 7B (self-hosted)"
+  #   contextLength: 32768
   #   backends:
-  #     - ref: llama3-8b-local
+  #     - ref: mistral-7b-local
   #       priority: 0
   #       weight: 100
   #   fallback:

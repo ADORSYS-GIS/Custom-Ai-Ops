@@ -4,10 +4,10 @@
 
 | Pool | Hardware | Use Case |
 |------|----------|----------|
-| `gpu-h100-pool` | NVIDIA H100 | vLLM/Triton TensorRT-LLM high-performance |
+| `gpu-h100-pool` | NVIDIA H100 | vLLM high-performance |
 | `gpu-a100-pool` | NVIDIA A100 | vLLM standard LLM |
-| `gpu-l4-pool` | NVIDIA L4 | ONNX/llama.cpp lightweight inference |
-| `gpu-edge-pool` | GPU modest (RTX A2000) | GGUF/ONNX small models, PoC |
+| `gpu-l4-pool` | NVIDIA L4 | ONNX lightweight inference |
+| `gpu-edge-pool` | GPU modest (RTX A2000) | ONNX small models, PoC |
 | `cpu-pool` | CPU only | Preprocessing, gateway, auxiliary services |
 
 ## VRAM Budget Formula

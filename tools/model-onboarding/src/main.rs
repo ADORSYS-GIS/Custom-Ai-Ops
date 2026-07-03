@@ -6,24 +6,18 @@ use std::fs;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ModelFormat {
-    Gguf,
     Onnx,
     Safetensors,
     Awq,
     Gptq,
-    Tensorrt,
-    Pytorch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
 enum Engine {
-    LlamaCpp,
     Vllm,
     OnnxRuntimeGenai,
-    Triton,
-    RayServe,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,10 +43,10 @@ struct RegistryEntry {
     long_about = None
 )]
 struct Cli {
-    #[arg(short, long, help = "Model name (kebab-case, e.g. llama-3-8b-instruct)")]
+    #[arg(short, long, help = "Model name (kebab-case, e.g. mistral-7b-instruct)")]
     name: String,
 
-    #[arg(short, long, help = "Model format (gguf, onnx, safetensors, awq, gptq, tensorrt, pytorch)")]
+    #[arg(short, long, help = "Model format (onnx, safetensors, awq, gptq)")]
     format: String,
 
     #[arg(short, long, help = "Total GPU VRAM in GB", value_name = "GB")]
@@ -70,7 +64,7 @@ struct Cli {
     #[arg(long, help = "Quantisation format")]
     quantisation: Option<String>,
 
-    #[arg(short, long, help = "GPU name for VRAM validation (e.g. 'RTX A2000')")]
+    #[arg(short, long, help = "GPU name for VRAM validation (e.g. 'A100')")]
     gpu: Option<String>,
 
     #[arg(long, help = "Custom notes")]
@@ -86,34 +80,28 @@ struct Cli {
 
 fn format_to_chart(fmt: ModelFormat) -> &'static str {
     match fmt {
-        ModelFormat::Gguf => "model-serving-llamacpp",
         ModelFormat::Onnx => "model-serving-onnx-rust",
         ModelFormat::Safetensors | ModelFormat::Awq | ModelFormat::Gptq => "model-serving-vllm",
-        ModelFormat::Tensorrt => "model-serving-triton",
-        ModelFormat::Pytorch => "model-serving-rayserve",
     }
 }
 
 fn format_to_engine(fmt: ModelFormat) -> &'static str {
     match fmt {
-        ModelFormat::Gguf => "llamacpp",
         ModelFormat::Onnx => "onnxGenai",
         ModelFormat::Safetensors | ModelFormat::Awq | ModelFormat::Gptq => "vllm",
-        ModelFormat::Tensorrt => "triton",
-        ModelFormat::Pytorch => "rayserve",
     }
 }
 
 fn parse_format(s: &str) -> Result<ModelFormat> {
     match s.to_lowercase().as_str() {
-        "gguf" => Ok(ModelFormat::Gguf),
         "onnx" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
         "awq" => Ok(ModelFormat::Awq),
         "gptq" => Ok(ModelFormat::Gptq),
-        "tensorrt" | "trt" => Ok(ModelFormat::Tensorrt),
-        "pytorch" | "pt" => Ok(ModelFormat::Pytorch),
-        _ => Err(anyhow!("unknown format: {}", s)),
+        _ => Err(anyhow!(
+            "unknown format: {} — supported: onnx, safetensors, awq, gptq",
+            s
+        )),
     }
 }
 
@@ -298,12 +286,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_format_gguf() {
-        assert_eq!(parse_format("gguf").unwrap(), ModelFormat::Gguf);
-        assert_eq!(parse_format("GGUF").unwrap(), ModelFormat::Gguf);
-    }
-
-    #[test]
     fn test_parse_format_onnx() {
         assert_eq!(parse_format("onnx").unwrap(), ModelFormat::Onnx);
         assert_eq!(parse_format("ONNX").unwrap(), ModelFormat::Onnx);
@@ -328,29 +310,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_format_tensorrt() {
-        assert_eq!(parse_format("tensorrt").unwrap(), ModelFormat::Tensorrt);
-        assert_eq!(parse_format("trt").unwrap(), ModelFormat::Tensorrt);
-        assert_eq!(parse_format("TRT").unwrap(), ModelFormat::Tensorrt);
-    }
-
-    #[test]
-    fn test_parse_format_pytorch() {
-        assert_eq!(parse_format("pytorch").unwrap(), ModelFormat::Pytorch);
-        assert_eq!(parse_format("pt").unwrap(), ModelFormat::Pytorch);
-        assert_eq!(parse_format("PT").unwrap(), ModelFormat::Pytorch);
-    }
-
-    #[test]
     fn test_parse_format_invalid() {
         assert!(parse_format("invalid").is_err());
         assert!(parse_format("").is_err());
+        assert!(parse_format("gguf").is_err());
+        assert!(parse_format("tensorrt").is_err());
+        assert!(parse_format("pytorch").is_err());
         assert!(parse_format("coreml").is_err());
-    }
-
-    #[test]
-    fn test_format_to_chart_gguf() {
-        assert_eq!(format_to_chart(ModelFormat::Gguf), "model-serving-llamacpp");
     }
 
     #[test]
@@ -374,21 +340,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_to_chart_tensorrt() {
-        assert_eq!(format_to_chart(ModelFormat::Tensorrt), "model-serving-triton");
-    }
-
-    #[test]
-    fn test_format_to_chart_pytorch() {
-        assert_eq!(format_to_chart(ModelFormat::Pytorch), "model-serving-rayserve");
-    }
-
-    #[test]
-    fn test_format_to_engine_gguf() {
-        assert_eq!(format_to_engine(ModelFormat::Gguf), "llamacpp");
-    }
-
-    #[test]
     fn test_format_to_engine_onnx() {
         assert_eq!(format_to_engine(ModelFormat::Onnx), "onnxGenai");
     }
@@ -406,16 +357,6 @@ mod tests {
     #[test]
     fn test_format_to_engine_gptq() {
         assert_eq!(format_to_engine(ModelFormat::Gptq), "vllm");
-    }
-
-    #[test]
-    fn test_format_to_engine_tensorrt() {
-        assert_eq!(format_to_engine(ModelFormat::Tensorrt), "triton");
-    }
-
-    #[test]
-    fn test_format_to_engine_pytorch() {
-        assert_eq!(format_to_engine(ModelFormat::Pytorch), "rayserve");
     }
 
     #[test]

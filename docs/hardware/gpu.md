@@ -82,7 +82,7 @@ On paper, the AMD MI300X shows **1,307 TFLOPS** in dense FP16/BF16 vs **990 TFLO
 | 128 concurrent users | H100 +38.7% / B200 +105.3% |
 | 512 concurrent users | H100 +67% / B200 +77.9% |
 
-**Why this gap exists:** real performance depends on the compiler and low-level libraries' (cuBLAS, cuDNN, TensorRT) ability to *actually fill* the compute units without dead time. NVIDIA has 15 years of accumulated CUDA optimization; ROCm (AMD) is a younger ecosystem catching up but has not yet reached the same maturity, particularly under high concurrency where request scheduling becomes critical.
+**Why this gap exists:** real performance depends on the compiler and low-level libraries' (cuBLAS, cuDNN) ability to *actually fill* the compute units without dead time. NVIDIA has 15 years of accumulated CUDA optimization; ROCm (AMD) is a younger ecosystem catching up but has not yet reached the same maturity, particularly under high concurrency where request scheduling becomes critical.
 
 **What this implies for selection:** never size a cluster based on announced TFLOPS alone. Always weight by the CUDA Gap score at the target concurrency level (16, 128, 512 users depending on your real traffic profile).
 
@@ -127,7 +127,7 @@ Example: Llama 70B in FP16 = 70 × 2 = **140 GB** of weights alone, before even 
 
 **How to operate them:**
 - Always quantize to Q4/Q8 to free VRAM for larger activations/KV Cache, rather than staying in FP16 by default.
-- Use vLLM or llama.cpp rather than proprietary runtimes — the consumer CUDA ecosystem is better covered by open-source tools.
+- Use vLLM rather than proprietary runtimes — the consumer CUDA ecosystem is better covered by open-source tools.
 - Do not attempt dense multi-GPU: without NVLink, memory aggregation between cards goes through PCIe, which cancels much of the benefit.
 
 **What NOT to expect:** ECC reliability, 24/7 production-critical service, efficient multi-card memory aggregation.
@@ -152,7 +152,7 @@ Example: Llama 70B in FP16 = 70 × 2 = **140 GB** of weights alone, before even 
 
 ### NVIDIA H100 SXM — The Established Enterprise Standard
 
-**Why choose it:** most mature software ecosystem (CUDA, TensorRT-LLM, cuBLAS optimized for years), NVLink 4.0 to aggregate multiple cards into a coherent memory pool, broad market availability (cloud and secondary market).
+**Why choose it:** most mature software ecosystem (CUDA, cuBLAS optimized for years), NVLink 4.0 to aggregate multiple cards into a coherent memory pool, broad market availability (cloud and secondary market).
 
 **Concrete use cases:**
 - Enterprise inference with guaranteed latency (SLA) on models up to ~70B with tensor parallelism (TP2 minimum, since 80 GB < 140 GB required in FP16).
@@ -161,7 +161,6 @@ Example: Llama 70B in FP16 = 70 × 2 = **140 GB** of weights alone, before even 
 
 **How to operate it:**
 - For 70B+, plan tensor parallelism (TP2 or more) from the design stage — a single H100 card is not enough.
-- Use TensorRT-LLM in production (20-40% gain vs vLLM) once configuration is frozen; keep vLLM for rapid iteration in development.
 - Leverage the Transformer Engine (dynamic FP8) to halve the memory footprint without rewriting the model.
 
 ---
@@ -253,32 +252,18 @@ Example: Llama 70B in FP16 = 70 × 2 = **140 GB** of weights alone, before even 
 **Why:** implements **PagedAttention**, which eliminates KV Cache fragmentation (memory management by pages rather than contiguous blocks, like an OS manages RAM).
 
 **How to operate it:**
-- vLLM V1 (2025+) replaced HIP kernels with Triton kernels, developed in 3 optimization phases (vectorized loads for prefill, specialized kernel for decode at sequence=1, fusion into a single kernel) — use this version rather than V0, now obsolete.
+- vLLM V1 (2025+) replaced HIP kernels with custom GPU kernels, developed in 3 optimization phases (vectorized loads for prefill, specialized kernel for decode at sequence=1, fusion into a single kernel) — use this version rather than V0, now obsolete.
 - On AMD, explicitly choose `ROCM_AITER_FA` on MI300X+ rather than the generic `ROCM_ATTN` backend.
 - Ideal for rapid prototyping and mixed NVIDIA/AMD environments thanks to its portability.
 
-### TensorRT-LLM — Maximum Performance, Proprietary
-**Why:** compiles the model into a frozen graph optimized for the exact GPU and precision (FP8/FP4), fully exploiting the Transformer Engine and TMA of Hopper/Blackwell.
+### vLLM — Summary
 
-**How to operate it:**
-- Reserve for stabilized production: the build phase (15-30 min) freezes the hardware config, so not suitable for an environment that frequently changes models or GPUs.
-- Plan a recompilation pipeline in CI/CD whenever a model is updated.
-- Expected net gain: +20 to 40% throughput vs vLLM, provided you accept the configuration rigidity.
-
-### Triton Inference Server — Multi-Model Orchestration
-**Why:** it is not an inference engine but an **orchestrator** — it runs vLLM or TensorRT-LLM as backends and manages dynamic sharing of GPU memory between multiple heterogeneous models.
-
-**How to operate it:**
-- Use as soon as the same GPU must host multiple models (vision + text + audio for example) — dynamic memory sharing reduces operational costs by 40-60%.
-- Useful for model version reloading without service interruption (continuous deployment).
-- Combine with Business Logic Scripting (BLS) for complex inference chaining (e.g.: retrieval → rerank → generation).
-
-| Dimension | vLLM | TensorRT-LLM | Triton |
-|---|---|---|---|
-| Hardware | NVIDIA + AMD ROCm 6.2+ | NVIDIA only | Multi-architecture |
-| Complexity | Low | High (15-30 min build) | Medium |
-| Multi-model | Limited | Limited | Excellent |
-| Use case | Prototyping, mixed NVIDIA/AMD | High-performance production, strict SLAs | Multi-model servers |
+| Dimension | vLLM |
+|---|---|
+| Hardware | NVIDIA + AMD ROCm 6.2+ |
+| Complexity | Low |
+| Multi-model | Limited |
+| Use case | Prototyping, mixed NVIDIA/AMD, production inference |
 
 ---
 
@@ -321,13 +306,13 @@ What is the dominant constraint?
 │   → RTX 6000 Ada + vLLM
 │
 ├─ Production 70B with strict SLA, mature ecosystem required
-│   → H200 SXM + TensorRT-LLM
+│   → H200 SXM + vLLM
 │
 ├─ Raw memory capacity prioritized over peak latency
 │   → MI300X + vLLM (ROCM_AITER_FA backend)
 │
 ├─ Very high concurrency (128-512+ simultaneous users)
-│   → B200 + TensorRT-LLM (widest performance gap)
+│   → B200 + vLLM (widest performance gap)
 │
 ├─ FP64 scientific computing / HPC
 │   → MI300A
@@ -339,10 +324,10 @@ What is the dominant constraint?
 | Profile | Recommended GPU | Runtime | Why |
 |---|---|---|---|
 | Cloud provider / giant training | GB200 NVL72 | — | Only option for rack-scale interconnect without network bottleneck |
-| Enterprise / production LLM, strict SLA | H200 SXM | TensorRT-LLM | Best throughput/latency tradeoff, most mature ecosystem |
+| Enterprise / production LLM, strict SLA | H200 SXM | vLLM | Best throughput/latency tradeoff, most mature ecosystem |
 | Memory budget priority | MI300X | vLLM (AITER_FA) | 192 GB on a single card, competitive TCO |
 | FP64 scientific HPC | MI300A | ROCm | Coherent CPU/GPU memory, zero PCIe copy |
-| SME / research / local fine-tuning | RTX 6000 Ada | vLLM + Triton | Controlled cost, ECC, rapid iteration |
-| Individual prototyping | RTX 4090/5090 | vLLM or llama.cpp | Performance/price ratio, no reliability constraint |
+| SME / research / local fine-tuning | RTX 6000 Ada | vLLM | Controlled cost, ECC, rapid iteration |
+| Individual prototyping | RTX 4090/5090 | vLLM | Performance/price ratio, no reliability constraint |
 
 ---

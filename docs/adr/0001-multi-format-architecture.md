@@ -4,13 +4,13 @@
 
 ## Context
 
-The platform must serve models in multiple formats (GGUF, Safetensors, ONNX, AWQ, GPTQ, TensorRT, PyTorch) without coupling format to engine. New models and engines should be addable without changing the exposure layer.
+The platform must serve models in multiple formats (Safetensors, ONNX, AWQ, GPTQ) without coupling format to engine. New models and engines should be addable without changing the exposure layer.
 
 ## Decision
 
 Adopt a three-plane architecture:
 1. **Model Plane** — interchangeable model weights and formats
-2. **Engine Plane** — swappable runtime per format (llama.cpp, vLLM, ONNX Runtime GenAI, Triton, Ray Serve)
+2. **Engine Plane** — swappable runtime per format (vLLM, ONNX Runtime GenAI)
 3. **Exposure Plane** — uniform OpenAI-compatible API via Envoy AI Gateway
 
 Each format gets its own Helm chart derived from `bjw-template` library. The engine-selector CLI codifies the decision tree.

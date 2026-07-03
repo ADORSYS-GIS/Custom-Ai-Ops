@@ -5,23 +5,17 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ModelFormat {
-    Gguf,
     Onnx,
     Safetensors,
     Awq,
     Gptq,
-    Tensorrt,
-    Pytorch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Engine {
-    LlamaCpp,
     Vllm,
     OnnxRuntimeGenai,
-    Triton,
-    RayServe,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,21 +44,12 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
 
-    if extension == "gguf" || filename.contains(".gguf") {
-        return Ok(ModelFormat::Gguf);
-    }
-
     if is_dir {
         let has_onnx = walk_extensions(p, &["onnx", "onnx_data"]);
         let has_safetensors = walk_extensions(p, &["safetensors"]);
         let has_awq = walk_extensions(p, &["safetensors"]) && has_awq_config(p);
         let has_gptq = has_gptq_config(p);
-        let has_trt = walk_extensions(p, &["plan", "engine"]);
-        let has_pt = walk_extensions(p, &["pt", "bin"]);
 
-        if has_trt {
-            return Ok(ModelFormat::Tensorrt);
-        }
         if has_awq {
             return Ok(ModelFormat::Awq);
         }
@@ -77,21 +62,15 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
         if has_safetensors {
             return Ok(ModelFormat::Safetensors);
         }
-        if has_pt {
-            return Ok(ModelFormat::Pytorch);
-        }
         return Err(anyhow!(
-            "cannot detect model format in directory: {}",
+            "cannot detect model format in directory: {} — supported formats: ONNX, Safetensors, AWQ, GPTQ",
             path
         ));
     }
 
     match extension.as_str() {
-        "gguf" => Ok(ModelFormat::Gguf),
         "onnx" | "onnx_data" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
-        "pt" | "pth" => Ok(ModelFormat::Pytorch),
-        "plan" | "engine" => Ok(ModelFormat::Tensorrt),
         "bin" => {
             if filename.contains("awq") {
                 Ok(ModelFormat::Awq)
@@ -99,12 +78,12 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
                 Ok(ModelFormat::Gptq)
             } else {
                 Err(anyhow!(
-                    "ambiguous .bin file — provide --format explicitly"
+                    "ambiguous .bin file — provide --format explicitly (supported: onnx, safetensors, awq, gptq)"
                 ))
             }
         }
         _ => Err(anyhow!(
-            "unsupported model extension '{}' — provide --format explicitly",
+            "unsupported model extension '{}' — supported formats: onnx, safetensors, awq, gptq. Provide --format explicitly",
             extension
         )),
     }
@@ -158,25 +137,19 @@ fn has_gptq_config(dir: &Path) -> bool {
 
 pub fn parse_format_override(s: &str) -> Result<ModelFormat> {
     match s.to_lowercase().as_str() {
-        "gguf" => Ok(ModelFormat::Gguf),
         "onnx" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
         "awq" => Ok(ModelFormat::Awq),
         "gptq" => Ok(ModelFormat::Gptq),
-        "tensorrt" | "trt" => Ok(ModelFormat::Tensorrt),
-        "pytorch" | "pt" => Ok(ModelFormat::Pytorch),
-        _ => Err(anyhow!("unknown format override: {}", s)),
+        _ => Err(anyhow!(
+            "unknown format override: {} — supported: onnx, safetensors, awq, gptq",
+            s
+        )),
     }
 }
 
 pub fn select_engine(fmt: ModelFormat) -> (Engine, f64, String, String) {
     match fmt {
-        ModelFormat::Gguf => (
-            Engine::LlamaCpp,
-            0.97,
-            "model-serving-llamacpp".to_string(),
-            "llama.cpp is the most robust and lightweight engine for GGUF format, with no Python dependency".to_string(),
-        ),
         ModelFormat::Onnx => (
             Engine::OnnxRuntimeGenai,
             0.95,
@@ -201,18 +174,6 @@ pub fn select_engine(fmt: ModelFormat) -> (Engine, f64, String, String) {
             "model-serving-vllm".to_string(),
             "vLLM supports GPTQ natively without format conversion".to_string(),
         ),
-        ModelFormat::Tensorrt => (
-            Engine::Triton,
-            0.98,
-            "model-serving-triton".to_string(),
-            "Triton Inference Server with TensorRT-LLM backend provides minimum latency on NVIDIA GPUs".to_string(),
-        ),
-        ModelFormat::Pytorch => (
-            Engine::RayServe,
-            0.70,
-            "model-serving-rayserve".to_string(),
-            "Ray Serve serves native PyTorch models transitively; convert to optimised format for production".to_string(),
-        ),
     }
 }
 
@@ -223,12 +184,6 @@ mod tests {
 
     fn create_temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
-    }
-
-    #[test]
-    fn test_parse_format_override_gguf() {
-        assert_eq!(parse_format_override("gguf").unwrap(), ModelFormat::Gguf);
-        assert_eq!(parse_format_override("GGUF").unwrap(), ModelFormat::Gguf);
     }
 
     #[test]
@@ -252,29 +207,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_format_override_tensorrt() {
-        assert_eq!(parse_format_override("tensorrt").unwrap(), ModelFormat::Tensorrt);
-        assert_eq!(parse_format_override("trt").unwrap(), ModelFormat::Tensorrt);
-    }
-
-    #[test]
-    fn test_parse_format_override_pytorch() {
-        assert_eq!(parse_format_override("pytorch").unwrap(), ModelFormat::Pytorch);
-        assert_eq!(parse_format_override("pt").unwrap(), ModelFormat::Pytorch);
-    }
-
-    #[test]
     fn test_parse_format_override_unknown() {
         assert!(parse_format_override("unknown").is_err());
-    }
-
-    #[test]
-    fn test_select_engine_gguf() {
-        let (engine, confidence, chart, rationale) = select_engine(ModelFormat::Gguf);
-        assert_eq!(engine, Engine::LlamaCpp);
-        assert_eq!(chart, "model-serving-llamacpp");
-        assert!(confidence > 0.9);
-        assert!(!rationale.is_empty());
+        assert!(parse_format_override("gguf").is_err());
+        assert!(parse_format_override("tensorrt").is_err());
+        assert!(parse_format_override("pytorch").is_err());
     }
 
     #[test]
@@ -307,31 +244,6 @@ mod tests {
         assert_eq!(engine, Engine::Vllm);
         assert_eq!(chart, "model-serving-vllm");
         assert!(confidence > 0.9);
-    }
-
-    #[test]
-    fn test_select_engine_tensorrt() {
-        let (engine, confidence, chart, _) = select_engine(ModelFormat::Tensorrt);
-        assert_eq!(engine, Engine::Triton);
-        assert_eq!(chart, "model-serving-triton");
-        assert!(confidence > 0.95);
-    }
-
-    #[test]
-    fn test_select_engine_pytorch() {
-        let (engine, confidence, chart, _) = select_engine(ModelFormat::Pytorch);
-        assert_eq!(engine, Engine::RayServe);
-        assert_eq!(chart, "model-serving-rayserve");
-        assert!(confidence < 0.9);
-    }
-
-    #[test]
-    fn test_detect_format_gguf_file() {
-        let dir = create_temp_dir();
-        let gguf_path = dir.path().join("model.gguf");
-        fs::write(&gguf_path, "fake gguf data").unwrap();
-        let result = detect_format(gguf_path.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Gguf);
     }
 
     #[test]
@@ -383,26 +295,8 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_format_tensorrt_dir() {
-        let dir = create_temp_dir();
-        let engine_path = dir.path().join("model.engine");
-        fs::write(&engine_path, "fake").unwrap();
-        let result = detect_format(dir.path().to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Tensorrt);
-    }
-
-    #[test]
-    fn test_detect_format_pytorch_dir() {
-        let dir = create_temp_dir();
-        let pt_path = dir.path().join("model.pt");
-        fs::write(&pt_path, "fake").unwrap();
-        let result = detect_format(dir.path().to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Pytorch);
-    }
-
-    #[test]
     fn test_detect_format_nonexistent_path() {
-        assert!(detect_format("/nonexistent/path/model.gguf").is_err());
+        assert!(detect_format("/nonexistent/path/model.onnx").is_err());
     }
 
     #[test]
@@ -433,24 +327,12 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_format_pt_file() {
-        let dir = create_temp_dir();
-        let pt_path = dir.path().join("model.pt");
-        fs::write(&pt_path, "fake").unwrap();
-        let result = detect_format(pt_path.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Pytorch);
-    }
-
-    #[test]
     fn test_all_format_to_chart_mappings() {
         let formats = vec![
-            (ModelFormat::Gguf, Engine::LlamaCpp, "model-serving-llamacpp"),
             (ModelFormat::Onnx, Engine::OnnxRuntimeGenai, "model-serving-onnx-rust"),
             (ModelFormat::Safetensors, Engine::Vllm, "model-serving-vllm"),
             (ModelFormat::Awq, Engine::Vllm, "model-serving-vllm"),
             (ModelFormat::Gptq, Engine::Vllm, "model-serving-vllm"),
-            (ModelFormat::Tensorrt, Engine::Triton, "model-serving-triton"),
-            (ModelFormat::Pytorch, Engine::RayServe, "model-serving-rayserve"),
         ];
         for (fmt, expected_engine, expected_chart) in formats {
             let (engine, _, chart, _) = select_engine(fmt);

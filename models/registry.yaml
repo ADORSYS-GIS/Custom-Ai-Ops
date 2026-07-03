@@ -1,20 +1,4 @@
 models:
-  - name: llama-3-8b-instruct
-    format: gguf
-    engine: llamacpp
-    chart: model-serving-llamacpp
-    status: LIVE
-    vramBudgetGB: 8.0
-    gpuPool: gpu-edge-pool
-    gpu: "RTX A2000"
-    modelSizeGB: 4.7
-    contextLength: 8192
-    layers: 32
-    heads: 32
-    quantisation: q4_km
-    gatewayBackend: llama3-8b-local
-    notes: "Primary self-hosted model on RTX A2000 edge cluster"
-
   - name: mistral-7b-instruct
     format: safetensors
     engine: vllm

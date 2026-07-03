@@ -20,7 +20,7 @@ Master the complete lifecycle of a model in production: from packaging to servin
 - **p99 vs p50 latency**: the average masks worst cases; a model can have excellent p50 and catastrophic p99 due to GC, batching, or GPU contention.
 - **Non-determinism**: non-deterministic CUDA kernels, different floating-point reduction order by batch, making debugging difficult.
 - **Memory leaks**: GPU memory fragmentation (especially with variable batch sizes), KV cache leaks for LLMs.
-- **Inconsistent versioning**: divergence between trained model, converted model (ONNX, TensorRT), and actually served model.
+- **Inconsistent versioning**: divergence between trained model, converted model (ONNX), and actually served model.
 - **Training-serving skew**: different feature preprocessing pipeline between offline and online.
 - **Silent failures**: model responds but with degraded values (NaN, constant outputs) without crash, so without automatic alert.
 - **Over-provisioning or under-sizing**: either GPU cost waste or starvation at traffic peak.
@@ -30,7 +30,7 @@ Master the complete lifecycle of a model in production: from packaging to servin
 #### LLM (Generative, Transformer Decoder Type)
 
 - **KV-cache management**: linear memory growth with sequence length and batch, #1 OOM GPU source.
-- **Continuous batching** complex to implement correctly (vLLM, TGI, TensorRT-LLM): without this, throughput drops drastically.
+- **Continuous batching** complex to implement correctly (vLLM, TGI): without this, throughput drops drastically.
 - **Time-to-first-token (TTFT)** vs **time-per-output-token (TPOT)**: two different metrics to monitor separately.
 - **Quantization** (INT8, INT4, FP8): quality/speed/memory tradeoff to validate by model family, not just architecture.
 - **Variable context window**: requires efficient padding/masking, otherwise compute waste.
@@ -104,7 +104,7 @@ Default Kubernetes scheduler is not designed for ML batch and gang-scheduling. S
 
 - **Canary / Blue-Green deployment** for new model versions: route small percentage of traffic to new version and compare business metrics before full switch.
 - **Shadow traffic (mirroring)**: duplicate real traffic to new version without impacting user response, validating under real conditions without risk.
-- **ML-specific serving tools**: KServe, Seldon Core, or Ray Serve, adding on top of Kubernetes model versioning, automatic batching, native canary, and ML-adapted autoscaling — preferable to manual reimplementation.
+- **ML-specific serving tools**: KServe, Seldon Core, adding on top of Kubernetes model versioning, automatic batching, native canary, and ML-adapted autoscaling — preferable to manual reimplementation.
 
 ---
 
@@ -158,4 +158,4 @@ To master model production behavior end-to-end, treat three independent but coor
 2. **Infrastructure layer (Kubernetes + GPU)**: AI-adapted scheduling (Kueue/Volcano), GPU partitioning (MIG/time-slicing), metric-based autoscaling, dedicated node pools by hardware family.
 3. **Observability and automation layer**: end-to-end metrics (technical + business + cost), dynamic alerting, automatic rollback and auto-healing, regular load tests.
 
-Best practice: never treat model deployment as classic application deployment: GPU memory constraints, latency variability by sequence length/image, and continuous quality validation need (beyond simple "service responds") impose specific ML serving tools and design (KServe, Ray Serve, vLLM/TGI for LLM) rather than ad hoc reimplementation on top of standard Kubernetes Deployment.
+Best practice: never treat model deployment as classic application deployment: GPU memory constraints, latency variability by sequence length/image, and continuous quality validation need (beyond simple "service responds") impose specific ML serving tools and design (KServe, vLLM/TGI for LLM) rather than ad hoc reimplementation on top of standard Kubernetes Deployment.
