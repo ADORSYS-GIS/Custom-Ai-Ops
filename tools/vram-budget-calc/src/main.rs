@@ -259,3 +259,146 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quant_format_bytes_per_weight() {
+        assert_eq!(QuantFormat::Fp32.bytes_per_weight(), 4.0);
+        assert_eq!(QuantFormat::Fp16.bytes_per_weight(), 2.0);
+        assert_eq!(QuantFormat::Bf16.bytes_per_weight(), 2.0);
+        assert_eq!(QuantFormat::Fp8.bytes_per_weight(), 1.0);
+        assert_eq!(QuantFormat::Int8.bytes_per_weight(), 1.0);
+        assert_eq!(QuantFormat::Int4.bytes_per_weight(), 0.5);
+        assert_eq!(QuantFormat::Q4KM.bytes_per_weight(), 0.55);
+    }
+
+    #[test]
+    fn test_quant_format_from_str() {
+        assert_eq!(QuantFormat::from_str("fp32").unwrap(), QuantFormat::Fp32);
+        assert_eq!(QuantFormat::from_str("FP16").unwrap(), QuantFormat::Fp16);
+        assert_eq!(QuantFormat::from_str("bf16").unwrap(), QuantFormat::Bf16);
+        assert_eq!(QuantFormat::from_str("fp8").unwrap(), QuantFormat::Fp8);
+        assert_eq!(QuantFormat::from_str("int8").unwrap(), QuantFormat::Int8);
+        assert_eq!(QuantFormat::from_str("int4").unwrap(), QuantFormat::Int4);
+        assert_eq!(QuantFormat::from_str("q4_km").unwrap(), QuantFormat::Q4KM);
+        assert_eq!(QuantFormat::from_str("q4km").unwrap(), QuantFormat::Q4KM);
+        assert_eq!(QuantFormat::from_str("q4-km").unwrap(), QuantFormat::Q4KM);
+        assert!(QuantFormat::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_quant_format_display() {
+        assert_eq!(QuantFormat::Fp32.to_string(), "fp32");
+        assert_eq!(QuantFormat::Fp16.to_string(), "fp16");
+        assert_eq!(QuantFormat::Bf16.to_string(), "bf16");
+        assert_eq!(QuantFormat::Fp8.to_string(), "fp8");
+        assert_eq!(QuantFormat::Int8.to_string(), "int8");
+        assert_eq!(QuantFormat::Int4.to_string(), "int4");
+        assert_eq!(QuantFormat::Q4KM.to_string(), "q4_km");
+    }
+
+    #[test]
+    fn test_gpu_arch_supports_fp8() {
+        assert!(!GpuArch::Ampere.supports_fp8());
+        assert!(GpuArch::Ada.supports_fp8());
+        assert!(GpuArch::Hopper.supports_fp8());
+        assert!(GpuArch::Blackwell.supports_fp8());
+        assert!(!GpuArch::Other.supports_fp8());
+    }
+
+    #[test]
+    fn test_gpu_arch_from_gpu_name_ampere() {
+        assert_eq!(GpuArch::from_gpu_name("RTX A2000"), GpuArch::Ampere);
+        assert_eq!(GpuArch::from_gpu_name("A100"), GpuArch::Ampere);
+        assert_eq!(GpuArch::from_gpu_name("RTX 3090"), GpuArch::Ampere);
+        assert_eq!(GpuArch::from_gpu_name("A10"), GpuArch::Ampere);
+        assert_eq!(GpuArch::from_gpu_name("A30"), GpuArch::Ampere);
+    }
+
+    #[test]
+    fn test_gpu_arch_from_gpu_name_ada() {
+        assert_eq!(GpuArch::from_gpu_name("RTX 4090"), GpuArch::Ada);
+        assert_eq!(GpuArch::from_gpu_name("L4"), GpuArch::Ada);
+        assert_eq!(GpuArch::from_gpu_name("L40"), GpuArch::Ada);
+    }
+
+    #[test]
+    fn test_gpu_arch_from_gpu_name_hopper() {
+        assert_eq!(GpuArch::from_gpu_name("H100"), GpuArch::Hopper);
+        assert_eq!(GpuArch::from_gpu_name("H200"), GpuArch::Hopper);
+        assert_eq!(GpuArch::from_gpu_name("HGX"), GpuArch::Hopper);
+    }
+
+    #[test]
+    fn test_gpu_arch_from_gpu_name_blackwell() {
+        assert_eq!(GpuArch::from_gpu_name("B200"), GpuArch::Blackwell);
+        assert_eq!(GpuArch::from_gpu_name("B100"), GpuArch::Blackwell);
+    }
+
+    #[test]
+    fn test_gpu_arch_from_gpu_name_other() {
+        assert_eq!(GpuArch::from_gpu_name("Unknown GPU"), GpuArch::Other);
+        assert_eq!(GpuArch::from_gpu_name("Radeon RX 7900"), GpuArch::Other);
+    }
+
+    #[test]
+    fn test_calculate_kv_cache_gb_basic() {
+        // batch=1, context=4096, layers=32, heads=32, fp16 (2 bytes)
+        let kv = calculate_kv_cache_gb(1, 4096, 32, 32, 2.0);
+        // 2 * 1 * 4096 * 32 * 32 * 2 / (1024^3) = 2 * 4096 * 32 * 32 * 2 / 1073741824
+        // = 2 * 8388608 / 1073741824 = 16777216 / 1073741824 ≈ 0.015625
+        assert!((kv - 0.015625).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_calculate_kv_cache_gb_zero_batch() {
+        let kv = calculate_kv_cache_gb(0, 4096, 32, 32, 2.0);
+        assert_eq!(kv, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_kv_cache_gb_large_context() {
+        // batch=1, context=32768, layers=32, heads=32, bf16 (2 bytes)
+        let kv = calculate_kv_cache_gb(1, 32768, 32, 32, 2.0);
+        // 2 * 1 * 32768 * 32 * 32 * 2 / (1024^3)
+        // = 2 * 32768 * 1024 * 2 / 1073741824
+        // = 134217728 / 1073741824 = 0.125
+        assert!((kv - 0.125).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_vram_budget_fits() {
+        // 8GB VRAM, 4.7GB model, q4_km, RTX A2000
+        // usable = 8 * 0.90 = 7.2
+        // remaining = 7.2 - 4.7 - 1.0 - kv_cache
+        // kv_cache with layers=32, heads=32, context=8192, q4_km (0.55 bytes)
+        // = 2 * 1 * 8192 * 32 * 32 * 0.55 / 1024^3 ≈ 0.00858
+        // remaining ≈ 7.2 - 4.7 - 1.0 - 0.00858 ≈ 1.49
+        let kv = calculate_kv_cache_gb(1, 8192, 32, 32, 0.55);
+        let usable = 8.0 * VRAM_UTILIZATION_FACTOR;
+        let remaining = usable - 4.7 - FIXED_OVERHEAD_GB - kv;
+        assert!(remaining > 0.0, "Should fit on 8GB GPU");
+    }
+
+    #[test]
+    fn test_vram_budget_oom() {
+        // 4GB VRAM, 4.7GB model — should not fit
+        let usable = 4.0 * VRAM_UTILIZATION_FACTOR;
+        let remaining = usable - 4.7 - FIXED_OVERHEAD_GB;
+        assert!(remaining < 0.0, "Should not fit on 4GB GPU");
+    }
+
+    #[test]
+    fn test_fp8_blocked_on_ampere() {
+        // FP8 on Ampere should not be supported
+        assert!(!GpuArch::Ampere.supports_fp8());
+    }
+
+    #[test]
+    fn test_fp8_supported_on_hopper() {
+        assert!(GpuArch::Hopper.supports_fp8());
+    }
+}

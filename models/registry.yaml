@@ -47,7 +47,7 @@ models:
     gatewayBackend: phi3-mini-local
     notes: "Lightweight model for L4 GPU pool"
 
-- name: llama-3-70b-instruct
+  - name: llama-3-70b-instruct
     format: safetensors
     engine: vllm
     chart: model-serving-vllm

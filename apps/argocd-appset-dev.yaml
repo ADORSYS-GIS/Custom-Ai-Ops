@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: model-serving-staging
+  name: model-serving-dev
   namespace: argocd
 spec:
   generators:
@@ -9,10 +9,10 @@ spec:
         repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
         revision: HEAD
         directories:
-          - path: environments/staging
+          - path: environments/dev
   template:
     metadata:
-      name: '{{path.basename}}-staging'
+      name: '{{path.basename}}-dev'
       annotations:
         argocd.argoproj.io/sync-wave: "0"
     spec:
@@ -24,13 +24,13 @@ spec:
         helm:
           valueFiles:
             - values.yaml
-            - ../../environments/staging/values.yaml
+            - ../../environments/dev/values.yaml
           parameters:
             - name: global.namespace
-              value: model-serving-staging
+              value: model-serving-dev
       destination:
         server: https://kubernetes.default.svc
-        namespace: model-serving-staging
+        namespace: model-serving-dev
       syncPolicy:
         automated:
           prune: true
@@ -42,14 +42,14 @@ spec:
         retry:
           limit: 5
           backoff:
-            duration: 15s
+            duration: 10s
             factor: 2
-            maxDuration: 3m
+            maxDuration: 2m
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ai-gateway-staging
+  name: ai-gateway-dev
   namespace: argocd
 spec:
   generators:
@@ -59,7 +59,7 @@ spec:
             wave: "1"
   template:
     metadata:
-      name: '{{name}}-staging'
+      name: '{{name}}-dev'
       annotations:
         argocd.argoproj.io/sync-wave: '{{wave}}'
     spec:

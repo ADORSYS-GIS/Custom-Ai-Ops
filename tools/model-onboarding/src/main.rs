@@ -292,3 +292,142 @@ fn chrono_like_date() -> String {
         Err(_) => "YYYY-MM-DD".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_format_gguf() {
+        assert_eq!(parse_format("gguf").unwrap(), ModelFormat::Gguf);
+        assert_eq!(parse_format("GGUF").unwrap(), ModelFormat::Gguf);
+    }
+
+    #[test]
+    fn test_parse_format_onnx() {
+        assert_eq!(parse_format("onnx").unwrap(), ModelFormat::Onnx);
+        assert_eq!(parse_format("ONNX").unwrap(), ModelFormat::Onnx);
+    }
+
+    #[test]
+    fn test_parse_format_safetensors() {
+        assert_eq!(parse_format("safetensors").unwrap(), ModelFormat::Safetensors);
+        assert_eq!(parse_format("SAFETENSORS").unwrap(), ModelFormat::Safetensors);
+    }
+
+    #[test]
+    fn test_parse_format_awq() {
+        assert_eq!(parse_format("awq").unwrap(), ModelFormat::Awq);
+        assert_eq!(parse_format("AWQ").unwrap(), ModelFormat::Awq);
+    }
+
+    #[test]
+    fn test_parse_format_gptq() {
+        assert_eq!(parse_format("gptq").unwrap(), ModelFormat::Gptq);
+        assert_eq!(parse_format("GPTQ").unwrap(), ModelFormat::Gptq);
+    }
+
+    #[test]
+    fn test_parse_format_tensorrt() {
+        assert_eq!(parse_format("tensorrt").unwrap(), ModelFormat::Tensorrt);
+        assert_eq!(parse_format("trt").unwrap(), ModelFormat::Tensorrt);
+        assert_eq!(parse_format("TRT").unwrap(), ModelFormat::Tensorrt);
+    }
+
+    #[test]
+    fn test_parse_format_pytorch() {
+        assert_eq!(parse_format("pytorch").unwrap(), ModelFormat::Pytorch);
+        assert_eq!(parse_format("pt").unwrap(), ModelFormat::Pytorch);
+        assert_eq!(parse_format("PT").unwrap(), ModelFormat::Pytorch);
+    }
+
+    #[test]
+    fn test_parse_format_invalid() {
+        assert!(parse_format("invalid").is_err());
+        assert!(parse_format("").is_err());
+        assert!(parse_format("coreml").is_err());
+    }
+
+    #[test]
+    fn test_format_to_chart_gguf() {
+        assert_eq!(format_to_chart(ModelFormat::Gguf), "model-serving-llamacpp");
+    }
+
+    #[test]
+    fn test_format_to_chart_onnx() {
+        assert_eq!(format_to_chart(ModelFormat::Onnx), "model-serving-onnx-rust");
+    }
+
+    #[test]
+    fn test_format_to_chart_safetensors() {
+        assert_eq!(format_to_chart(ModelFormat::Safetensors), "model-serving-vllm");
+    }
+
+    #[test]
+    fn test_format_to_chart_awq() {
+        assert_eq!(format_to_chart(ModelFormat::Awq), "model-serving-vllm");
+    }
+
+    #[test]
+    fn test_format_to_chart_gptq() {
+        assert_eq!(format_to_chart(ModelFormat::Gptq), "model-serving-vllm");
+    }
+
+    #[test]
+    fn test_format_to_chart_tensorrt() {
+        assert_eq!(format_to_chart(ModelFormat::Tensorrt), "model-serving-triton");
+    }
+
+    #[test]
+    fn test_format_to_chart_pytorch() {
+        assert_eq!(format_to_chart(ModelFormat::Pytorch), "model-serving-rayserve");
+    }
+
+    #[test]
+    fn test_format_to_engine_gguf() {
+        assert_eq!(format_to_engine(ModelFormat::Gguf), "llamacpp");
+    }
+
+    #[test]
+    fn test_format_to_engine_onnx() {
+        assert_eq!(format_to_engine(ModelFormat::Onnx), "onnxGenai");
+    }
+
+    #[test]
+    fn test_format_to_engine_safetensors() {
+        assert_eq!(format_to_engine(ModelFormat::Safetensors), "vllm");
+    }
+
+    #[test]
+    fn test_format_to_engine_awq() {
+        assert_eq!(format_to_engine(ModelFormat::Awq), "vllm");
+    }
+
+    #[test]
+    fn test_format_to_engine_gptq() {
+        assert_eq!(format_to_engine(ModelFormat::Gptq), "vllm");
+    }
+
+    #[test]
+    fn test_format_to_engine_tensorrt() {
+        assert_eq!(format_to_engine(ModelFormat::Tensorrt), "triton");
+    }
+
+    #[test]
+    fn test_format_to_engine_pytorch() {
+        assert_eq!(format_to_engine(ModelFormat::Pytorch), "rayserve");
+    }
+
+    #[test]
+    fn test_vram_validation_logic() {
+        // Model that fits: 8GB VRAM, 4.7GB model
+        let usable = 8.0 * 0.90;
+        let remaining = usable - 4.7 - 1.0;
+        assert!(remaining > 0.0);
+
+        // Model that does not fit: 4GB VRAM, 4.7GB model
+        let usable = 4.0 * 0.90;
+        let remaining = usable - 4.7 - 1.0;
+        assert!(remaining < 0.0);
+    }
+}

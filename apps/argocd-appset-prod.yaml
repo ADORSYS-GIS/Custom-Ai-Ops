@@ -132,3 +132,45 @@ spec:
             duration: 10s
             factor: 2
             maxDuration: 2m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ai-gateway-production
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: ai-gateway
+            wave: "1"
+  template:
+    metadata:
+      name: '{{name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{wave}}'
+    spec:
+      project: model-serving
+      source:
+        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        targetRevision: HEAD
+        path: charts/ai-gateway
+        helm:
+          valueFiles:
+            - values.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: envoy-gateway-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 2m

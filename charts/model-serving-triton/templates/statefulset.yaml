@@ -35,7 +35,8 @@ spec:
         {{- if and .Values.model.seedImage .Values.model.seedCommand }}
         - name: model-seed
           image: {{ .Values.model.seedImage }}
-          command: {{- toYaml .Values.model.seedCommand | nindent 12 }}
+          command:
+            {{- toYaml .Values.model.seedCommand | nindent 12 }}
           volumeMounts:
             - name: model-storage
               mountPath: /models

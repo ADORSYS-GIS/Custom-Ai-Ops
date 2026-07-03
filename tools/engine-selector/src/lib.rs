@@ -357,7 +357,7 @@ mod tests {
         let dir = create_temp_dir();
         let subdir = dir.path().join("model.onnx");
         fs::write(&subdir, "fake").unwrap();
-        let mut model_dir = dir.path().to_path_buf();
+        let model_dir = dir.path().to_path_buf();
         let result = detect_format(model_dir.to_str().unwrap()).unwrap();
         assert_eq!(result, ModelFormat::Onnx);
     }
