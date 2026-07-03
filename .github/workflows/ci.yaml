@@ -103,19 +103,37 @@ jobs:
           python3 -c "
           import yaml, subprocess, sys
           reg = yaml.safe_load(open('models/registry.yaml'))
+          failures = 0
           for m in reg.get('models', []):
-              if m.get('status') in ('LIVE', 'STAGED'):
-                  result = subprocess.run(
-                      ['./target/release/vram-budget-calc',
-                       '-V', str(m['vram_budget_gb']),
-                       '--model-size', '4.7',
-                       '--quant', m.get('quantisation', 'fp16'),
-                       '--gpu', m.get('gpu_pool', 'unknown'),
-                       '--json'],
-                      capture_output=True
-                  )
-                  if result.returncode != 0:
-                      print(f'FAIL: {m[\"name\"]} — VRAM budget exceeded', file=sys.stderr)
-                      sys.exit(1)
-                  print(f'OK: {m[\"name\"]}')
+              status = m.get('status')
+              if status not in ('LIVE', 'STAGED'):
+                  continue
+              required = ['vramBudgetGB', 'modelSizeGB', 'quantisation', 'gpu']
+              missing = [k for k in required if k not in m]
+              if missing:
+                  print(f'FAIL: {m.get(\"name\", \"?\")} — missing registry keys: {missing}', file=sys.stderr)
+                  failures += 1
+                  continue
+              cmd = [
+                  './target/release/vram-budget-calc',
+                  '--total-vram', str(m['vramBudgetGB']),
+                  '--model-size', str(m['modelSizeGB']),
+                  '--quant', m['quantisation'],
+                  '--gpu', m['gpu'],
+                  '--context', str(m.get('contextLength', 4096)),
+                  '--layers', str(m.get('layers', 0)),
+                  '--heads', str(m.get('heads', 0)),
+                  '--json',
+              ]
+              result = subprocess.run(cmd, capture_output=True, text=True)
+              if result.returncode != 0:
+                  print(f'FAIL: {m[\"name\"]} [{m[\"quantisation\"]} on {m[\"gpu\"]}, {m[\"vramBudgetGB\"]}GB] — VRAM budget exceeded')
+                  print(result.stderr or result.stdout, file=sys.stderr)
+                  failures += 1
+                  continue
+              import json
+              budget = json.loads(result.stdout)
+              print(f'OK: {m[\"name\"]} [{m[\"quantisation\"]} on {m[\"gpu\"]}] — remaining {budget[\"remaining_gb\"]:.2f} GB ({budget[\"gpu_arch\"]})')
+          if failures:
+              sys.exit(1)
           "

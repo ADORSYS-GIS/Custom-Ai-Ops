@@ -6,7 +6,11 @@ models:
     status: LIVE
     vramBudgetGB: 8.0
     gpuPool: gpu-edge-pool
+    gpu: "RTX A2000"
+    modelSizeGB: 4.7
     contextLength: 8192
+    layers: 32
+    heads: 32
     quantisation: q4_km
     gatewayBackend: llama3-8b-local
     notes: "Primary self-hosted model on RTX A2000 edge cluster"
@@ -16,12 +20,16 @@ models:
     engine: vllm
     chart: model-serving-vllm
     status: STAGED
-    vramBudgetGB: 16.0
+    vramBudgetGB: 40.0
     gpuPool: gpu-a100-pool
+    gpu: "A100"
+    modelSizeGB: 14.0
     contextLength: 32768
+    layers: 32
+    heads: 32
     quantisation: bf16
     gatewayBackend: mistral-7b-local
-    notes: "Staged for A100 deployment, awaiting quota"
+    notes: "Staged for A100 (40 GB) deployment, awaiting quota"
 
   - name: phi-3-mini-instruct
     format: onnx
@@ -30,19 +38,27 @@ models:
     status: LIVE
     vramBudgetGB: 4.0
     gpuPool: gpu-l4-pool
+    gpu: "L4"
+    modelSizeGB: 2.2
     contextLength: 4096
+    layers: 32
+    heads: 32
     quantisation: int4
     gatewayBackend: phi3-mini-local
     notes: "Lightweight model for L4 GPU pool"
 
-  - name: llama-3-70b-instruct
+- name: llama-3-70b-instruct
     format: safetensors
     engine: vllm
     chart: model-serving-vllm
     status: STANDBY
     vramBudgetGB: 80.0
     gpuPool: gpu-h100-pool
+    gpu: "H100"
+    modelSizeGB: 140.0
     contextLength: 8192
+    layers: 80
+    heads: 64
     quantisation: fp16
-    gatewayBackend: llama3-70b-local
+    gatewayBackend: llama-3-70b-local
     notes: "Large model on standby, requires H100 with tensor parallelism"
