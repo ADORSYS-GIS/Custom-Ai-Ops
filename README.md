@@ -193,18 +193,18 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (SDK / curl)
-    participant GW as Envoy AI Gateway
-    participant CB as Circuit Breaker (Prioritized)
-    participant V as vLLM :8000
-    participant O as ONNX RT GenAI :8080
-    participant S as /models/&lt;name&gt;/ (RWX PVC via Longhorn)
+    participant C as "Client (SDK / curl)"
+    participant GW as "Envoy AI Gateway"
+    participant CB as "Circuit Breaker (Prioritized)"
+    participant V as "vLLM port 8000"
+    participant O as "ONNX RT GenAI port 8080"
+    participant S as "models PVC (RWX via Longhorn)"
 
-    C->>GW: POST /v1/chat/completions<br/>Authorization: Bearer &lt;key&gt;
-    GW->>CB: HTTPRoute → BackendTrafficPolicy
-    CB->>CB: priority 0 → 1, retry 502/503/504
+    C->>GW: POST /v1/chat/completions<br/>Authorization: Bearer key
+    GW->>CB: HTTPRoute to BackendTrafficPolicy
+    CB->>CB: priority 0 to 1, retry 502/503/504
     CB->>CB: Health Check GET /health (10s interval)
-    CB->>CB: Failover if latency > 2000ms → priority 1 (SaaS fallback)
+    CB->>CB: Failover if latency gt 2000ms, priority 1 (SaaS fallback)
 
     alt Safetensors model
         CB->>V: route to vLLM
@@ -216,7 +216,7 @@ sequenceDiagram
         O-->>GW: SSE stream
     end
 
-    GW-->>C: SSE stream { "choices": [...] }
+    GW-->>C: SSE stream choices
 ```
 
 ---
@@ -432,6 +432,7 @@ ONNX -->|"Yes"| ONNXRT["ONNX Runtime GenAI<br/>confidence: 0.95<br/>chart: model
     ST -->|"Yes"| VLLM1["vLLM<br/>confidence: 0.96<br/>chart: model-serving-engine (vllm)"]
     ST -->|"No"| AWQ{"AWQ quantized?"}
     AWQ -->|"Yes"| VLLM2["vLLM<br/>confidence: 0.94<br/>chart: model-serving-engine (vllm)"]
+    AWQ -->|"No"| GPTQ{"GPTQ quantized?"}
     GPTQ -->|"Yes"| VLLM3["vLLM<br/>confidence: 0.93<br/>chart: model-serving-engine (vllm)"]
     GPTQ -->|"No"| UNSUPPORTED["Unsupported format<br/>(convert to Safetensors/ONNX/AWQ/GPTQ)"]
 ```
