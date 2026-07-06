@@ -22,13 +22,23 @@ engine:
       - "4096"
       - --gpu-memory-utilization
       - "0.90"
+      - --max-num-seqs
+      - "128"
+      - --kv-cache-dtype
+      - fp8
+      - --enable-prefix-caching
+      - --block-size
+      - "16"
     resources:
+      # QoS Guaranteed: requests MUST equal limits for ALL resources (CPU, memory, GPU).
       limits:
         nvidia.com/gpu: 1
+        cpu: "4"
         memory: 32Gi
       requests:
+        nvidia.com/gpu: 1
         cpu: "4"
-        memory: 16Gi
+        memory: 32Gi
     livenessProbe:
       httpGet:
         path: /health
@@ -57,12 +67,15 @@ engine:
       - --port
       - "8080"
     resources:
+      # QoS Guaranteed: requests == limits for all resources.
       limits:
         nvidia.com/gpu: 1
+        cpu: "4"
         memory: 16Gi
       requests:
+        nvidia.com/gpu: 1
         cpu: "4"
-        memory: 8Gi
+        memory: 16Gi
     livenessProbe:
       httpGet:
         path: /health
@@ -123,6 +136,18 @@ service:
   port: 80
   targetPort: 8000
 
+# --- Layer 4: Observability — Prometheus scrape ---
+# vLLM exposes /metrics with vllm:gpu_cache_usage_perc, vllm:num_requests_waiting,
+# vllm:swap_out_blocks, vllm:gpu_prefix_cache_hits_total, etc.
+# Scrape interval 5-10s as recommended by the KV cache management doc.
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 10s          # 5-10s recommended; lower = faster alert reaction
+  scrapeTimeout: 5s
+  releaseLabel: prometheus   # must match the Prometheus Operator release label
+  relabelings: []
+
 ingress:
   enabled: false
   className: ""
@@ -136,6 +161,16 @@ autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 4
+  # KEDA autoscaling on vLLM-specific metrics (recommended for LLM inference).
+  # Classic CPU/RAM HPA is inoperant for GPU-bound LLM workloads.
+  keda:
+    enabled: false
+    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+    pollingInterval: 15
+    cooldownPeriod: 60
+    queueDepthThreshold: "5"       # vllm:num_requests_waiting > 5 → scale out
+    cacheUsageThreshold: "0.85"    # vllm:gpu_cache_usage_perc > 0.85 → scale out
+  # Legacy HPA fallback (NOT recommended — kept for environments without KEDA)
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
 
@@ -147,7 +182,15 @@ networkPolicy:
   enabled: true
   ingressFrom: []
 
-nodeSelector: {}
+nodeSelector:
+  # Isolate vLLM pods on GPU-only nodes to prevent interference with
+  # CPU-only workloads. This label should be applied to all GPU nodes.
+  nvidia.com/gpu.present: "true"
+
+# Disable swap on GPU nodes via a DaemonSet (swapoff -a).
+# Critical for KV cache stability: if the host swaps KV cache pages to
+# CPU RAM, inference latency spikes by 10-100x.
+gpuNodeSwapoff: true
 
 tolerations:
   - key: nvidia.com/gpu

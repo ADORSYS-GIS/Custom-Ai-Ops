@@ -45,4 +45,23 @@ spec:
     backoff: 500ms
     perRetry:
       timeout: 5s
+  # --- Rate limiting & load shedding (Layer 1: API Gateway) ---
+  # Protects the vLLM KV cache from request floods. Requests exceeding
+  # the per-second limit receive HTTP 429 and are shed at the edge.
+  rateLimit:
+    type: Global
+    rules:
+      - clientSelectors:
+          - headers:
+              - type: Distinct
+                name: x-api-key
+        limit:
+          requests: {{ .Values.rateLimit.requestsPerSecond }}
+          unit: Second
+  # Aggressive timeout: queue time should not exceed ~10s.
+  # Requests waiting longer are dropped to prevent KV cache thrashing.
+  timeout:
+    http:
+      request: {{ .Values.rateLimit.requestTimeout }}
+      backendRequest: {{ .Values.rateLimit.backendRequestTimeout }}
 {{- end }}

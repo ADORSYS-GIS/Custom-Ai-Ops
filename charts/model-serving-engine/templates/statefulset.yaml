@@ -51,8 +51,10 @@ spec:
         - name: {{ .Chart.Name }}
           {{- $img := (include "model-serving-engine.engineImage" . | fromJson) }}
           {{- $command := (include "model-serving-engine.engineCommand" . | fromJson) }}
-          {{- $args := (include "model-serving-engine.engineArgs" . | fromJson) }}
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
+          {{- $engineType := .Values.engine.type }}
+          {{- $args := list }}
+          {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- else if eq $engineType "onnxGenai" }}{{- $args = .Values.engine.onnxGenai.args }}{{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"

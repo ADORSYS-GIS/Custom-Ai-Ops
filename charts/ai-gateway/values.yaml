@@ -48,5 +48,23 @@ latency:
     priorityZeroMaxConnections: 100
     priorityOneMaxConnections: 200
 
+# --- Layer 1: API Gateway rate limiting & load shedding ---
+# Protects the vLLM KV cache from request floods. Excess requests
+# receive HTTP 429 and are shed at the edge before reaching the engine.
+rateLimit:
+  requestsPerSecond: 50          # per API key; tune per environment
+  requestTimeout: 10s            # max queue time before 429/timeout
+  backendRequestTimeout: 8s      # max time for backend to respond
+
+# --- Payload validation (Layer 1) ---
+# Rejects oversized payloads (HTTP 413) and invalid request bodies (HTTP 400)
+# before they reach vLLM. Prevents KV cache pollution from malformed requests.
+payloadValidation:
+  maxBodySize: 4MiB              # reject bodies larger than 4 MiB (413)
+  requiredFields:
+    - model
+    - messages
+  maxMessages: 100               # reject requests with >100 messages (413)
+
 commonLabels: {}
 commonAnnotations: {}

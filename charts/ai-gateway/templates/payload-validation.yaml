@@ -1,0 +1,57 @@
+{{- if and .Values.gateway .Values.payloadValidation }}
+{{- if .Values.payloadValidation.enabled | default true }}
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}-validation
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: https
+  hostnames:
+    - {{ .Values.gateway.hostname }}
+  rules:
+    # Reject oversized payloads (HTTP 413) before they reach vLLM.
+    # Large request bodies waste KV cache slots and can cause OOM.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: x-max-body-size
+                value: {{ .Values.payloadValidation.maxBodySize | quote }}
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: {{ include "ai-gateway.fullname" . }}-body-size-limit
+      backendRefs:
+        - name: {{ include "ai-gateway.fullname" . }}-blackhole
+          port: 80
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: HTTPRouteFilter
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}-body-size-limit
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # Envoy body size validation: rejects requests exceeding maxBodySize
+  # with HTTP 413 before forwarding to vLLM.
+  validation:
+    request:
+      maxBodySize: {{ .Values.payloadValidation.maxBodySize | quote }}
+{{- end }}
+{{- end }}

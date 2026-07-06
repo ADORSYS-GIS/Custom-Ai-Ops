@@ -1,163 +1,163 @@
-# Guide Complet : Gestion du Cache KV en Production sur Infrastructure IA
+# Complete Guide: KV Cache Management in Production on AI Infrastructure
 
-> Architecture, fonctionnement interne, précautions défensives et pipeline complet pour le service de modèles de langage à l'échelle (vLLM / Kubernetes)
-
----
-
-## Table des matières
-
-1. [Fonctionnement fondamental du cache KV](#1-fonctionnement-fondamental-du-cache-kv)
-2. [PagedAttention : la solution de vLLM](#2-pagedattention--la-solution-de-vllm)
-3. [Anatomie de la pipeline complète](#3-anatomie-de-la-pipeline-complète)
-4. [Couche 1 — La passerelle API (Gateway)](#4-couche-1--la-passerelle-api-gateway)
-5. [Couche 2 — Le moteur d'inférence (vLLM)](#5-couche-2--le-moteur-dinférence-vllm)
-6. [Couche 3 — L'orchestration Kubernetes](#6-couche-3--lorchestration-kubernetes)
-7. [Couche 4 — Observabilité et alerting](#7-couche-4--observabilité-et-alerting)
-8. [Couche 5 — Autoscaling piloté par métriques](#8-couche-5--autoscaling-piloté-par-métriques)
-9. [Couche 6 — GitOps et Infrastructure as Code](#9-couche-6--gitops-et-infrastructure-as-code)
-10. [Anticiper les incidents : cartographie des risques](#10-anticiper-les-incidents--cartographie-des-risques)
-11. [Checklist de mise en production](#11-checklist-de-mise-en-production)
-12. [Annexe : tableau récapitulatif des paramètres](#12-annexe--tableau-récapitulatif-des-paramètres)
+> Architecture, internal mechanics, defensive precautions, and complete pipeline for serving language models at scale (vLLM / Kubernetes)
 
 ---
 
-## 1. Fonctionnement fondamental du cache KV
+## Table of Contents
 
-### 1.1 Le problème que résout le cache
+1. [Fundamental Operation of the KV Cache](#1-fundamental-operation-of-the-kv-cache)
+2. [PagedAttention: vLLM's Solution](#2-pagedattention-vllms-solution)
+3. [Anatomy of the Complete Pipeline](#3-anatomy-of-the-complete-pipeline)
+4. [Layer 1 — The API Gateway](#4-layer-1--the-api-gateway)
+5. [Layer 2 — The Inference Engine (vLLM)](#5-layer-2--the-inference-engine-vllm)
+6. [Layer 3 — Kubernetes Orchestration](#6-layer-3--kubernetes-orchestration)
+7. [Layer 4 — Observability and Alerting](#7-layer-4--observability-and-alerting)
+8. [Layer 5 — Metrics-Driven Autoscaling](#8-layer-5--metrics-driven-autoscaling)
+9. [Layer 6 — GitOps and Infrastructure as Code](#9-layer-6--gitops-and-infrastructure-as-code)
+10. [Anticipating Incidents: Risk Mapping](#10-anticipating-incidents-risk-mapping)
+11. [Production Readiness Checklist](#11-production-readiness-checklist)
+12. [Appendix: Parameter Summary Table](#12-appendix-parameter-summary-table)
 
-Les modèles Transformer (Llama, Qwen, DeepSeek, Mistral...) génèrent le texte de façon **autorégressive** : un token à la fois, chaque nouveau token dépendant de tous les précédents via le mécanisme de **Self-Attention**.
+---
 
-Sans optimisation, chaque nouvelle prédiction obligerait à recalculer les projections **Key (K)** et **Value (V)** de *toute* la séquence déjà générée. Le coût de calcul croît alors de façon quadratique : $\mathcal{O}(N^2)$.
+## 1. Fundamental Operation of the KV Cache
 
-Le cache KV résout ce problème en conservant en VRAM les tenseurs K et V déjà calculés. À l'étape $N$, seul le token courant est traité ; le reste est lu directement depuis la mémoire. La complexité redevient linéaire : $\mathcal{O}(N)$.
+### 1.1 The Problem the Cache Solves
+
+Transformer models (Llama, Qwen, DeepSeek, Mistral...) generate text in an **autoregressive** fashion: one token at a time, with each new token depending on all previous ones via the **Self-Attention** mechanism.
+
+Without optimization, each new prediction would require recomputing the **Key (K)** and **Value (V)** projections for the *entire* sequence already generated. The computational cost then grows quadratically: $\mathcal{O}(N^2)$.
+
+The KV cache solves this problem by retaining the already-computed K and V tensors in VRAM. At step $N$, only the current token is processed; the rest is read directly from memory. The complexity returns to linear: $\mathcal{O}(N)$.
 
 ```mermaid
 flowchart LR
-    subgraph "Sans cache KV"
-        A1["Token 1"] --> B1["Recalcule K,V\npour 1 token"]
-        A2["Token 2"] --> B2["Recalcule K,V\npour 2 tokens"]
-        A3["Token 3"] --> B3["Recalcule K,V\npour 3 tokens"]
-        A4["..."] --> B4["O(N²) — coût explosif"]
+    subgraph "Without KV Cache"
+        A1["Token 1"] --> B1["Recompute K,V\nfor 1 token"]
+        A2["Token 2"] --> B2["Recompute K,V\nfor 2 tokens"]
+        A3["Token 3"] --> B3["Recompute K,V\nfor 3 tokens"]
+        A4["..."] --> B4["O(N²) — explosive cost"]
     end
 ```
 
 ```mermaid
 flowchart LR
-    subgraph "Avec cache KV"
-        C1["Token 1"] --> D1["Calcule K,V(1)\n→ écrit en cache"]
-        C2["Token 2"] --> D2["Calcule K,V(2) seul\n→ lit cache(1)"]
-        C3["Token 3"] --> D3["Calcule K,V(3) seul\n→ lit cache(1,2)"]
-        C4["..."] --> D4["O(N) — linéaire"]
+    subgraph "With KV Cache"
+        C1["Token 1"] --> D1["Compute K,V(1)\n→ write to cache"]
+        C2["Token 2"] --> D2["Compute K,V(2) only\n→ read cache(1)"]
+        C3["Token 3"] --> D3["Compute K,V(3) only\n→ read cache(1,2)"]
+        C4["..."] --> D4["O(N) — linear"]
     end
 ```
 
-### 1.2 Le coût caché : la VRAM
+### 1.2 The Hidden Cost: VRAM
 
-Le gain en calcul se paie en mémoire. Pour un modèle comme Llama-3-70B, chaque token de contexte peut représenter plusieurs mégaoctets de cache KV une fois multiplié par le nombre de couches et de têtes d'attention. Avec des centaines de requêtes concurrentes et des contextes de plusieurs milliers de tokens, la VRAM devient **la ressource la plus critique et la plus coûteuse de toute l'infrastructure** — bien avant le calcul brut (FLOPs).
+The computational gain is paid for in memory. For a model like Llama-3-70B, each context token can represent several megabytes of KV cache once multiplied by the number of layers and attention heads. With hundreds of concurrent requests and contexts of several thousand tokens, VRAM becomes **the most critical and most expensive resource in the entire infrastructure** — well ahead of raw compute (FLOPs).
 
 ---
 
-## 2. PagedAttention : la solution de vLLM
+## 2. PagedAttention: vLLM's Solution
 
-### 2.1 Le problème de l'allocation statique
+### 2.1 The Problem with Static Allocation
 
-Avant vLLM, les moteurs d'inférence (ex. anciennes versions de HuggingFace Transformers) allouaient un bloc de mémoire **contigu** et de **taille maximale** pour chaque requête, dès le début — car on ne connaît pas à l'avance la longueur de la réponse. Résultat : jusqu'à **80 % de la VRAM allouée était gaspillée** (fragmentation interne et externe).
+Before vLLM, inference engines (e.g., older versions of HuggingFace Transformers) allocated a **contiguous** block of **maximum size** for each request, from the start — because the response length is not known in advance. Result: up to **80% of allocated VRAM was wasted** (internal and external fragmentation).
 
-### 2.2 Le principe : la pagination façon OS
+### 2.2 The Principle: OS-Style Paging
 
-vLLM applique à la VRAM la même logique qu'un système d'exploitation applique à la RAM avec la mémoire virtuelle paginée :
+vLLM applies to VRAM the same logic that an operating system applies to RAM with paged virtual memory:
 
-- Le cache KV est découpé en **petits blocs non contigus** (16 ou 32 tokens par bloc en général).
-- Chaque séquence dispose d'une **table de pages** qui référence ses blocs, où qu'ils soient physiquement en VRAM.
-- Les blocs sont alloués **à la demande**, au fur et à mesure de la génération — jamais par anticipation sur toute la longueur maximale.
+- The KV cache is divided into **small non-contiguous blocks** (typically 16 or 32 tokens per block).
+- Each sequence has a **page table** that references its blocks, wherever they are physically located in VRAM.
+- Blocks are allocated **on demand**, as generation progresses — never speculatively for the entire maximum length.
 
 ```mermaid
 flowchart TB
-    subgraph VRAM["Pool de blocs VRAM (PagedAttention)"]
+    subgraph VRAM["VRAM Block Pool (PagedAttention)"]
         direction LR
-        BLK1["Bloc #1\n(16 tokens)"]
-        BLK2["Bloc #2\n(16 tokens)"]
-        BLK3["Bloc #3\n(16 tokens)"]
-        BLK4["Bloc #4\nlibre"]
-        BLK5["Bloc #5\nlibre"]
+        BLK1["Block #1\n(16 tokens)"]
+        BLK2["Block #2\n(16 tokens)"]
+        BLK3["Block #3\n(16 tokens)"]
+        BLK4["Block #4\nfree"]
+        BLK5["Block #5\nfree"]
     end
 
-    SEQ_A["Séquence A\nTable de pages: [1, 3]"] --> BLK1
+    SEQ_A["Sequence A\nPage table: [1, 3]"] --> BLK1
     SEQ_A --> BLK3
-    SEQ_B["Séquence B\nTable de pages: [2]"] --> BLK2
+    SEQ_B["Sequence B\nPage table: [2]"] --> BLK2
 
     style BLK4 fill:#eee,stroke:#999
     style BLK5 fill:#eee,stroke:#999
 ```
 
-**Bénéfice mesuré :** le gaspillage mémoire tombe de ~80 % à **moins de 4 %**. Cette VRAM libérée permet de traiter des batchs beaucoup plus larges simultanément, donc un débit global bien supérieur sur le même matériel.
+**Measured benefit:** memory waste drops from ~80% to **less than 4%**. This freed VRAM allows processing much larger batches simultaneously, resulting in significantly higher overall throughput on the same hardware.
 
-### 2.3 Fonctionnalités qui en découlent
+### 2.3 Features That Follow
 
-| Fonctionnalité | Description | Bénéfice |
+| Feature | Description | Benefit |
 |---|---|---|
-| **Automatic Prefix Caching (APC)** | Réutilise les blocs déjà calculés pour un préfixe commun (prompt système, document RAG partagé) | Évite de recalculer le même contexte pour chaque utilisateur |
-| **Copy-on-Write** | Les séquences issues d'un même prompt (ex. sampling parallèle) partagent les blocs jusqu'à divergence | Réduit la duplication mémoire |
-| **Swapping CPU** | En cas de saturation VRAM, décharge des blocs entiers vers la RAM CPU | Évite un crash OOM brutal, au prix de latence |
+| **Automatic Prefix Caching (APC)** | Reuses already-computed blocks for a common prefix (system prompt, shared RAG document) | Avoids recomputing the same context for each user |
+| **Copy-on-Write** | Sequences derived from the same prompt (e.g., parallel sampling) share blocks until they diverge | Reduces memory duplication |
+| **CPU Swapping** | On VRAM saturation, offloads entire blocks to CPU RAM | Prevents a brutal OOM crash, at the cost of latency |
 
 ---
 
-## 3. Anatomie de la pipeline complète
+## 3. Anatomy of the Complete Pipeline
 
-Une gestion « zéro erreur » du cache KV ne se joue pas uniquement dans vLLM : elle se construit **par couches**, de l'entrée réseau jusqu'au déploiement GitOps. Une seule couche mal configurée peut provoquer un effet cascade (une requête → saturation VRAM → crash OOM → bascule du trafic → crash des nœuds voisins).
+A "zero-error" KV cache management strategy does not play out solely within vLLM: it is built **in layers**, from the network entry point to the GitOps deployment. A single misconfigured layer can trigger a cascade effect (one request → VRAM saturation → OOM crash → traffic failover → neighboring nodes crash).
 
 ```mermaid
 flowchart TB
-    U["Utilisateur / Client"] --> GW
+    U["User / Client"] --> GW
 
-    subgraph L1["Couche 1 — Passerelle API"]
-        GW["API Gateway / Ingress\nValidation payload, Rate Limiting,\nRoutage par affinité"]
+    subgraph L1["Layer 1 — API Gateway"]
+        GW["API Gateway / Ingress\nPayload Validation, Rate Limiting,\nAffinity Routing"]
     end
 
     GW --> K8S
 
-    subgraph L2["Couche 2 — Orchestration Kubernetes"]
-        K8S["Pods vLLM\nQoS Guaranteed, nodeSelectors,\nisolation matérielle"]
+    subgraph L2["Layer 2 — Kubernetes Orchestration"]
+        K8S["vLLM Pods\nQoS Guaranteed, nodeSelectors,\nHardware Isolation"]
     end
 
     K8S --> VLLM
 
-    subgraph L3["Couche 3 — Moteur vLLM"]
+    subgraph L3["Layer 3 — vLLM Engine"]
         VLLM["PagedAttention\ngpu-memory-utilization\nmax-model-len, max-num-seqs\nkv-cache-dtype"]
     end
 
-    VLLM --> GPU["VRAM GPU\n(Pool de blocs KV)"]
+    VLLM --> GPU["GPU VRAM\n(KV Block Pool)"]
 
-    VLLM -.métriques.-> PROM["Prometheus"]
+    VLLM -.metrics.-> PROM["Prometheus"]
     PROM --> GRAF["Grafana\n(Dashboards)"]
     PROM --> KEDA["KEDA\n(Autoscaling)"]
-    PROM --> ALERT["Alertmanager\n(Alertes)"]
+    PROM --> ALERT["Alertmanager\n(Alerts)"]
     KEDA -.scale.-> K8S
-    ALERT -.notifie.-> GW
+    ALERT -.notify.-> GW
 
     GIT["Git (Helm values.yaml)"] --> ARGO["ArgoCD"]
     ARGO -.sync.-> K8S
 ```
 
-Chaque couche a un rôle précis : **filtrer en amont, isoler pendant l'exécution, mesurer en continu, réagir automatiquement, et déployer de façon reproductible.**
+Each layer has a precise role: **filter upstream, isolate during execution, measure continuously, react automatically, and deploy reproducibly.**
 
 ---
 
-## 4. Couche 1 — La passerelle API (Gateway)
+## 4. Layer 1 — The API Gateway
 
-C'est le premier bouclier. Une requête qui passe cette étape sans contrôle impacte directement la VRAM du GPU.
+This is the first shield. A request that passes this step uncontrolled directly impacts the GPU's VRAM.
 
-### Limites inhérentes
+### Inherent Limitations
 
-- **Taille de sortie imprévisible** : on contrôle la taille du prompt (input), jamais la longueur exacte de la réponse générée. Le cache KV grossit pourtant à chaque token produit.
-- **Redondance des contextes** : si 100 utilisateurs envoient le même prompt système ou le même document RAG, le cache KV est recalculé 100 fois par défaut.
+- **Unpredictable output size**: you control the prompt size (input), but never the exact length of the generated response. The KV cache grows with every token produced.
+- **Context redundancy**: if 100 users send the same system prompt or the same RAG document, the KV cache is recomputed 100 times by default.
 
-### Précautions à appliquer
+### Precautions to Apply
 
-- **Validation stricte des payloads** : rejeter en amont (HTTP 400/413) tout prompt dépassant une taille définie, avant même que la requête n'atteigne vLLM.
-- **Routage par affinité (sticky routing)** : envoyer les requêtes partageant un même préfixe (même prompt système, même utilisateur/session) vers le **même pod**, afin de maximiser le taux de réussite du Prefix Caching local.
-- **Rate limiting et load shedding** : renvoyer un code HTTP 429 plutôt que de laisser la file d'attente de vLLM s'engorger.
-- **Timeouts agressifs** : annuler une requête en file d'attente au-delà d'un seuil (ex. 10 s) — l'utilisateur a probablement déjà abandonné, inutile de consommer du cache pour rien.
+- **Strict payload validation**: reject upstream (HTTP 400/413) any prompt exceeding a defined size, before the request even reaches vLLM.
+- **Sticky routing (affinity routing)**: send requests sharing a common prefix (same system prompt, same user/session) to the **same pod**, to maximize the local Prefix Caching hit rate.
+- **Rate limiting and load shedding**: return an HTTP 429 code rather than letting vLLM's request queue back up.
+- **Aggressive timeouts**: cancel a queued request beyond a threshold (e.g., 10 s) — the user has likely already given up; no point consuming cache for nothing.
 
 ```mermaid
 sequenceDiagram
@@ -165,192 +165,192 @@ sequenceDiagram
     participant GW as API Gateway
     participant V as vLLM Pod
 
-    C->>GW: Requête (prompt)
-    alt Prompt trop long
-        GW-->>C: HTTP 413 (rejeté)
-    else Cluster saturé
+    C->>GW: Request (prompt)
+    alt Prompt too long
+        GW-->>C: HTTP 413 (rejected)
+    else Cluster saturated
         GW-->>C: HTTP 429 (load shedding)
-    else Requête valide
-        GW->>V: Route vers pod (affinité de préfixe)
-        V-->>GW: Réponse générée
-        GW-->>C: Réponse finale
+    else Valid request
+        GW->>V: Route to pod (prefix affinity)
+        V-->>GW: Generated response
+        GW-->>C: Final response
     end
 ```
 
 ---
 
-## 5. Couche 2 — Le moteur d'inférence (vLLM)
+## 5. Layer 2 — The Inference Engine (vLLM)
 
-C'est ici que les réglages fins font la différence entre un système résilient et un système fragile.
+This is where fine-tuning makes the difference between a resilient system and a fragile one.
 
-### Limite structurelle
+### Structural Limitation
 
-Le paramètre `gpu_memory_utilization` réserve une taille **fixe** de VRAM pour le cache dès le démarrage. Trop gourmand → le contexte CUDA interne plante. Pas assez → le débit de requêtes concurrentes (batching) est artificiellement limité.
+The `gpu_memory_utilization` parameter reserves a **fixed** amount of VRAM for the cache at startup. Too greedy → the internal CUDA context crashes. Too little → the concurrent request throughput (batching) is artificially limited.
 
-### Précautions et réglages recommandés
+### Recommended Precautions and Settings
 
-| Paramètre | Valeur recommandée (production) | Rôle |
+| Parameter | Recommended Value (Production) | Role |
 |---|---|---|
-| `--gpu-memory-utilization` | `0.85` – `0.90` | Réserve une marge de sécurité pour le contexte CUDA et les pics d'attention |
-| `--max-model-len` | Aligné sur le besoin métier réel (ex. `4096` ou `8192`, pas 32k par défaut) | Empêche une seule requête hors norme de vider tout le pool de blocs |
-| `--max-num-seqs` | `128`–`256` selon les tests de charge | Plafonne la concurrence pour éviter le swap CPU en cascade |
-| `--kv-cache-dtype` | `fp8` ou `int8` (au lieu de `fp16`) | Divise par deux l'empreinte mémoire du cache, perte de précision négligeable |
-| `--enable-prefix-caching` | activé | Réutilise les blocs pour les préfixes partagés (prompt système, RAG) |
-| `block_size` | `16` (standard) | Granularité des pages ; plus petit = moins de fragmentation, plus de surcharge de table |
-| `tensor_parallel_size` | selon le nombre de GPU NVLink | Distribue poids + cache KV sur plusieurs GPU pour les modèles volumineux (DeepSeek, Qwen) |
+| `--gpu-memory-utilization` | `0.85` – `0.90` | Reserves a safety margin for the CUDA context and attention spikes |
+| `--max-model-len` | Aligned to actual business need (e.g., `4096` or `8192`, not 32k by default) | Prevents a single oversized request from draining the entire block pool |
+| `--max-num-seqs` | `128`–`256` depending on load tests | Caps concurrency to avoid cascading CPU swap |
+| `--kv-cache-dtype` | `fp8` or `int8` (instead of `fp16`) | Halves the cache memory footprint with negligible precision loss |
+| `--enable-prefix-caching` | enabled | Reuses blocks for shared prefixes (system prompt, RAG) |
+| `block_size` | `16` (standard) | Page granularity; smaller = less fragmentation, more table overhead |
+| `tensor_parallel_size` | depends on NVLink GPU count | Distributes weights + KV cache across multiple GPUs for large models (DeepSeek, Qwen) |
 
-> **Piège n°1 le plus fréquent** : laisser `max-model-len` à sa valeur maximale par défaut du modèle. Le cache KV croît linéairement avec la taille du contexte — un seul prompt mal formé peut consommer tout le pool.
+> **Most common pitfall #1**: leaving `max-model-len` at the model's default maximum. The KV cache grows linearly with context size — a single malformed prompt can consume the entire pool.
 
 ---
 
-## 6. Couche 3 — L'orchestration Kubernetes
+## 6. Layer 3 — Kubernetes Orchestration
 
-L'objectif : isoler complètement l'environnement d'exécution de vLLM pour qu'aucun élément externe ne vienne perturber la VRAM allouée.
+The objective: completely isolate vLLM's execution environment so that no external element disrupts the allocated VRAM.
 
-### Limites inhérentes
+### Inherent Limitations
 
-- **L'autoscaling classique est aveugle** : un HPA basé sur CPU/RAM standard ne voit rien, car la VRAM est allouée à ~90 % dès le démarrage, indépendamment de la charge réelle.
-- **Le swapping système en cascade** : si le cache KV déborde vers la RAM CPU, et que la RAM CPU elle-même déborde vers le disque (swap OS), la latence explose — de quelques millisecondes à plusieurs secondes par token.
+- **Classic autoscaling is blind**: a standard CPU/RAM-based HPA sees nothing, because VRAM is allocated to ~90% at startup, regardless of actual load.
+- **Cascading system swapping**: if the KV cache overflows to CPU RAM, and CPU RAM itself overflows to disk (OS swap), latency explodes — from a few milliseconds to several seconds per token.
 
-### Précautions à appliquer
+### Precautions to Apply
 
-- **QoS Guaranteed** : fixer des `requests` et `limits` CPU/RAM/GPU strictement identiques dans les manifestes, pour garantir la priorité absolue du pod et éviter qu'il soit préempté ou tué par l'OOM Killer de l'hôte.
-- **`swapoff -a`** sur tous les nœuds GPU : interdire tout swap disque au niveau OS.
-- **nodeSelectors / tolerations** : dédier des nœuds physiques à l'inférence IA, sans partage avec d'autres microservices consommant du CPU ou de la bande passante PCIe.
-- **Alignement Helm** : centraliser les paramètres critiques (`gpu-memory-utilization`, `max-num-seqs`, `max-model-len`) dans `values.yaml`, différenciés par environnement (staging/production).
+- **QoS Guaranteed**: set strictly identical CPU/RAM/GPU `requests` and `limits` in the manifests, to guarantee absolute pod priority and prevent it from being preempted or killed by the host's OOM Killer.
+- **`swapoff -a`** on all GPU nodes: forbid any disk swap at the OS level.
+- **nodeSelectors / tolerations**: dedicate physical nodes to AI inference, without sharing with other microservices consuming CPU or PCIe bandwidth.
+- **Helm alignment**: centralize critical parameters (`gpu-memory-utilization`, `max-num-seqs`, `max-model-len`) in `values.yaml`, differentiated by environment (staging/production).
 
 ```mermaid
 flowchart TB
-    subgraph Node["Nœud Kubernetes (GPU dédié)"]
+    subgraph Node["Kubernetes Node (Dedicated GPU)"]
         direction TB
-        subgraph Pod["Pod vLLM — QoS: Guaranteed"]
+        subgraph Pod["vLLM Pod — QoS: Guaranteed"]
             REQ["requests = limits\n(CPU / RAM / GPU)"]
         end
-        SWAPOFF["swapoff -a\n(aucun swap disque)"]
+        SWAPOFF["swapoff -a\n(no disk swap)"]
     end
-    Pod -->|isolé de| OTHER["Autres microservices\n(non colocalisés)"]
+    Pod -->|isolated from| OTHER["Other microservices\n(not co-located)"]
 ```
 
 ---
 
-## 7. Couche 4 — Observabilité et alerting
+## 7. Layer 4 — Observability and Alerting
 
-> **Règle d'or : ce qui n'est pas mesuré ne peut pas être sécurisé.**
+> **Golden rule: what is not measured cannot be secured.**
 
-### Limite critique
+### Critical Limitation
 
-Un crash OOM se produit en quelques millisecondes. Un monitoring qui scrute les métriques toutes les minutes verra le crash, mais ne pourra jamais l'anticiper.
+An OOM crash occurs in milliseconds. Monitoring that scrapes metrics every minute will see the crash but can never anticipate it.
 
-### Métriques clés à surveiller (exposées nativement par vLLM en Prometheus)
+### Key Metrics to Monitor (natively exposed by vLLM in Prometheus)
 
-| Métrique | Signification | Seuil d'alerte |
+| Metric | Meaning | Alert Threshold |
 |---|---|---|
-| `vllm:gpu_cache_usage_perc` | Taux de remplissage du pool de blocs KV | **Warning** > 85 % pendant 30 s · **Critique** ≥ 100 % (requêtes rejetées/en file) |
-| `vllm:num_requests_waiting` | File d'attente de requêtes bloquées faute de cache libre | **Critique** > 10 → déclencher le scaling |
-| `vllm:swap_out_blocks` / `vllm:cpu_swap_space_usage` | Volume de blocs déchargés vers la RAM CPU | **Critique** > 10 % → réduire le trafic entrant immédiatement |
+| `vllm:gpu_cache_usage_perc` | KV block pool fill ratio | **Warning** > 85% for 30 s · **Critical** ≥ 100% (requests rejected/queued) |
+| `vllm:num_requests_waiting` | Queue of requests blocked due to lack of free cache | **Critical** > 10 → trigger scaling |
+| `vllm:swap_out_blocks` / `vllm:cpu_swap_space_usage` | Volume of blocks offloaded to CPU RAM | **Critical** > 10% → reduce incoming traffic immediately |
 
-### Précautions
+### Precautions
 
-- **Scrutation haute fréquence** : interroger l'endpoint `/metrics` de vLLM toutes les 5 à 10 secondes (pas toutes les minutes).
-- **Alerting à deux niveaux** (Warning / Critique) via Alertmanager, avec notification vers l'équipe d'astreinte et déclenchement automatique du provisioning.
-- **Dashboards Grafana** centralisant : taux de cache hit, Time To First Token (TTFT), utilisation VRAM, file d'attente.
+- **High-frequency scraping**: query vLLM's `/metrics` endpoint every 5 to 10 seconds (not every minute).
+- **Two-level alerting** (Warning / Critical) via Alertmanager, with notification to the on-call team and automatic provisioning trigger.
+- **Grafana dashboards** centralizing: cache hit rate, Time To First Token (TTFT), VRAM usage, request queue depth.
 
 ```mermaid
 flowchart LR
     VLLM["vLLM /metrics"] -->|scrape 5-10s| PROM["Prometheus"]
-    PROM --> GRAF["Grafana\n(dashboards temps réel)"]
+    PROM --> GRAF["Grafana\n(real-time dashboards)"]
     PROM --> AM["Alertmanager"]
-    AM -->|"cache > 85% / 30s"| WARN["🟡 Warning\n→ provisionner un pod"]
-    AM -->|"waiting > 10\nswap > 10%"| CRIT["🔴 Critique\n→ rate limiting immédiat"]
+    AM -->|"cache > 85% / 30s"| WARN["🟡 Warning\n→ provision a pod"]
+    AM -->|"waiting > 10\nswap > 10%"| CRIT["🔴 Critical\n→ immediate rate limiting"]
 ```
 
 ---
 
-## 8. Couche 5 — Autoscaling piloté par métriques
+## 8. Layer 5 — Metrics-Driven Autoscaling
 
-L'autoscaling classique (CPU/RAM) étant inopérant pour les LLM, on utilise **KEDA (Kubernetes Event-driven Autoscaling)** branché directement sur Prometheus.
+Since classic autoscaling (CPU/RAM) is inoperable for LLMs, we use **KEDA (Kubernetes Event-driven Autoscaling)** connected directly to Prometheus.
 
-### Logique de déclenchement
+### Trigger Logic
 
-- Scaler **non pas** sur le CPU, mais sur `vllm:num_requests_waiting` (file d'attente qui grossit) ou `vllm:gpu_cache_usage_perc` (cache bloqué au-dessus de 90 % durablement).
-- Un nouveau pod est ajouté **avant** que la saturation ne provoque des rejets massifs.
+- Scale **not** on CPU, but on `vllm:num_requests_waiting` (growing queue) or `vllm:gpu_cache_usage_perc` (cache stuck above 90% persistently).
+- A new pod is added **before** saturation causes massive rejections.
 
 ```mermaid
 flowchart LR
-    PROM["Prometheus"] -->|"gpu_cache_usage_perc > 90%\npendant N secondes"| KEDA["KEDA ScaledObject"]
-    KEDA -->|scale out| NEWPOD["Nouveau Pod vLLM"]
-    NEWPOD --> GW["Gateway\n(re-équilibrage du trafic)"]
+    PROM["Prometheus"] -->|"gpu_cache_usage_perc > 90%\nfor N seconds"| KEDA["KEDA ScaledObject"]
+    KEDA -->|scale out| NEWPOD["New vLLM Pod"]
+    NEWPOD --> GW["Gateway\n(traffic rebalancing)"]
 ```
 
 ---
 
-## 9. Couche 6 — GitOps et Infrastructure as Code
+## 9. Layer 6 — GitOps and Infrastructure as Code
 
-La configuration du cache **ne doit jamais** être modifiée manuellement sur un serveur en production.
+Cache configuration must **never** be modified manually on a production server.
 
-- **Helm** : centraliser tous les arguments critiques dans `values.yaml`, versionnés par environnement.
-- **ArgoCD** : synchronisation continue depuis Git ; en cas d'anomalie après un changement de configuration, un **rollback immédiat** vers le commit précédent restaure le service sans intervention manuelle.
-- **Tests de charge obligatoires avant tout changement** de `block_size` ou de `gpu-memory-utilization`, sur un environnement de staging possédant **exactement le même matériel GPU** qu'en production (le comportement du PagedAttention varie selon l'architecture matérielle). Outils recommandés : `k6`, `Locust`, ou `benchmark_serving.py` (natif vLLM).
+- **Helm**: centralize all critical arguments in `values.yaml`, versioned per environment.
+- **ArgoCD**: continuous synchronization from Git; in case of anomaly after a configuration change, an **immediate rollback** to the previous commit restores service without manual intervention.
+- **Mandatory load tests before any change** to `block_size` or `gpu-memory-utilization`, on a staging environment with **exactly the same GPU hardware** as production (PagedAttention behavior varies by hardware architecture). Recommended tools: `k6`, `Locust`, or `benchmark_serving.py` (vLLM native).
 
 ```mermaid
 flowchart LR
-    DEV["Développeur"] -->|commit values.yaml| GIT["Dépôt Git"]
+    DEV["Developer"] -->|commit values.yaml| GIT["Git Repository"]
     GIT --> ARGO["ArgoCD"]
-    ARGO -->|sync| PROD["Cluster Production"]
-    PROD -.anomalie détectée.-> ARGO
-    ARGO -->|rollback auto| GIT
+    ARGO -->|sync| PROD["Production Cluster"]
+    PROD -.anomaly detected.-> ARGO
+    ARGO -->|auto rollback| GIT
 ```
 
 ---
 
-## 10. Anticiper les incidents : cartographie des risques
+## 10. Anticipating Incidents: Risk Mapping
 
-| Risque | Cause racine | Signal précurseur | Action préventive |
+| Risk | Root Cause | Early Warning Signal | Preventive Action |
 |---|---|---|---|
-| Crash OOM GPU | `gpu-memory-utilization` trop agressif ou `max-model-len` non plafonné | `gpu_cache_usage_perc` proche de 100 % | Plafonner `max-model-len`, garder 10-15 % de marge VRAM |
-| Effondrement de la latence | Swap CPU → swap disque en cascade | `swap_out_blocks` en hausse continue | `swapoff -a`, alerte dès que le swap CPU dépasse 10 % |
-| Effet domino inter-nœuds | Un nœud crashé bascule son trafic sur les voisins, qui saturent à leur tour | Pic simultané de `num_requests_waiting` sur plusieurs pods | Load shedding (429) en amont + QoS Guaranteed |
-| Pod tué par l'hôte | `requests` ≠ `limits` (QoS Burstable/BestEffort) | Redémarrages fréquents du pod vLLM | Aligner strictement requests = limits |
-| File d'attente illimitée | Pas de rate limiting à la Gateway | `num_requests_waiting` croît sans redescendre | Rate limiting dynamique + timeout agressif |
-| Cache gaspillé sur contextes redondants | Pas de routage par affinité | Faible taux de hit du Prefix Caching | Sticky routing par préfixe/utilisateur |
+| GPU OOM crash | `gpu-memory-utilization` too aggressive or `max-model-len` uncapped | `gpu_cache_usage_perc` near 100% | Cap `max-model-len`, keep 10-15% VRAM margin |
+| Latency collapse | CPU swap → cascading disk swap | `swap_out_blocks` rising continuously | `swapoff -a`, alert as soon as CPU swap exceeds 10% |
+| Domino effect across nodes | A crashed node fails traffic over to neighbors, which saturate in turn | Simultaneous spike in `num_requests_waiting` across multiple pods | Upstream load shedding (429) + QoS Guaranteed |
+| Pod killed by host | `requests` ≠ `limits` (Burstable/BestEffort QoS) | Frequent vLLM pod restarts | Strictly align requests = limits |
+| Unlimited request queue | No rate limiting at the Gateway | `num_requests_waiting` grows without receding | Dynamic rate limiting + aggressive timeout |
+| Wasted cache on redundant contexts | No affinity routing | Low Prefix Caching hit rate | Sticky routing by prefix/user |
 
 ---
 
-## 11. Checklist de mise en production
+## 11. Production Readiness Checklist
 
-- [ ] `--gpu-memory-utilization` fixé entre 0.85 et 0.90 (jamais 1.0)
-- [ ] `--max-model-len` aligné sur le besoin métier réel, pas sur le maximum théorique du modèle
-- [ ] `--max-num-seqs` calibré via tests de charge (k6/Locust/benchmark_serving.py)
-- [ ] `--enable-prefix-caching` activé si contextes partagés fréquents
-- [ ] `--kv-cache-dtype fp8` ou `int8` évalué pour doubler la capacité concurrente
-- [ ] Gateway : validation stricte des payloads (rejet HTTP 400/413)
-- [ ] Gateway : rate limiting + load shedding (HTTP 429)
-- [ ] Gateway : routage par affinité de préfixe (sticky routing)
-- [ ] Kubernetes : `requests` = `limits` (QoS Guaranteed)
-- [ ] Kubernetes : `swapoff -a` sur tous les nœuds GPU
-- [ ] Kubernetes : nodeSelectors/tolerations pour isoler les nœuds IA
-- [ ] Prometheus : scraping `/metrics` toutes les 5-10 secondes
-- [ ] Alertmanager : seuils Warning (85 %) et Critique (100 % / file > 10)
-- [ ] KEDA : autoscaling basé sur `num_requests_waiting` et `gpu_cache_usage_perc`
-- [ ] Helm + ArgoCD : configuration versionnée, rollback testé
-- [ ] Tests de charge réalisés sur staging avec matériel GPU identique à la production
+- [ ] `--gpu-memory-utilization` set between 0.85 and 0.90 (never 1.0)
+- [ ] `--max-model-len` aligned to actual business need, not the model's theoretical maximum
+- [ ] `--max-num-seqs` calibrated via load tests (k6/Locust/benchmark_serving.py)
+- [ ] `--enable-prefix-caching` enabled if shared contexts are frequent
+- [ ] `--kv-cache-dtype fp8` or `int8` evaluated to double concurrent capacity
+- [ ] Gateway: strict payload validation (HTTP 400/413 rejection)
+- [ ] Gateway: rate limiting + load shedding (HTTP 429)
+- [ ] Gateway: prefix affinity routing (sticky routing)
+- [ ] Kubernetes: `requests` = `limits` (QoS Guaranteed)
+- [ ] Kubernetes: `swapoff -a` on all GPU nodes
+- [ ] Kubernetes: nodeSelectors/tolerations to isolate AI nodes
+- [ ] Prometheus: scrape `/metrics` every 5-10 seconds
+- [ ] Alertmanager: Warning (85%) and Critical (100% / queue > 10) thresholds
+- [ ] KEDA: autoscaling based on `num_requests_waiting` and `gpu_cache_usage_perc`
+- [ ] Helm + ArgoCD: versioned configuration, rollback tested
+- [ ] Load tests performed on staging with GPU hardware identical to production
 
 ---
 
-## 12. Annexe : tableau récapitulatif des paramètres
+## 12. Appendix: Parameter Summary Table
 
-| Paramètre vLLM | Domaine | Défaut prudent | Impact si mal réglé |
+| vLLM Parameter | Domain | Safe Default | Impact if Misconfigured |
 |---|---|---|---|
-| `gpu_memory_utilization` | Moteur | 0.85–0.90 | Trop haut → OOM ; trop bas → sous-utilisation |
-| `max_model_len` | Moteur | selon besoin métier | Trop haut → une requête peut vider tout le cache |
-| `max_num_seqs` | Moteur | 128–256 | Trop haut → swap CPU en cascade |
-| `kv_cache_dtype` | Moteur | fp8/int8 | fp16 par défaut = 2x plus de VRAM utilisée |
-| `block_size` | Moteur | 16 | Trop petit → surcharge table de pages ; trop grand → fragmentation |
-| `tensor_parallel_size` | Moteur/Matériel | selon GPU NVLink | Mal réglé → sous-exploitation multi-GPU |
-| `gpu_cache_usage_perc` | Monitoring | alerte à 85 % | Non surveillé → OOM sans préavis |
-| `num_requests_waiting` | Monitoring | alerte à 10 | Non surveillé → dégradation UX silencieuse |
-| requests = limits (K8s) | Orchestration | strictement identiques | Sinon → pod tué par OOM Killer de l'hôte |
+| `gpu_memory_utilization` | Engine | 0.85–0.90 | Too high → OOM; too low → underutilization |
+| `max_model_len` | Engine | per business need | Too high → a single request can drain the entire cache |
+| `max_num_seqs` | Engine | 128–256 | Too high → cascading CPU swap |
+| `kv_cache_dtype` | Engine | fp8/int8 | fp16 default = 2x more VRAM consumed |
+| `block_size` | Engine | 16 | Too small → page table overhead; too large → fragmentation |
+| `tensor_parallel_size` | Engine/Hardware | per NVLink GPUs | Misconfigured → underutilization of multi-GPU |
+| `gpu_cache_usage_perc` | Monitoring | alert at 85% | Unmonitored → OOM without warning |
+| `num_requests_waiting` | Monitoring | alert at 10 | Unmonitored → silent UX degradation |
+| requests = limits (K8s) | Orchestration | strictly identical | Otherwise → pod killed by host OOM Killer |
 
 ---
 
-*Document de référence — synthèse de l'architecture de gestion du cache KV pour infrastructures d'inférence LLM en production (vLLM + Kubernetes + GitOps).*
+*Reference document — synthesis of the KV cache management architecture for LLM inference infrastructures in production (vLLM + Kubernetes + GitOps).*

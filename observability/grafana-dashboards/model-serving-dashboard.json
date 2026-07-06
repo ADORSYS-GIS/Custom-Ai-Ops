@@ -111,6 +111,161 @@
             }
           }
         }
+      },
+      {
+        "title": "KV Cache Usage (%)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "description": "vLLM GPU KV cache utilization. Above 85% = warning, 100% = evictions imminent.",
+        "targets": [
+          {
+            "expr": "vllm:gpu_cache_usage_perc * 100",
+            "legendFormat": "{{instance}} {{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 70, "color": "yellow" },
+                { "value": 85, "color": "orange" },
+                { "value": 100, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Prefix Cache Hit Rate (%)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "description": "vLLM prefix cache hit rate. Low hit rate wastes KV cache slots.",
+        "targets": [
+          {
+            "expr": "sum(rate(vllm:gpu_prefix_cache_hits_total[5m])) by (instance, model_name) / sum(rate(vllm:gpu_prefix_cache_queries_total[5m])) by (instance, model_name) * 100",
+            "legendFormat": "{{instance}} {{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 20, "color": "orange" },
+                { "value": 50, "color": "yellow" },
+                { "value": 80, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Request Queue Depth (waiting)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+        "description": "vLLM requests waiting in queue. Above 10 = critical, engine cannot keep up.",
+        "targets": [
+          {
+            "expr": "vllm:num_requests_waiting",
+            "legendFormat": "{{instance}} {{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 5, "color": "yellow" },
+                { "value": 10, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Time To First Token (TTFT, ms)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+        "description": "vLLM time-to-first-token. High TTFT indicates KV cache pressure or queue congestion.",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, instance, model_name)) * 1000",
+            "legendFormat": "p95 {{instance}} {{model_name}}"
+          },
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, instance, model_name)) * 1000",
+            "legendFormat": "p50 {{instance}} {{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 500, "color": "yellow" },
+                { "value": 2000, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "KV Cache Swap-Out Blocks",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+        "description": "KV cache blocks swapped to CPU RAM. Any value > 0 indicates GPU memory pressure.",
+        "targets": [
+          {
+            "expr": "increase(vllm:swap_out_blocks[5m])",
+            "legendFormat": "{{instance}} {{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 1, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "GPU VRAM Usage (DCGM)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+        "description": "GPU memory usage from DCGM exporter. Correlates with KV cache pressure.",
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL * 100",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 80, "color": "yellow" },
+                { "value": 95, "color": "red" }
+              ]
+            }
+          }
+        }
       }
     ]
   }

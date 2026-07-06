@@ -3,13 +3,33 @@ global:
 
 engine:
   vllm:
+    args:
+      - --model
+      - /models/$(MODEL_NAME)
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "8192"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --max-num-seqs
+      - "256"
+      - --kv-cache-dtype
+      - fp8
+      - --enable-prefix-caching
+      - --block-size
+      - "16"
     resources:
+      # QoS Guaranteed: requests MUST equal limits for ALL resources (CPU, memory, GPU).
+      # This prevents the host OOM killer from evicting vLLM pods during KV cache pressure.
       limits:
         nvidia.com/gpu: 1
+        cpu: "8"
         memory: 32Gi
       requests:
-        cpu: "4"
-        memory: 16Gi
+        nvidia.com/gpu: 1
+        cpu: "8"
+        memory: 32Gi
 
 replicaCount: 2
 
@@ -25,6 +45,13 @@ autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 4
+  keda:
+    enabled: true
+    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+    pollingInterval: 15
+    cooldownPeriod: 60
+    queueDepthThreshold: "5"
+    cacheUsageThreshold: "0.85"
 
 podDisruptionBudget:
   enabled: true
@@ -37,6 +64,21 @@ tolerations:
   - key: node-role.kubernetes.io/gpu
     operator: Exists
     effect: NoSchedule
+
+# Isolate vLLM pods on GPU-only nodes (physical IA node isolation)
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+
+# Disable swap on GPU nodes via DaemonSet (swapoff -a)
+gpuNodeSwapoff: true
+
+# --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 10s
+  scrapeTimeout: 5s
+  releaseLabel: prometheus
 
 topologySpreadConstraints:
   - maxSkew: 1

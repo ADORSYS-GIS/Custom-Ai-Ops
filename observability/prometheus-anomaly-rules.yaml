@@ -94,6 +94,73 @@ spec:
             summary: "High GPU ECC error rate"
             description: "GPU {{ $labels.gpu }} has {{ $value }} corrected ECC errors in the last hour."
 
+    - name: model-serving.kv-cache
+      rules:
+        # --- vLLM KV cache usage percentage ---
+        - alert: VLLMKVCacheUsageHigh
+          expr: vllm:gpu_cache_usage_perc > 0.85
+          for: 30s
+          labels:
+            severity: warning
+            component: kv-cache
+          annotations:
+            summary: "vLLM KV cache usage above 85%"
+            description: "KV cache usage on {{ $labels.instance }} (model: {{ $labels.model_name }}) is {{ $value | humanizePercentage }}. Approaching capacity — reduce concurrency or scale out."
+
+        - alert: VLLMKVCacheUsageCritical
+          expr: vllm:gpu_cache_usage_perc >= 1.0
+          for: 0s
+          labels:
+            severity: critical
+            component: kv-cache
+          annotations:
+            summary: "vLLM KV cache FULL — evictions imminent"
+            description: "KV cache usage on {{ $labels.instance }} has reached 100%. New requests will be blocked or evicted. Immediate scale-out required."
+
+        # --- Waiting requests queue depth ---
+        - alert: VLLMRequestsWaitingHigh
+          expr: vllm:num_requests_waiting > 10
+          for: 1m
+          labels:
+            severity: critical
+            component: kv-cache
+          annotations:
+            summary: "vLLM request queue depth above 10"
+            description: "{{ $value }} requests are waiting in the queue on {{ $labels.instance }}. The engine cannot keep up — scale out or reduce --max-num-seqs."
+
+        # --- Swap-out blocks (KV cache spilled to CPU RAM) ---
+        - alert: VLLMSwapOutBlocksDetected
+          expr: increase(vllm:swap_out_blocks[5m]) > 0
+          for: 0s
+          labels:
+            severity: critical
+            component: kv-cache
+          annotations:
+            summary: "vLLM KV cache blocks swapped to CPU"
+            description: "{{ $value }} KV cache blocks were swapped out to CPU RAM on {{ $labels.instance }} in the last 5m. This causes severe latency spikes. Increase GPU memory budget or reduce concurrency."
+
+        # --- CPU swap space usage (host-level) ---
+        - alert: NodeSwapSpaceUsageHigh
+          expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) > 0.10
+          for: 2m
+          labels:
+            severity: critical
+            component: kv-cache
+          annotations:
+            summary: "Node swap space usage above 10%"
+            description: "Swap usage on {{ $labels.instance }} is {{ $value | humanizePercentage }}. GPU nodes should have swap disabled (swapoff -a). Check the gpu-node-swapoff DaemonSet."
+
+        # --- Prefix cache hit rate degradation ---
+        - alert: VLLMPrefixCacheHitRateLow
+          expr: vllm:gpu_prefix_cache_queries_total > 0 and (sum(rate(vllm:gpu_prefix_cache_hits_total[10m])) / sum(rate(vllm:gpu_prefix_cache_queries_total[10m]))) < 0.20
+          for: 10m
+          labels:
+            severity: warning
+            component: kv-cache
+          annotations:
+            summary: "vLLM prefix cache hit rate below 20%"
+            description: "Prefix cache hit rate is {{ $value | humanizePercentage }}. Review prompt structure or check if --enable-prefix-caching is active."
+
     - name: model-serving.pods
       rules:
         - alert: ModelServingPodCrashLooping

@@ -98,6 +98,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 - [Quick Start](#quick-start)
 - [Sync Waves](#sync-waves)
 - [Model Registry](#model-registry)
+- [KV Cache Management](#kv-cache-management)
 - [Observability](#observability)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Test Suites](#test-suites)
@@ -290,7 +291,7 @@ graph TB
     GRAFANA --> DASH3["Dashboard: Capacity Forecasting"]
 
     subgraph Alerting["Alerting"]
-        RULES["PrometheusRule (5 groups)<br/>latency · errors · gpu · pods · anomaly"]
+        RULES["PrometheusRule (6 groups)<br/>latency · errors · gpu · pods · anomaly · kv-cache"]
         AM["Alertmanager Routes"]
         RULES --> AM
         AM -->|critical| PD["PagerDuty + Slack #ml-incidents"]
@@ -426,22 +427,21 @@ graph TB
 ```mermaid
 graph TD
     Start["Model format?"] --> ONNX{"ONNX?"}
-    ONNX -->|"Yes"| ONNXRT["ONNX Runtime GenAI<br/>confidence: 0.95<br/>chart: model-serving-onnx-rust"]
+ONNX -->|"Yes"| ONNXRT["ONNX Runtime GenAI<br/>confidence: 0.95<br/>chart: model-serving-engine (onnxGenai)"]
     ONNX -->|"No"| ST{"Safetensors / BF16?"}
-    ST -->|"Yes"| VLLM1["vLLM<br/>confidence: 0.96<br/>chart: model-serving-vllm"]
+    ST -->|"Yes"| VLLM1["vLLM<br/>confidence: 0.96<br/>chart: model-serving-engine (vllm)"]
     ST -->|"No"| AWQ{"AWQ quantized?"}
-    AWQ -->|"Yes"| VLLM2["vLLM<br/>confidence: 0.94<br/>chart: model-serving-vllm"]
-    AWQ -->|"No"| GPTQ{"GPTQ quantized?"}
-    GPTQ -->|"Yes"| VLLM3["vLLM<br/>confidence: 0.93<br/>chart: model-serving-vllm"]
+    AWQ -->|"Yes"| VLLM2["vLLM<br/>confidence: 0.94<br/>chart: model-serving-engine (vllm)"]
+    GPTQ -->|"Yes"| VLLM3["vLLM<br/>confidence: 0.93<br/>chart: model-serving-engine (vllm)"]
     GPTQ -->|"No"| UNSUPPORTED["Unsupported format<br/>(convert to Safetensors/ONNX/AWQ/GPTQ)"]
 ```
 
 | Format | Engine | Confidence | Helm Chart | Port |
 |---|---|---|---|---|
-| ONNX | ONNX Runtime GenAI | 0.95 | model-serving-onnx-rust | 8080 |
-| Safetensors | vLLM | 0.96 | model-serving-vllm | 8000 |
-| AWQ | vLLM | 0.94 | model-serving-vllm | 8000 |
-| GPTQ | vLLM | 0.93 | model-serving-vllm | 8000 |
+| ONNX | ONNX Runtime GenAI | 0.95 | model-serving-engine (onnxGenai) | 8080 |
+| Safetensors | vLLM | 0.96 | model-serving-engine (vllm) | 8000 |
+| AWQ | vLLM | 0.94 | model-serving-engine (vllm) | 8000 |
+| GPTQ | vLLM | 0.93 | model-serving-engine (vllm) | 8000 |
 
 This decision tree is codified in the `engine-selector` Rust CLI tool — not left to ad hoc human decisions.
 
@@ -460,10 +460,12 @@ Custom-Ai-Ops/
 │   ├── bjw-template/               # Common base library chart
 │   │                               # (security context, probes, volumes, tolerations)
 │   ├── model-serving-engine/       # Unified engine chart (vllm/onnxGenai)
-│   │                               # (StatefulSet, HPA, PDB, NetworkPolicy, PVC, seed-job)
-│   ├── model-serving-vllm/         # Safetensors/vLLM chart (appVersion 0.6.3)
+    │   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
+    │   │                               #  PVC, seed-job, swapoff DaemonSet, ServiceMonitor)
+    │   ├── model-serving-vllm/         # Safetensors/vLLM chart (appVersion 0.6.3) [DEPRECATED]
 │   ├── model-serving-onnx-rust/   # ONNX Runtime GenAI chart
-│   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy, secrets)
+│   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
+                                    #  rate limiting, payload validation, sticky routing, secrets)
 │
 ├── environments/                    # Environment-specific configurations
 │   ├── dev/                         # 1 replica, local-path 30Gi, autoscaling off, PDB off
@@ -478,7 +480,7 @@ Custom-Ai-Ops/
 │
 ├── observability/                   # Monitoring and alerting
 │   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
-│   ├── prometheus-anomaly-rules.yaml # 5 rule groups: latency, errors, GPU, pods, anomaly
+│   ├── prometheus-anomaly-rules.yaml # 6 rule groups: latency, errors, GPU, pods, anomaly, kv-cache
 │   ├── alertmanager-routes/         # Alert routing: critical→PagerDuty+Slack, warning→Slack
 │   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard
 │
@@ -657,6 +659,10 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 - Immediate failover to fallback backend if latency > 2000ms
 - Priority routing (priority 0 → priority 1) with circuit breaker (Prioritized)
 - Retry on 502/503/504 (2 attempts)
+- **Rate limiting**: 50 req/s per API key (HTTP 429 on excess) — protects KV cache from request floods
+- **Payload validation**: max body size 4MiB (HTTP 413), required fields enforced (HTTP 400)
+- **Sticky routing**: `x-sticky-session-key` header routes same-prefix requests to same replica (maximizes prefix cache hits)
+- **Aggressive timeouts**: request 10s / backendRequest 8s — prevents KV cache thrashing from queued requests
 
 ### Monitoring Stack (LGTM)
 
@@ -667,7 +673,15 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 | Traces | Tempo + OpenTelemetry | Distributed tracing |
 | Dashboards | Grafana | Unified visualization |
 | GPU Metrics | DCGM Exporter | GPU utilization, memory, temperature, ECC errors |
+| vLLM Metrics | ServiceMonitor | Scrapes vLLM `/metrics` every 10s (KV cache, queue, prefix cache, TTFT) |
 | Collection | Grafana Alloy | Single agent for metrics + logs + traces |
+
+### Grafana Dashboards
+
+| Dashboard | Panels |
+|---|---|
+| `dcgm-dashboard.json` | GPU health (temperature, utilization, memory, ECC) |
+| `model-serving-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)** |
 
 ### Alerting Rules
 
@@ -685,6 +699,12 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 | Pods | NotReady | 10m | Warning |
 | Anomaly | LatencyAnomaly | deriv > 0.1 for 10m | Warning |
 | Anomaly | ThroughputAnomaly | deriv < -0.5 for 10m | Warning |
+| KV Cache | VLLMKVCacheUsageHigh | `vllm:gpu_cache_usage_perc` > 0.85 for 30s | Warning |
+| KV Cache | VLLMKVCacheUsageCritical | `vllm:gpu_cache_usage_perc` >= 1.0 | Critical |
+| KV Cache | VLLMRequestsWaitingHigh | `vllm:num_requests_waiting` > 10 for 1m | Critical |
+| KV Cache | VLLMSwapOutBlocksDetected | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
+| KV Cache | NodeSwapSpaceUsageHigh | swap usage > 10% for 2m | Critical |
+| KV Cache | VLLMPrefixCacheHitRateLow | prefix cache hit < 20% for 10m | Warning |
 
 ### Alert Routing
 
@@ -693,6 +713,75 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 - **GPU** → Slack `#gpu-ops`
 - **Serving** → Slack `#ml-ops`
 - Inhibit: critical suppresses warning for same alert
+
+---
+
+## KV Cache Management
+
+The platform implements a **6-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md). Each layer protects the KV cache from a different failure mode.
+
+### Layer 1 — API Gateway (Edge Protection)
+
+| Mechanism | Implementation | Failure Mode Prevented |
+|---|---|---|
+| Payload validation | `HTTPRouteFilter` maxBodySize 4MiB → HTTP 413 | Oversized payloads polluting KV cache |
+| Rate limiting | `BackendTrafficPolicy` 50 req/s per `x-api-key` → HTTP 429 | Request floods overwhelming KV cache |
+| Sticky routing | `x-sticky-session-key` header → same replica | Prefix cache misses from random routing |
+| Aggressive timeouts | request 10s / backendRequest 8s | Queue thrashing from slow requests |
+
+### Layer 2 — vLLM Engine (Cache Efficiency)
+
+| Argument | Prod | Staging | Dev | Purpose |
+|---|---|---|---|---|
+| `--gpu-memory-utilization` | 0.90 | 0.88 | 0.85 | Reserve headroom for KV cache growth |
+| `--max-model-len` | 8192 | 8192 | 4096 | Cap context length to business need |
+| `--max-num-seqs` | 256 | 128 | 64 | Limit concurrent sequences in KV cache |
+| `--kv-cache-dtype` | fp8 | fp8 | fp8 | Halve KV cache memory via quantization |
+| `--enable-prefix-caching` | ✓ | ✓ | ✓ | Reuse KV cache for shared prefixes |
+| `--block-size` | 16 | 16 | 16 | Optimal block size for paged attention |
+| `--tensor-parallel-size` | 1 | 1 | 1 | Per-NVLink topology |
+
+### Layer 3 — Kubernetes (Resource Protection)
+
+| Mechanism | Implementation | Failure Mode Prevented |
+|---|---|---|
+| **QoS Guaranteed** | requests == limits (CPU/RAM/GPU) in all envs | Host OOM killer evicting vLLM pods |
+| **swapoff DaemonSet** | `nsenter swapoff -a` on GPU nodes via DaemonSet | Host swapping KV cache pages to CPU RAM |
+| **Node isolation** | `nodeSelector: nvidia.com/gpu.present: "true"` | CPU workloads competing for GPU node RAM |
+
+### Layer 4 — Observability (Early Detection)
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `VLLMKVCacheUsageHigh` | `vllm:gpu_cache_usage_perc` > 0.85 for 30s | Warning |
+| `VLLMKVCacheUsageCritical` | `vllm:gpu_cache_usage_perc` >= 1.0 | Critical |
+| `VLLMRequestsWaitingHigh` | `vllm:num_requests_waiting` > 10 for 1m | Critical |
+| `VLLMSwapOutBlocksDetected` | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
+| `NodeSwapSpaceUsageHigh` | swap usage > 10% for 2m | Critical |
+| `VLLMPrefixCacheHitRateLow` | hit rate < 20% for 10m | Warning |
+
+**ServiceMonitor** scrapes vLLM `/metrics` every 10s with `honorLabels: true`.
+
+### Layer 5 — Autoscaling (KEDA)
+
+Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound). The platform uses a KEDA `ScaledObject` with two Prometheus triggers:
+
+| Trigger | Metric | Threshold | Action |
+|---|---|---|---|
+| Queue depth | `vllm:num_requests_waiting` | > 5 | Scale out |
+| Cache pressure | `vllm:gpu_cache_usage_perc` | > 0.85 | Scale out |
+
+- `minReplicaCount`: 2 (prod), `maxReplicaCount`: 4
+- `pollingInterval`: 15s, `cooldownPeriod`: 60s
+- Legacy HPA fallback retained for environments without KEDA
+
+### Layer 6 — GitOps (Change Safety)
+
+- All critical vLLM params centralized in `environments/{dev,staging,prod}/values.yaml`
+- ArgoCD sync waves with self-heal + prune + ServerSideApply
+- `vram-budget-calc` CI gate blocks deployment if KV cache budget < 0
+- k6 load tests validate before changes reach production
+- Staging environment uses identical GPU hardware to prod
 
 ---
 
@@ -796,7 +885,7 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **GPU scheduling** | NVIDIA GPU Operator | 24.9+ | Driver, DCGM, device plugin |
 | **GPU scheduling** | Kueue | 0.6+ | Quotas, queues, priority |
 | **GPU scheduling** | Volcano | 1.9+ | Gang scheduling |
-| **Autoscaling** | KEDA + HPA | 2.14+ | Event-driven + custom metric autoscaling |
+| **Autoscaling** | KEDA | 2.14+ | Event-driven autoscaling on vLLM metrics (queue depth, KV cache usage) |
 | **Node provisioning** | Karpenter | 0.37+ | On-demand GPU node provisioning |
 | **API Gateway** | Envoy AI Gateway | latest | OpenAI-compatible uniform API |
 | **Metrics** | Prometheus + Mimir | 2.50+ / 2.12+ | Metrics collection + long-term storage |

@@ -3,13 +3,32 @@ global:
 
 engine:
   vllm:
+    args:
+      - --model
+      - /models/$(MODEL_NAME)
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "8192"
+      - --gpu-memory-utilization
+      - "0.88"
+      - --max-num-seqs
+      - "128"
+      - --kv-cache-dtype
+      - fp8
+      - --enable-prefix-caching
+      - --block-size
+      - "16"
     resources:
+      # QoS Guaranteed: requests == limits for all resources.
       limits:
         nvidia.com/gpu: 1
+        cpu: "4"
         memory: 24Gi
       requests:
+        nvidia.com/gpu: 1
         cpu: "4"
-        memory: 12Gi
+        memory: 24Gi
 
 replicaCount: 1
 
@@ -25,3 +44,33 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 2
+  keda:
+    enabled: true
+    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+    pollingInterval: 15
+    cooldownPeriod: 60
+    queueDepthThreshold: "5"
+    cacheUsageThreshold: "0.85"
+
+# Isolate vLLM pods on GPU-only nodes (physical IA node isolation)
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+
+# Disable swap on GPU nodes via DaemonSet (swapoff -a)
+gpuNodeSwapoff: true
+
+# --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 10s
+  scrapeTimeout: 5s
+  releaseLabel: prometheus
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/gpu
+    operator: Exists
+    effect: NoSchedule

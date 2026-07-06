@@ -25,19 +25,29 @@ spec:
             - type: Exact
               name: x-model
               value: {{ .name }}
+      # Sticky routing by prefix hash: requests with the same prompt prefix
+      # are routed to the same backend pod to maximize KV cache hit rate.
+      # This leverages vLLM's --enable-prefix-caching by ensuring that
+      # repeated system prompts / few-shot examples land on the same replica.
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: x-sticky-session-key
+                value: "{{ .name }}"
       backendRefs:
         {{- range .backends }}
         - name: {{ .ref }}
           port: 80
           weight: {{ .weight | default 100 }}
         {{- end }}
-        {{- if .fallback.enabled }}
+        {{- if and .fallback .fallback.enabled }}
         - name: {{ .fallback.backendRef }}
           port: 443
           weight: 0
         {{- end }}
       timeouts:
-        request: "30s"
-        backendRequest: "25s"
+        request: {{ $.Values.rateLimit.requestTimeout | default "10s" | quote }}
+        backendRequest: {{ $.Values.rateLimit.backendRequestTimeout | default "8s" | quote }}
     {{- end }}
 {{- end }}

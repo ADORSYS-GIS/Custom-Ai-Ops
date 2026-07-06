@@ -10,6 +10,42 @@
 | `gpu-edge-pool` | GPU modest (RTX A2000) | ONNX small models, PoC |
 | `cpu-pool` | CPU only | Preprocessing, gateway, auxiliary services |
 
+## Node Isolation
+
+vLLM pods are isolated on GPU-only nodes via `nodeSelector`:
+
+```yaml
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+```
+
+This prevents CPU-only workloads from competing for GPU node RAM, which could trigger the host OOM killer and evict vLLM pods (destroying the KV cache).
+
+## QoS Guaranteed
+
+All vLLM pods use **QoS Guaranteed** — `requests` strictly equal `limits` for CPU, memory, and GPU:
+
+| Environment | CPU | Memory | GPU |
+|---|---|---|---|
+| Prod | 8 | 32Gi | 1 |
+| Staging | 4 | 24Gi | 1 |
+| Dev | 2 | 16Gi | 1 |
+
+This ensures vLLM pods are **never** evicted by the host OOM killer in favour of Burstable pods.
+
+## Swap Disable (swapoff DaemonSet)
+
+Swap on GPU nodes is disabled via a DaemonSet (`charts/model-serving-engine/templates/swapoff-daemonset.yaml`):
+
+- Runs `nsenter -t 1 -m -u -i -n -p -- swapoff -a` on the host
+- `hostPID: true`, `hostNetwork: true`
+- `nodeSelector: nvidia.com/gpu.present: "true"`
+- Tolerates GPU taints (`nvidia.com/gpu`, `node-role.kubernetes.io/gpu`)
+- Capabilities: `SYS_ADMIN`, `SYS_PTRACE`
+- Sync-wave: `-2` (runs before model pods)
+
+**Why**: if the host swaps KV cache pages to CPU RAM, inference latency spikes by 10-100x.
+
 ## VRAM Budget Formula
 
 ```
