@@ -1,0 +1,91 @@
+# NVIDIA GPU Operator
+#
+# The NVIDIA GPU Operator automates the lifecycle management of NVIDIA
+# software components (drivers, container toolkit, DCGM exporter, device plugin)
+# required to run GPU workloads on Kubernetes.
+#
+# --- Installation ---
+# Add the Helm repository:
+#   helm repo add nvidia https://nvidia.github.io/gpu-operator
+#   helm repo update
+#
+# Install via ArgoCD (this directory is referenced by the infrastructure AppSet):
+#   The AppSet at apps/argocd-appset-prod.yaml deploys this automatically.
+#
+# Manual install:
+#   helm install gpu-operator nvidia/gpu-operator \
+#     --namespace gpu-operator \
+#     --create-namespace \
+#     --set driver.enabled=true \
+#     --set toolkit.enabled=true \
+#     --set dcgmExporter.enabled=true
+#
+# --- Verification ---
+#   kubectl get pods -n gpu-operator
+#   kubectl get nodes -o custom-columns="NAME:.metadata.name,GPU:.status.capacity.nvidia\.com/gpu"
+#
+# --- DCGM Exporter ---
+# The DCGM exporter exposes GPU metrics on port 9400 at /metrics.
+# These metrics are scraped by Prometheus and used by:
+#   - GPUThermalThrottle alert (>85°C)
+#   - GPUUtilizationLow alert (<10% for 30m)
+#   - GPUMemoryNearExhaustion alert (>95% for 2m)
+#   - Grafana "GPU VRAM Usage (DCGM)" panel
+#
+# --- Node Labels ---
+# After GPU Operator installs drivers, label your GPU nodes:
+#   kubectl label node <node-name> nvidia.com/gpu.present=true
+# This label is used by:
+#   - model-serving-engine nodeSelector
+#   - swapoff DaemonSet nodeSelector
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-operator
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nvidia-gpu-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://nvidia.github.io/gpu-operator
+    chart: gpu-operator
+    targetRevision: v24.9.0
+    helm:
+      values: |
+        driver:
+          enabled: true
+        toolkit:
+          enabled: true
+        dcgmExporter:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+        devicePlugin:
+          enabled: true
+        node-feature-discovery:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gpu-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m

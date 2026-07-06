@@ -6,7 +6,7 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         revision: HEAD
         directories:
           - path: environments/prod
@@ -18,7 +18,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
         path: charts/model-serving-engine
         helm:
@@ -64,6 +64,15 @@ spec:
           - name: prometheus-stack
             path: addons/prometheus-stack
             wave: "-1"
+          - name: keda
+            path: addons/keda
+            wave: "-1"
+          - name: external-secrets
+            path: addons/external-secrets
+            wave: "-1"
+          - name: cert-manager
+            path: addons/cert-manager
+            wave: "-1"
   template:
     metadata:
       name: '{{name}}'
@@ -72,7 +81,7 @@ spec:
     spec:
       project: infrastructure
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
         path: '{{path}}'
       destination:
@@ -111,12 +120,11 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
-        path: environments/prod
-        helm:
-          valueFiles:
-            - secrets.yaml
+        path: apps
+        directory:
+          include: 'external-secrets.yaml'
       destination:
         server: https://kubernetes.default.svc
         namespace: model-serving-prod
@@ -126,6 +134,7 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+          - ServerSideApply=true
         retry:
           limit: 3
           backoff:
@@ -152,7 +161,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
         path: charts/ai-gateway
         helm:

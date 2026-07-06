@@ -1,0 +1,78 @@
+# KEDA (Kubernetes Event-Driven Autoscaling)
+#
+# KEDA is the autoscaler that scales model-serving-engine StatefulSets
+# based on vLLM-specific Prometheus metrics (num_requests_waiting, gpu_cache_usage_perc).
+# Classic CPU/RAM HPA is inoperant for GPU-bound LLM workloads.
+#
+# --- Installation ---
+# Add the Helm repository:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm repo update
+#
+# Install via ArgoCD:
+#   The AppSet at apps/argocd-appset-prod.yaml deploys this automatically.
+#
+# Manual install:
+#   helm install keda kedacore/keda \
+#     --namespace keda-system \
+#     --create-namespace
+#
+# --- How it works ---
+# The model-serving-engine chart (templates/hpa.yaml) creates a KEDA ScaledObject
+# with two Prometheus triggers:
+#   1. vllm:num_requests_waiting > 5  → scale out (queue depth)
+#   2. vllm:gpu_cache_usage_perc > 0.85 → scale out (KV cache pressure)
+#
+# KEDA queries Prometheus at the address configured in values.yaml:
+#   autoscaling.keda.prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+#
+# --- Verification ---
+#   kubectl get pods -n keda-system
+#   kubectl get scaledobject -n model-serving-prod
+#   kubectl describe scaledobject model-serving-engine-keda -n model-serving-prod
+#
+# --- Troubleshooting ---
+# If ScaledObject shows "TriggerConditionError":
+#   1. Verify Prometheus is reachable from KEDA namespace
+#   2. Verify the metric exists: curl prometheus-server:9090/api/v1/query?query=vllm:num_requests_waiting
+#   3. Verify the namespace label in the query matches your deployment namespace
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keda-system
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: 2.16.0
+    helm:
+      values: |
+        watchNamespace: "model-serving-prod,model-serving-staging"
+        metricsServer:
+          changePercent: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m

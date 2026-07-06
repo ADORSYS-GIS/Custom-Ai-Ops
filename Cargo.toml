@@ -10,7 +10,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/Custom-Ai-Ops/Custom-Ai-Ops"
+repository = "https://github.com/rustnew/custom-ai-ops"
 
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }

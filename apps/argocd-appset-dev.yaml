@@ -6,7 +6,7 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         revision: HEAD
         directories:
           - path: environments/dev
@@ -18,7 +18,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
         path: charts/model-serving-engine
         helm:
@@ -65,7 +65,7 @@ spec:
     spec:
       project: model-serving
       source:
-        repoURL: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops.git
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
         targetRevision: HEAD
         path: charts/ai-gateway
         helm:

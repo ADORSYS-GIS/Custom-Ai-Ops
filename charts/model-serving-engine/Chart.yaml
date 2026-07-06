@@ -6,9 +6,9 @@ version: 0.1.0
 appVersion: "0.1.0"
 maintainers:
 - name: Custom-Ai-Ops
-  home: https://github.com/Custom-Ai-Ops/Custom-Ai-Ops
+  home: https://github.com/rustnew/custom-ai-ops
 sources:
-  - https://github.com/Custom-Ai-Ops/Custom-Ai-Ops
+  - https://github.com/rustnew/custom-ai-ops
 keywords:
   - ml
   - inference

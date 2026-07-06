@@ -104,6 +104,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 - [Test Suites](#test-suites)
 - [Documentation](#documentation)
 - [Technology Stack](#technology-stack)
+- [External Platform Integration](#external-platform-integration)
 - [License](#license)
 
 ---
@@ -473,11 +474,23 @@ Custom-Ai-Ops/
 │   ├── staging/                     # 1-2 replicas, longhorn 50Gi, autoscaling on
 │   └── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
 │
-├── apps/                            # ArgoCD ApplicationSets
+├── apps/                            # ArgoCD ApplicationSets + bootstrap manifests
 │   ├── argocd-appset-prod.yaml     # Prod: serving + infrastructure + secrets + gateway
 │   ├── argocd-appset-staging.yaml   # Staging: serving + gateway
 │   ├── argocd-appset-dev.yaml       # Dev: serving + gateway
-│   └── argocd-health-checks.yaml   # Custom Lua health checks (StatefulSet, InferenceService)
+│   ├── argocd-appprojects.yaml     # 2 AppProjects (model-serving, infrastructure) — sync-wave -10
+│   ├── argocd-repo-credentials.yaml # Repo credential Secret + known_hosts ConfigMap — sync-wave -11
+│   ├── argocd-notifications.yaml   # Slack + PagerDuty notifications (triggers, templates, subscriptions)
+│   ├── argocd-health-checks.yaml   # Custom Lua health checks (StatefulSet, InferenceService)
+│   └── external-secrets.yaml       # ClusterSecretStore + 4 ExternalSecrets (SaaS keys, alertmanager, registry, image-updater)
+│
+├── addons/                          # Cluster infrastructure addons (ArgoCD Applications)
+│   ├── nvidia-gpu-operator/        # NVIDIA GPU Operator (driver, toolkit, DCGM, device plugin) — wave -1
+│   ├── longhorn/                   # Longhorn distributed storage (RWX PVC) — wave -2
+│   ├── prometheus-stack/           # kube-prometheus-stack (Prometheus, Grafana, Alertmanager) — wave -1
+│   ├── keda/                        # KEDA autoscaler (vLLM queue depth + KV cache triggers) — wave -1
+│   ├── external-secrets/           # External Secrets Operator (CRDs + controller) — wave -1
+│   └── cert-manager/               # cert-manager + 2 ClusterIssuers (Let's Encrypt) — wave -1
 │
 ├── observability/                   # Monitoring and alerting
 │   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
@@ -600,10 +613,22 @@ helm template charts/model-serving-engine --set model.name=test-model
 ### 5. Deploy via GitOps (ArgoCD)
 
 ```bash
-# Apply ArgoCD ApplicationSets
+# 1. Bootstrap: AppProjects + repo credentials (must be applied first)
+kubectl apply -f apps/argocd-appprojects.yaml
+kubectl apply -f apps/argocd-repo-credentials.yaml
+
+# 2. Notifications (Slack + PagerDuty)
+kubectl apply -f apps/argocd-notifications.yaml
+
+# 3. ExternalSecrets (ClusterSecretStore + ExternalSecrets)
+kubectl apply -f apps/external-secrets.yaml
+
+# 4. ArgoCD ApplicationSets (per environment)
 kubectl apply -f apps/argocd-appset-dev.yaml
 kubectl apply -f apps/argocd-appset-staging.yaml
 kubectl apply -f apps/argocd-appset-prod.yaml
+
+# 5. Custom health checks
 kubectl apply -f apps/argocd-health-checks.yaml
 ```
 
@@ -615,11 +640,13 @@ The GitOps pipeline manages deployments in ordered waves — each wave must reac
 
 | Wave | Content | Justification |
 |---|---|---|
-| -3 | Bootstrap namespace, base secrets | Nothing can start without this |
-| -2 | Storage (RWX PVC via Longhorn), seed jobs | Pods need ready volumes |
-| -1 | NVIDIA GPU Operator, Prometheus collectors | Must run before workloads to capture metrics |
+| -11 | ArgoCD repo credential Secret + known_hosts ConfigMap | ArgoCD needs repo access before anything |
+| -10 | ArgoCD AppProjects (model-serving, infrastructure) | Projects must exist before Applications |
+| -3 | ExternalSecrets (ClusterSecretStore + ExternalSecrets) | Secrets must exist before workloads reference them |
+| -2 | Longhorn storage, swapoff DaemonSet, seed jobs | Pods need ready volumes; swap disabled before GPU workloads |
+| -1 | NVIDIA GPU Operator, Prometheus stack, KEDA, cert-manager, ESO, DCGM Exporter | Infrastructure must run before workloads |
 | 0 | Model server StatefulSets | The core of the system |
-| 1 | Gateway configuration, Grafana dashboards | Depends on workloads being in place |
+| 1 | Gateway configuration (HTTPRoute, BackendTrafficPolicy), ServiceMonitor, Grafana dashboards | Depends on workloads being in place |
 | 2+ | Post-sync smoke tests, notifications | Final validation |
 
 ---
@@ -873,6 +900,18 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | [latency-spike.md](docs/runbooks/latency-spike.md) | Latency spike: check failover, GPU throttle, scale up |
 | [pod-crashloop.md](docs/runbooks/pod-crashloop.md) | Pod crash loop: OOM, model-not-found, probe-failure |
 
+### Explain Docs (`docs/explain/`)
+
+| Doc | Description |
+|---|---|
+| [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps) |
+
+### Integration & External Tools (`docs/`)
+
+| Doc | Description |
+|---|---|
+| [integration-report.md](docs/integration-report.md) | Complete ArgoCD + external platform integration report (13 sections + 3 appendices: Git providers, ArgoCD config, registry, secrets, observability, alerting, SaaS fallback, CI/CD, multi-cluster, security, topology, checklist) |
+
 ---
 
 ## Technology Stack
@@ -899,14 +938,84 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **Object store** | MinIO | latest | S3-compatible model weight storage |
 | **Image registry** | Harbor | 2.10+ | Self-hosted registry with CVE scan |
 | **Model registry** | MLflow | 2.12+ | Model version tracking |
-| **Secrets** | External Secrets Operator | 0.9+ | Secrets from Vault/AWS SM |
+| **Secrets** | External Secrets Operator | 0.10+ | ClusterSecretStore + ExternalSecrets (AWS SM / Vault) |
+| **Certificates** | cert-manager | 1.16+ | TLS cert provisioning (Let's Encrypt ClusterIssuers) |
 | **Image signing** | cosign | 2.2+ | Supply chain security |
 | **Secret scanning** | gitleaks | 8.0+ | Plaintext secret detection |
 | **Load testing** | k6 | 0.50+ | Performance/load testing |
 | **Chaos engineering** | LitmusChaos | 3.0+ | GPU chaos experiments |
 | **CI/CD** | GitHub Actions | — | Build, test, lint, validate |
+| **Notifications** | ArgoCD Notifications | — | Slack + PagerDuty sync/health alerts |
 | **CLI tools** | Rust | 1.70+ | engine-selector, vram-budget-calc, model-onboarding |
 | **Drift detection** | Evidently AI | latest | Data quality monitoring (self-hosted) |
+
+---
+
+## External Platform Integration
+
+The platform integrates with external systems via GitOps. All integration manifests live in `apps/` and `addons/`. See [`docs/integration-report.md`](docs/integration-report.md) for the complete 13-section report.
+
+### ArgoCD GitOps
+
+| Component | File | Purpose |
+|---|---|---|
+| AppProjects | `apps/argocd-appprojects.yaml` | 2 projects: `model-serving` (namespaced) + `infrastructure` (cluster-scoped) |
+| Repo credentials | `apps/argocd-repo-credentials.yaml` | Repo Secret + known_hosts ConfigMap (real GitHub SSH keys) |
+| ApplicationSets | `apps/argocd-appset-{dev,staging,prod}.yaml` | Per-env AppSets with sync waves |
+| Notifications | `apps/argocd-notifications.yaml` | Slack + PagerDuty (4 triggers, 5 templates, 2 subscriptions) |
+| Health checks | `apps/argocd-health-checks.yaml` | Custom Lua health checks (StatefulSet, InferenceService) |
+
+### Cluster Addons
+
+| Addon | Path | Version | Sync Wave |
+|---|---|---|---|
+| NVIDIA GPU Operator | `addons/nvidia-gpu-operator/` | 24.9.0 | -1 |
+| Longhorn | `addons/longhorn/` | 1.7.2 | -2 |
+| kube-prometheus-stack | `addons/prometheus-stack/` | 65.5.0 | -1 |
+| KEDA | `addons/keda/` | 2.16.0 | -1 |
+| External Secrets Operator | `addons/external-secrets/` | 0.10.0 | -1 |
+| cert-manager | `addons/cert-manager/` | 1.16.0 | -1 |
+
+### Secret Management
+
+| Component | File | Purpose |
+|---|---|---|
+| ClusterSecretStore | `apps/external-secrets.yaml` | AWS Secrets Manager (IRSA) — Vault example commented out |
+| ExternalSecret: SaaS keys | `apps/external-secrets.yaml` | 7 SaaS API keys (OpenAI, Anthropic, Google, Azure, Mistral, Cohere, Bedrock) |
+| ExternalSecret: Alertmanager | `apps/external-secrets.yaml` | Full alertmanager config.yaml with PagerDuty + Slack credentials |
+| ExternalSecret: Registry | `apps/external-secrets.yaml` | Docker registry pull secret |
+| ExternalSecret: Image Updater | `apps/external-secrets.yaml` | GitHub token for ArgoCD Image Updater |
+
+### SaaS Fallback Providers
+
+The gateway supports automatic failover to SaaS providers when self-hosted latency exceeds 2000ms:
+
+| Provider | Endpoint | Priority |
+|---|---|---|
+| OpenAI (GPT-4) | `https://api.openai.com/v1` | 1 |
+| Anthropic (Claude) | `https://api.anthropic.com/v1` | 1 |
+| Google Vertex AI | `https://us-central1-aiplatform.googleapis.com` | 1 |
+| Azure OpenAI | `https://{resource}.openai.azure.com` | 1 |
+| Mistral AI | `https://api.mistral.ai/v1` | 1 |
+| Cohere | `https://api.cohere.ai/v1` | 1 |
+| AWS Bedrock | `https://bedrock-runtime.{region}.amazonaws.com` | 1 |
+
+### Alerting Routing
+
+| Severity | Destination | Trigger |
+|---|---|---|
+| Critical | PagerDuty + Slack `#ops-alerts` | Sync failed, health degraded, KV cache critical |
+| Warning | Slack `#ops-alerts` | Sync running, KV cache high, latency high |
+| GPU | Slack `#gpu-ops` | Thermal throttle, ECC errors, VRAM exhaustion |
+
+### CI/CD Pipeline
+
+| Job | Trigger | Purpose |
+|---|---|---|
+| `rust-tools` | Push/PR | `cargo test` on engine-selector, vram-budget-calc, model-onboarding |
+| `helm-lint` | Push/PR | `helm lint` + `helm template` on all 5 charts |
+| `registry-consistency` | Push/PR | Validates model registry entries match chart values |
+| `vram-budget-validation` | Push/PR | Blocks deployment if VRAM budget < 0 |
 
 ---
 

@@ -1,0 +1,151 @@
+# ArgoCD Notifications — Slack and PagerDuty integration
+#
+# This manifest configures ArgoCD Notifications to send:
+# - Slack messages on sync status changes (success, failed, running)
+# - PagerDuty alerts on sync failures for production environments
+#
+# PREREQUISITES:
+#   1. ArgoCD Notifications controller installed (bundled in ArgoCD v2.3+)
+#   2. Slack webhook URL stored in secret `argocd-notifications-secret`
+#   3. PagerDuty integration key stored in same secret
+#
+# See docs/external-tools.md §7 (Alerting) for complete setup.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-notifications-secret
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-11"
+type: Opaque
+stringData:
+  # Replace with actual values or use ExternalSecret to populate
+  slack-webhook-url: <SLACK_WEBHOOK_URL>
+  pagerduty-integration-key: <PAGERDUTY_INTEGRATION_KEY>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-11"
+data:
+  # Slack notification for sync status changes
+  service.slack: |
+    {
+      "apiURL": "https://slack.com/api",
+      "token": "$slack-webhook-url"
+    }
+  # PagerDuty notification for production sync failures
+  service.pagerduty: |
+    {
+      "serviceKey": "$pagerduty-integration-key"
+    }
+  # Trigger: notify on sync succeeded
+  trigger.on-sync-succeeded: |
+    - when: app.status.operationState.phase in ['Succeeded']
+      send: [slack-sync-succeeded]
+  # Trigger: notify on sync failed
+  trigger.on-sync-failed: |
+    - when: app.status.operationState.phase in ['Failed', 'Error']
+      send: [slack-sync-failed, pagerduty-sync-failed]
+  # Trigger: notify on sync running
+  trigger.on-sync-running: |
+    - when: app.status.operationState.phase in ['Running']
+      send: [slack-sync-running]
+  # Trigger: notify on health degraded
+  trigger.on-health-degraded: |
+    - when: app.status.health.status == 'Degraded'
+      send: [slack-health-degraded]
+  # Templates
+  template.slack-sync-succeeded: |
+    {
+      "slack": {
+        "attachments": [{
+          "title": "✅ {{ .app.metadata.name }} sync succeeded",
+          "color": "good",
+          "fields": [{
+            "title": "Project",
+            "value": "{{ .app.spec.project }}",
+            "short": true
+          }, {
+            "title": "Sync status",
+            "value": "{{ .app.status.operationState.phase }}",
+            "short": true
+          }]
+        }]
+      }
+    }
+  template.slack-sync-failed: |
+    {
+      "slack": {
+        "attachments": [{
+          "title": "❌ {{ .app.metadata.name }} sync FAILED",
+          "color": "danger",
+          "fields": [{
+            "title": "Project",
+            "value": "{{ .app.spec.project }}",
+            "short": true
+          }, {
+            "title": "Error",
+            "value": "{{ .app.status.operationState.message }}",
+            "short": false
+          }]
+        }]
+      }
+    }
+  template.slack-sync-running: |
+    {
+      "slack": {
+        "attachments": [{
+          "title": "🔄 {{ .app.metadata.name }} sync running",
+          "color": "warning",
+          "fields": [{
+            "title": "Project",
+            "value": "{{ .app.spec.project }}",
+            "short": true
+          }]
+        }]
+      }
+    }
+  template.slack-health-degraded: |
+    {
+      "slack": {
+        "attachments": [{
+          "title": "⚠️ {{ .app.metadata.name }} health degraded",
+          "color": "danger",
+          "fields": [{
+            "title": "Health status",
+            "value": "{{ .app.status.health.status }}",
+            "short": true
+          }, {
+            "title": "Namespace",
+            "value": "{{ .app.status.sync.resources[0].namespace }}",
+            "short": true
+          }]
+        }]
+      }
+    }
+  template.pagerduty-sync-failed: |
+    {
+      "pagerduty": {
+        "summary": "ArgoCD sync failed: {{ .app.metadata.name }}",
+        "severity": "critical",
+        "component": "{{ .app.spec.project }}",
+        "group": "{{ .app.metadata.namespace }}",
+        "custom_details": {
+          "app": "{{ .app.metadata.name }}",
+          "error": "{{ .app.status.operationState.message }}"
+        }
+      }
+    }
+  # Subscriptions — which apps notify which channels
+  subscription.slack-ops: |
+    - recipients: [slack:ml-ops]
+      triggers: [on-sync-succeeded, on-sync-failed, on-sync-running, on-health-degraded]
+  subscription.pagerduty-prod: |
+    - recipients: [pagerduty]
+      triggers: [on-sync-failed]
+      selector: app.metadata.annotations.env == "production"
