@@ -1,0 +1,87 @@
+{{- if .Values.lmcache.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-lmcache
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lmcache
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lmcache
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      serviceAccountName: {{ include "model-serving-engine.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: false
+      containers:
+        - name: lmcache
+          image: "{{ .Values.lmcache.image.repository }}:{{ .Values.lmcache.image.tag }}"
+          imagePullPolicy: {{ .Values.lmcache.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: metrics
+              containerPort: 8330
+              protocol: TCP
+          env:
+            - name: LMCACHE_CONFIG
+              value: /etc/lmcache/lmcache.toml
+            - name: MODEL_NAME
+              value: {{ .Values.model.name | quote }}
+          volumeMounts:
+            - name: lmcache-config
+              mountPath: /etc/lmcache
+              readOnly: true
+            {{- if .Values.lmcache.disk.enabled }}
+            - name: lmcache-disk
+              mountPath: {{ .Values.lmcache.disk.path | default "/var/lib/lmcache" }}
+            {{- end }}
+            - name: lmcache-shm
+              mountPath: /dev/shm
+          resources:
+            requests:
+              cpu: {{ .Values.lmcache.resources.requests.cpu | default "500m" | quote }}
+              memory: {{ .Values.lmcache.resources.requests.memory | default "4Gi" | quote }}
+            limits:
+              cpu: {{ .Values.lmcache.resources.limits.cpu | default "2" | quote }}
+              memory: {{ .Values.lmcache.resources.limits.memory | default "16Gi" | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: lmcache-config
+          configMap:
+            name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
+        {{- if .Values.lmcache.disk.enabled }}
+        - name: lmcache-disk
+          hostPath:
+            path: {{ .Values.lmcache.disk.hostPath | default "/var/lib/lmcache" }}
+            type: DirectoryOrCreate
+        {{- end }}
+        - name: lmcache-shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+{{- end }}

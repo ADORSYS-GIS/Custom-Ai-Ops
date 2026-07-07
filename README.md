@@ -10,7 +10,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
-![Tests](https://img.shields.io/badge/Tests-68%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Helm%20Charts-5-blue.svg?logo=helm)
 
 ---
@@ -120,7 +120,7 @@ graph TB
     subgraph Exposure["EXPOSURE PLANE (Uniform API)"]
         GW["Envoy AI Gateway<br/>OpenAI-Compatible API (/v1/chat/completions)"]
         GW_FEAT["HTTPRoute · Auth (APIKey) · Rate Limiting<br/>Cost Metrics · SSE Streaming"]
-        GW_RESIL["Priority Routing (0→1) · Circuit Breaker<br/>Retry (502/503/504) · Failover (>2000ms)"]
+        GW_RESIL["Priority Routing (0to1) · Circuit Breaker<br/>Retry (502/503/504) · Failover (>2000ms)"]
         GW --- GW_FEAT
         GW --- GW_RESIL
     end
@@ -168,22 +168,22 @@ graph TB
     GIT -->|push| CI
     CI -->|if pass| ARGOCD
 
-    ARGOCD -->|Sync Waves -3 → 2| WA
-    ARGOCD -->|Sync Waves -3 → 2| WB
-    ARGOCD -->|Sync Waves -3 → 2| WDEV
+    ARGOCD -->|Sync Waves -3 to 2| WA
+    ARGOCD -->|Sync Waves -3 to 2| WB
+    ARGOCD -->|Sync Waves -3 to 2| WDEV
 
     subgraph WA["Worker Cluster (Region A)"]
-        WA_WAVES["Waves: -3 Secrets → -2 Longhorn PVC → -1 GPU Operator<br/>→ 0 Model Pods → 1 Gateway+Dashboards → 2 Smoke Tests"]
+        WA_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
         WA_POOLS["Node Pools: gpu-h100-pool · gpu-a100-pool<br/>gpu-l4-pool · cpu-pool"]
     end
 
     subgraph WB["Worker Cluster (Region B)"]
-        WB_WAVES["Waves: -3 Secrets → -2 Longhorn PVC → -1 GPU Operator<br/>→ 0 Model Pods → 1 Gateway+Dashboards → 2 Smoke Tests"]
+        WB_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
         WB_POOLS["Node Pools: gpu-h100-pool · gpu-a100-pool<br/>gpu-l4-pool · cpu-pool"]
     end
 
     subgraph WDEV["Worker Cluster (Edge / Dev)"]
-        WDEV_WAVES["Waves: -3 Secrets → -2 local-path → -1 GPU Operator<br/>→ 0 Model Pods → 1 Gateway+Dashboards → 2 Smoke Tests"]
+        WDEV_WAVES["Waves: -3 Secrets to -2 local-path to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
         WDEV_POOLS["Node Pools: gpu-edge-pool (A2000)<br/>gpu-l4-pool (L4) · cpu-pool"]
     end
 ```
@@ -359,15 +359,15 @@ graph TB
 ```mermaid
 graph LR
     S1["1. Identify Format<br/>Safetensors? ONNX?<br/>AWQ/GPTQ?"]
-    S2["2. engine-selector<br/>Detects format → engine<br/>→ chart → confidence"]
+    S2["2. engine-selector<br/>Detects format to engine<br/>to chart to confidence"]
     S3["3. vram-budget-calc<br/>VRAM = Total×0.90<br/>− model size − 1GB − KV cache<br/>FP8 check · BLOCK if &lt; 0"]
     S4["4. model-onboarding<br/>Scaffolds models/&lt;name&gt;/<br/>model.md · budget.md · eval-report.md"]
     S5["5. Generate Gateway Entry<br/>backends + models<br/>in ai-gateway/values.yaml"]
     S6["6. Open PR<br/>(values repo)"]
     S7["7. CI Validation<br/>helm lint --strict · helm template<br/>registry consistency · vram validation"]
-    S8["8. ArgoCD Sync<br/>Waves -3 → 2<br/>self-heal ON · prune ON"]
+    S8["8. ArgoCD Sync<br/>Waves -3 to 2<br/>self-heal ON · prune ON"]
     S9["9. Smoke Tests<br/>health 200 · auth 401/403<br/>chat completion · cost metric"]
-    S10["10. Canary<br/>gateway priority 0<br/>canary → ramp-up"]
+    S10["10. Canary<br/>gateway priority 0<br/>canary to ramp-up"]
     S11["11. Full Traffic<br/>normal priority<br/>validate on real traffic"]
     S12["12. Document ADR<br/>(if new pattern)"]
 
@@ -382,33 +382,33 @@ graph LR
 ```mermaid
 graph TB
     subgraph Layer1["Level 1 — Pod Level (Kubernetes native)"]
-        L1A["Liveness probe fails<br/>→ Kubernetes restarts pod"]
+        L1A["Liveness probe fails<br/>to Kubernetes restarts pod"]
         L1B["Startup probe (long timeout)<br/>prevents kill during model loading"]
     end
 
     subgraph Layer2["Level 2 — GPU Node Level (NVIDIA GPU Operator)"]
-        L2A["NVIDIA Xid error detected<br/>→ GPU Operator cordons + drains node"]
-        L2B["Pods migrate to healthy nodes<br/>→ Karpenter provisions replacement node"]
+        L2A["NVIDIA Xid error detected<br/>to GPU Operator cordons + drains node"]
+        L2B["Pods migrate to healthy nodes<br/>to Karpenter provisions replacement node"]
     end
 
     subgraph Layer3["Level 3 — Config Drift (ArgoCD self-healing)"]
-        L3A["Manual kubectl edit<br/>→ ArgoCD detects drift"]
+        L3A["Manual kubectl edit<br/>to ArgoCD detects drift"]
         L3B["Auto-re-syncs to Git state<br/>Correction in < 3 minutes"]
     end
 
     subgraph Layer4["Level 4 — Model Quality (Envoy AI Gateway)"]
-        L4A["Latency > 2000ms or errors > 5%<br/>→ Gateway circuit breaker triggers"]
-        L4B["Failover to SaaS fallback (priority 1)<br/>→ users unaffected"]
+        L4A["Latency > 2000ms or errors > 5%<br/>to Gateway circuit breaker triggers"]
+        L4B["Failover to SaaS fallback (priority 1)<br/>to users unaffected"]
     end
 
     subgraph Layer5["Level 5 — Cluster Failover (External DNS + Envoy)"]
-        L5A["Worker cluster unavailable<br/>→ DNS-based failover to another region"]
+        L5A["Worker cluster unavailable<br/>to DNS-based failover to another region"]
         L5B["Gateway multi-backend with priority routing<br/>handles transparently"]
     end
 
     subgraph Layer6["Level 6 — Data Drift (Evidently AI)"]
-        L6A["Model quality degrades silently<br/>→ Evidently AI detects distribution shift"]
-        L6B["Alert triggered<br/>→ re-evaluation pipeline started"]
+        L6A["Model quality degrades silently<br/>to Evidently AI detects distribution shift"]
+        L6B["Alert triggered<br/>to re-evaluation pipeline started"]
     end
 
     Layer1 -->|"if pod restart doesn't fix it"| Layer2
@@ -454,9 +454,10 @@ This decision tree is codified in the `engine-selector` Rust CLI tool — not le
 ```
 Custom-Ai-Ops/
 ├── tools/                           # Rust CLI tools (workspace)
-│   ├── engine-selector/             # Format→engine decision tree (29 unit tests)
-│   ├── vram-budget-calc/           # VRAM budget calculator (16 unit tests)
-│   └── model-onboarding/           # New model scaffold tool (23 unit tests)
+│   ├── engine-selector/             # Format→engine→family→cache-strategy decision tree (31 tests)
+│   ├── vram-budget-calc/           # VRAM budget calculator (14 tests)
+│   ├── model-onboarding/           # New model scaffold tool
+│   └── cache-roi-calc/             # KV cache ROI calculator (16 tests, Bible §9 formula)
 │
 ├── charts/                          # Helm charts (5 total)
 │   ├── bjw-template/               # Common base library chart
@@ -552,18 +553,19 @@ cargo build --release
 cargo build --release --bin engine-selector
 cargo build --release --bin vram-budget-calc
 cargo build --release --bin model-onboarding
+cargo build --release --bin cache-roi-calc
 ```
 
 ### 2. Run Tests
 
 ```bash
-# Run all unit tests (68 tests across 3 crates)
+# Run all unit tests (61 tests across 4 crates)
 cargo test
 
 # Run tests for a specific tool
-cargo test --bin engine-selector    # 29 tests
-cargo test --bin vram-budget-calc   # 16 tests
-cargo test --bin model-onboarding   # 23 tests
+cargo test --bin engine-selector     # 31 tests
+cargo test --bin vram-budget-calc    # 14 tests
+cargo test --bin cache-roi-calc      # 16 tests
 ```
 
 ### 3. Use the Tools
@@ -709,7 +711,7 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 | Dashboard | Panels |
 |---|---|
 | `dcgm-dashboard.json` | GPU health (temperature, utilization, memory, ECC) |
-| `model-serving-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)** |
+| `model-serving-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)**, **LMCache L1/L2/L3 hit rates**, **prefill skip rate**, **cache ROI estimate ($/h)**, **cache affinity routing distribution** — **18 panels total** |
 
 ### Alerting Rules
 
@@ -733,6 +735,10 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 | KV Cache | VLLMSwapOutBlocksDetected | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
 | KV Cache | NodeSwapSpaceUsageHigh | swap usage > 10% for 2m | Critical |
 | KV Cache | VLLMPrefixCacheHitRateLow | prefix cache hit < 20% for 10m | Warning |
+| KV Cache | LMCacheL1HitRateLow | L1 CPU hit < 30% for 10m | Warning |
+| KV Cache | LMCacheL2HitRateLow | L2 NVMe hit < 20% for 15m | Warning |
+| KV Cache | LMCacheL3HitRateLow | L3 Redis/S3 hit < 10% for 15m | Warning |
+| KV Cache | SSMModelPagedAttentionMisconfigured | SSM pod with PagedAttention args | Critical |
 
 ### Alert Routing
 
@@ -746,7 +752,7 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 
 ## KV Cache Management
 
-The platform implements a **6-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md). Each layer protects the KV cache from a different failure mode.
+The platform implements an **8-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/bible-kv-cache.md`](docs/explain/bible-kv-cache.md). Each layer protects the KV cache from a different failure mode.
 
 ### Layer 1 — API Gateway (Edge Protection)
 
@@ -787,8 +793,14 @@ The platform implements a **6-layer defensive architecture** for vLLM KV cache m
 | `VLLMSwapOutBlocksDetected` | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
 | `NodeSwapSpaceUsageHigh` | swap usage > 10% for 2m | Critical |
 | `VLLMPrefixCacheHitRateLow` | hit rate < 20% for 10m | Warning |
+| `LMCacheL1HitRateLow` | L1 CPU hit < 30% for 10m | Warning |
+| `LMCacheL2HitRateLow` | L2 NVMe hit < 20% for 15m | Warning |
+| `LMCacheL3HitRateLow` | L3 distributed hit < 10% for 15m | Warning |
+| `VLLMPrefillSkipRateLow` | prefill skip < 10% while queue busy | Info |
+| `SSMModelPagedAttentionMisconfigured` | SSM pod detected with PagedAttention args | Critical |
+| `CacheRoutingHeaderAbsent` | `x-cache-affinity-key` missing during traffic | Info |
 
-**ServiceMonitor** scrapes vLLM `/metrics` every 10s with `honorLabels: true`.
+**ServiceMonitor** scrapes vLLM `/metrics` every 10s with `honorLabels: true`. Grafana dashboard has **18 panels** including 6 LMCache hierarchy and ROI panels (see [`docs/architecture/05-observability.md`](docs/architecture/05-observability.md)).
 
 ### Layer 5 — Autoscaling (KEDA)
 
@@ -808,8 +820,51 @@ Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound
 - All critical vLLM params centralized in `environments/{dev,staging,prod}/values.yaml`
 - ArgoCD sync waves with self-heal + prune + ServerSideApply
 - `vram-budget-calc` CI gate blocks deployment if KV cache budget < 0
+- `cache-roi-calc` CLI tool computes ROI ratio, GPU savings, and break-even hit rate (Bible §9)
 - k6 load tests validate before changes reach production
 - Staging environment uses identical GPU hardware to prod
+
+### Layer 7 — Distributed Cache Middleware (LMCache)
+
+The platform deploys **LMCache** as a per-GPU-node DaemonSet to break the per-instance KV cache silo (Bible §4.3). Cache becomes shareable across pods, persistent across restarts, and hierarchical across memory tiers.
+
+| Tier | Backend | Latency | Capacity (prod) | Enabled In |
+|---|---|---|---|---|
+| L0 | vLLM GPU HBM (PagedAttention) | ~ns | `gpu-memory-utilization` headroom | all envs |
+| L1 | CPU DRAM (LMCache daemon) | ~µs | node-local RAM | prod, staging |
+| L2 | Local NVMe disk (LMCache) | ~ms | 200 GiB | prod, staging |
+| L3 | Redis (LMCache) | ~10ms | cluster-wide | prod |
+
+| Parameter | Prod | Staging | Dev |
+|---|---|---|---|
+| `lmcache.enabled` | true | true | false |
+| `lmcache.cpuWorkers` | 4 | 2 | — |
+| `lmcache.disk.maxSize` | 200GiB | 100GiB | — |
+| `lmcache.redis.enabled` | true | false | — |
+
+Templates: `lmcache-daemonset.yaml`, `lmcache-configmap.yaml`, `lmcache-service.yaml`.
+
+**SafeTensors Cache Persistence** — `cachePersistence` provisions a dedicated PVC (`/cache/kv`) via Longhorn so the KV cache survives pod restarts. On startup, vLLM restores from the persisted cache, reducing TTFT from ~11s to ~1.5s on a 128K context at 80% hit rate.
+
+| Parameter | Prod | Staging | Dev |
+|---|---|---|---|
+| `cachePersistence.enabled` | true | true | false |
+| `cachePersistence.storageClass` | longhorn | longhorn | — |
+| `cachePersistence.size` | 50Gi | 30Gi | — |
+
+### Layer 8 — Cache-Aware Routing (Cluster-Level Affinity)
+
+Sticky routing by model name (`x-sticky-session-key` header) is augmented with **consistent-hash load balancing** on the `x-cache-affinity-key` header, derived from a prefix hash of the first 64 tokens of the system prompt.
+
+| Mechanism | Implementation | Failure Mode Prevented |
+|---|---|---|
+| Prefix-hash routing | Envoy Lua filter (FNV-1a over first 512 bytes of body) → `x-cache-affinity-key` header | Random routing destroying prefix cache locality |
+| Consistent-hash LB | `BackendTrafficPolicy` `loadBalancer.type: ConsistentHash` on `x-cache-affinity-key` | Cache misses from round-robin distribution |
+| Cache invalidation policy | ConfigMap documents RAG/model/prompt invalidation triggers | Stale cache hits returning outdated content |
+
+Template: `cache-routing-policy.yaml` (ConfigMap with Lua filter + invalidation policy).
+
+**Multi-Family Model Support** — The `engine-selector` tool detects model family (Transformer, MoE, SSM/Mamba, Hybrid) and returns the correct cache strategy. SSM/Mamba models use a fixed-size recurrent state — `--enable-prefix-caching` and `--block-size` are **misconfigurations** for them (Bible §14). The `SSMModelPagedAttentionMisconfigured` alert catches this at runtime.
 
 ---
 
@@ -904,7 +959,8 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 
 | Doc | Description |
 |---|---|
-| [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps) |
+| [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps, distributed cache middleware, cache-aware routing) |
+| [bible-kv-cache.md](docs/explain/bible-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
 
 ### Integration & External Tools (`docs/`)
 
@@ -946,7 +1002,7 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **Chaos engineering** | LitmusChaos | 3.0+ | GPU chaos experiments |
 | **CI/CD** | GitHub Actions | — | Build, test, lint, validate |
 | **Notifications** | ArgoCD Notifications | — | Slack + PagerDuty sync/health alerts |
-| **CLI tools** | Rust | 1.70+ | engine-selector, vram-budget-calc, model-onboarding |
+| **CLI tools** | Rust | 1.70+ | engine-selector, vram-budget-calc, model-onboarding, cache-roi-calc |
 | **Drift detection** | Evidently AI | latest | Data quality monitoring (self-hosted) |
 
 ---
@@ -1012,7 +1068,7 @@ The gateway supports automatic failover to SaaS providers when self-hosted laten
 
 | Job | Trigger | Purpose |
 |---|---|---|
-| `rust-tools` | Push/PR | `cargo test` on engine-selector, vram-budget-calc, model-onboarding |
+| `rust-tools` | Push/PR | `cargo test` on engine-selector, vram-budget-calc, model-onboarding, cache-roi-calc |
 | `helm-lint` | Push/PR | `helm lint` + `helm template` on all 5 charts |
 | `registry-consistency` | Push/PR | Validates model registry entries match chart values |
 | `vram-budget-validation` | Push/PR | Blocks deployment if VRAM budget < 0 |

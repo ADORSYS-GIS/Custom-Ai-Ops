@@ -1,0 +1,56 @@
+{{- if .Values.lmcache.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  lmcache.toml: |
+    # LMCache configuration — distributed KV cache middleware
+    # Turns the KV cache from a per-instance silo into a persistent,
+    # shareable, cluster-wide resource. See docs/explain/bible-kv-cache.md §4.3.
+
+    [lmcache]
+    # Engine-independent daemon: survives inference engine restarts.
+    chunk_size = 256
+    local_cpu = true
+
+    # --- L1: CPU DRAM (always-on, fastest tier after VRAM) ---
+    # Capacity 5-10x the VRAM; ~5 µs latency.
+    [local_cpu]
+    num_cpus = {{ .Values.lmcache.cpuWorkers | default 4 }}
+
+    # --- L2: Local NVMe disk (warm cache, capacity 2-4 TB) ---
+    # 100-500 µs latency. Survives pod restarts.
+    {{- if .Values.lmcache.disk.enabled }}
+    [local_disk]
+    path = "{{ .Values.lmcache.disk.path | default "/var/lib/lmcache" }}"
+    max_size = "{{ .Values.lmcache.disk.maxSize | default "100GiB" }}"
+    {{- end }}
+
+    # --- L3: Distributed storage (Redis / Mooncake / S3) ---
+    # Cluster-wide sharing; 5-15 ms (Redis) to tens of ms (S3).
+    # Enables cross-pod, cross-node cache reuse from the same prefix.
+    {{- if .Values.lmcache.redis.enabled }}
+    [redis]
+    host = "{{ .Values.lmcache.redis.host }}"
+    port = {{ .Values.lmcache.redis.port | default 6379 }}
+    {{- end }}
+
+    {{- if .Values.lmcache.s3.enabled }}
+    [s3]
+    endpoint = "{{ .Values.lmcache.s3.endpoint }}"
+    bucket = "{{ .Values.lmcache.s3.bucket }}"
+    region = "{{ .Values.lmcache.s3.region | default "us-east-1" }}"
+    {{- end }}
+
+    # --- Observability: enable Prometheus metrics on :8330/metrics ---
+    [observability]
+    enable = true
+    metrics_host = "0.0.0.0"
+    metrics_port = 8330
+{{- end }}

@@ -1,13 +1,22 @@
 {
   "dashboard": {
     "title": "Model Serving Performance",
-    "tags": ["model-serving", "inference", "latency"],
+    "tags": [
+      "model-serving",
+      "inference",
+      "latency"
+    ],
     "timezone": "utc",
     "panels": [
       {
         "title": "Request Rate (req/s)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
         "targets": [
           {
             "expr": "sum(rate(http_requests_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type)",
@@ -23,7 +32,12 @@
       {
         "title": "P95 Latency (s)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        },
         "targets": [
           {
             "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"model-serving-engine\"}[5m])) by (le, namespace, engine_type))",
@@ -36,9 +50,18 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 2, "color": "yellow" },
-                { "value": 5, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 2,
+                  "color": "yellow"
+                },
+                {
+                  "value": 5,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -47,7 +70,12 @@
       {
         "title": "Error Rate (%)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
         "targets": [
           {
             "expr": "sum(rate(http_requests_total{job=\"model-serving-engine\",code=~\"5..\"}[5m])) by (namespace, engine_type) / sum(rate(http_requests_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type) * 100",
@@ -60,9 +88,18 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 5, "color": "yellow" },
-                { "value": 15, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 5,
+                  "color": "yellow"
+                },
+                {
+                  "value": 15,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -71,7 +108,12 @@
       {
         "title": "Tokens/Second Throughput",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        },
         "targets": [
           {
             "expr": "sum(rate(model_tokens_generated_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type)",
@@ -82,7 +124,12 @@
       {
         "title": "Active Models per Pod",
         "type": "stat",
-        "gridPos": { "h": 4, "w": 12, "x": 0, "y": 16 },
+        "gridPos": {
+          "h": 4,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        },
         "targets": [
           {
             "expr": "kube_statefulset_replicas{statefulset=~\"model-serving-.*\"}",
@@ -93,7 +140,12 @@
       {
         "title": "OOM Kills",
         "type": "stat",
-        "gridPos": { "h": 4, "w": 12, "x": 12, "y": 16 },
+        "gridPos": {
+          "h": 4,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        },
         "targets": [
           {
             "expr": "increase(kube_pod_container_status_terminated_reason{reason=\"OOMKilled\",namespace=~\"model-serving.*\"}[1h])",
@@ -105,8 +157,14 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 1, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 1,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -115,7 +173,12 @@
       {
         "title": "KV Cache Usage (%)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 20
+        },
         "description": "vLLM GPU KV cache utilization. Above 85% = warning, 100% = evictions imminent.",
         "targets": [
           {
@@ -129,10 +192,22 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 70, "color": "yellow" },
-                { "value": 85, "color": "orange" },
-                { "value": 100, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 70,
+                  "color": "yellow"
+                },
+                {
+                  "value": 85,
+                  "color": "orange"
+                },
+                {
+                  "value": 100,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -141,7 +216,12 @@
       {
         "title": "Prefix Cache Hit Rate (%)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 20
+        },
         "description": "vLLM prefix cache hit rate. Low hit rate wastes KV cache slots.",
         "targets": [
           {
@@ -155,10 +235,22 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "red" },
-                { "value": 20, "color": "orange" },
-                { "value": 50, "color": "yellow" },
-                { "value": 80, "color": "green" }
+                {
+                  "value": 0,
+                  "color": "red"
+                },
+                {
+                  "value": 20,
+                  "color": "orange"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "green"
+                }
               ]
             }
           }
@@ -167,7 +259,12 @@
       {
         "title": "Request Queue Depth (waiting)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 28
+        },
         "description": "vLLM requests waiting in queue. Above 10 = critical, engine cannot keep up.",
         "targets": [
           {
@@ -181,9 +278,18 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 5, "color": "yellow" },
-                { "value": 10, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 5,
+                  "color": "yellow"
+                },
+                {
+                  "value": 10,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -192,7 +298,12 @@
       {
         "title": "Time To First Token (TTFT, ms)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 28
+        },
         "description": "vLLM time-to-first-token. High TTFT indicates KV cache pressure or queue congestion.",
         "targets": [
           {
@@ -210,9 +321,18 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 500, "color": "yellow" },
-                { "value": 2000, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 500,
+                  "color": "yellow"
+                },
+                {
+                  "value": 2000,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -221,7 +341,12 @@
       {
         "title": "KV Cache Swap-Out Blocks",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 36
+        },
         "description": "KV cache blocks swapped to CPU RAM. Any value > 0 indicates GPU memory pressure.",
         "targets": [
           {
@@ -235,8 +360,14 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 1, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 1,
+                  "color": "red"
+                }
               ]
             }
           }
@@ -245,7 +376,12 @@
       {
         "title": "GPU VRAM Usage (DCGM)",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 36
+        },
         "description": "GPU memory usage from DCGM exporter. Correlates with KV cache pressure.",
         "targets": [
           {
@@ -259,9 +395,252 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 80, "color": "yellow" },
-                { "value": 95, "color": "red" }
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 80,
+                  "color": "yellow"
+                },
+                {
+                  "value": 95,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "LMCache L1 (CPU) Hit Rate (%)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 44
+        },
+        "description": "LMCache L1 (CPU DRAM) cache hit rate. SLM/CPU tier (bible-kv-cache.md \u00a74.3). Target > 30%.",
+        "targets": [
+          {
+            "expr": "sum(rate(lmcache_l1_cache_hits_total[5m])) / clamp(sum(rate(lmcache_l1_cache_queries_total[5m])), 1, +Inf) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "LMCache L2 (NVMe) Hit Rate (%)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 44
+        },
+        "description": "LMCache L2 (local NVMe disk) cache hit rate. Target > 20%.",
+        "targets": [
+          {
+            "expr": "sum(rate(lmcache_l2_cache_hits_total[5m])) / clamp(sum(rate(lmcache_l2_cache_queries_total[5m])), 1, +Inf) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "LMCache L3 (Redis/S3) Hit Rate (%)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 52
+        },
+        "description": "LMCache L3 (distributed Redis/S3) cache hit rate \u2014 cross-pod/persistent sharing. Target > 10%.",
+        "targets": [
+          {
+            "expr": "sum(rate(lmcache_l3_cache_hits_total[15m])) / clamp(sum(rate(lmcache_l3_cache_queries_total[15m])), 1, +Inf) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Prefill Skip Rate (%)",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 52
+        },
+        "description": "Percentage of requests that skipped prefill computation thanks to cache hit (any layer). High = effective cache. Low = cold starts / cache disabled.",
+        "targets": [
+          {
+            "expr": "sum(rate(vllm:gpu_prefix_cache_hits_total[5m])) / clamp(sum(rate(vllm:num_requests_admitted_total[5m])), 1, +Inf) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Cache Affinity Routing Distribution",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 60
+        },
+        "description": "Requests per backend pod. With consistent-hash routing (bible-kv-cache.md \u00a710.3), similar prefixes concentrate on the same pod. Unequal distribution is EXPECTED and desired.",
+        "targets": [
+          {
+            "expr": "sum by (destination_pod) (rate(envoy_cluster_upstream_rq_total[5m]))",
+            "legendFormat": "{{destination_pod}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Cache ROI Estimate ($/hour saved)",
+        "type": "stat",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 68
+        },
+        "description": "Estimated GPU cost saved per hour via cache (approximate). Formula: (cache_hits * ttft_no - cache_hits * ttft_yes) * gpu_cost_per_sec. See tools/cache-roi-calc for precise calc.",
+        "targets": [
+          {
+            "expr": "sum(rate(vllm:gpu_prefix_cache_hits_total[5m])) * (11 - 1.5) * (22.88 / 3600)",
+            "legendFormat": "$saved/h"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "red"
+                },
+                {
+                  "value": 10,
+                  "color": "yellow"
+                },
+                {
+                  "value": 50,
+                  "color": "green"
+                }
               ]
             }
           }

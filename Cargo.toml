@@ -4,6 +4,7 @@ members = [
     "tools/engine-selector",
     "tools/vram-budget-calc",
     "tools/model-onboarding",
+    "tools/cache-roi-calc",
 ]
 
 [workspace.package]

@@ -19,12 +19,16 @@ jobs:
         run: cargo build --release -p vram-budget-calc
       - name: Build model-onboarding
         run: cargo build --release -p model-onboarding
+      - name: Build cache-roi-calc
+        run: cargo build --release -p cache-roi-calc
       - name: Test engine-selector
         run: cargo test -p engine-selector
       - name: Test vram-budget-calc
         run: cargo test -p vram-budget-calc
       - name: Test model-onboarding
         run: cargo test -p model-onboarding
+      - name: Test cache-roi-calc
+        run: cargo test -p cache-roi-calc
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Format check

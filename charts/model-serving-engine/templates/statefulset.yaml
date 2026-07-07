@@ -72,6 +72,22 @@ spec:
           env:
             - name: MODEL_NAME
               value: {{ .Values.model.name | quote }}
+            {{- if .Values.lmcache.enabled }}
+            # LMCache integration: enables distributed KV cache sharing
+            # across pods/nodes. See docs/explain/bible-kv-cache.md §4.3.
+            - name: LMCACHE_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: LMCACHE_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.cachePersistence.enabled }}
+            # SafeTensors cache persistence: restore KV cache from disk
+            # on restart, skipping prefill (up to 136x TTFT reduction).
+            - name: VLLM_KV_CACHE_PERSIST_PATH
+              value: {{ .Values.cachePersistence.path | default "/cache/kv" | quote }}
+            {{- end }}
             {{- range .Values.extraEnv }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -84,6 +100,14 @@ spec:
               readOnly: false
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.lmcache.enabled }}
+            - name: lmcache-shm
+              mountPath: /dev/shm
+            {{- end }}
+            {{- if .Values.cachePersistence.enabled }}
+            - name: cache-persistence
+              mountPath: {{ .Values.cachePersistence.path | default "/cache/kv" }}
+            {{- end }}
             {{- range .Values.extraVolumeMounts }}
             - name: {{ .name }}
               mountPath: {{ .mountPath }}
@@ -106,6 +130,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.lmcache.enabled }}
+        - name: lmcache-shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        {{- end }}
         {{- range .Values.extraVolumes }}
         - name: {{ .name }}
           {{- if .configMap }}
@@ -146,3 +176,18 @@ spec:
         resources:
           requests:
             storage: {{ .Values.persistence.size }}
+    {{- if .Values.cachePersistence.enabled }}
+    - metadata:
+        name: cache-persistence
+        labels:
+          {{- include "model-serving-engine.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.cachePersistence.accessMode | default "ReadWriteOnce" }}
+        {{- if .Values.cachePersistence.storageClass }}
+        storageClassName: {{ .Values.cachePersistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.cachePersistence.size | default "20Gi" }}
+    {{- end }}

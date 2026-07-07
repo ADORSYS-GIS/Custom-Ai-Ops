@@ -59,6 +59,31 @@ nodeSelector:
 # Disable swap on GPU nodes via DaemonSet (swapoff -a)
 gpuNodeSwapoff: true
 
+# --- LMCache: distributed KV cache (L1 CPU / L2 NVMe) ---
+lmcache:
+  enabled: true
+  cpuWorkers: 2
+  disk:
+    enabled: true
+    path: /var/lib/lmcache
+    hostPath: /var/lib/lmcache
+    maxSize: 100GiB
+  redis:
+    enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 4Gi
+    limits:
+      cpu: "1"
+      memory: 8Gi
+
+# --- SafeTensors cache persistence: fast restart skips re-prefill ---
+cachePersistence:
+  enabled: true
+  storageClass: longhorn
+  size: 30Gi
+
 # --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
 serviceMonitor:
   enabled: true

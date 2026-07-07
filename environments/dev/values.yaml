@@ -53,6 +53,14 @@ nodeSelector:
 # Disable swap on GPU nodes via DaemonSet (swapoff -a)
 gpuNodeSwapoff: true
 
+# --- LMCache: disabled in dev (single instance, no distributed cache needed) ---
+lmcache:
+  enabled: false
+
+# --- SafeTensors cache persistence: disabled in dev ---
+cachePersistence:
+  enabled: false
+
 # --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
 serviceMonitor:
   enabled: true

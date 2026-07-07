@@ -1,563 +1,563 @@
-# La Bible du Cache KV — Fondements Mathématiques, Outils, Architecture et Stratégie à l'Échelle
+# The KV Cache Bible — Mathematical Foundations, Tools, Architecture, and Strategy at Scale
 
-> Document de référence complet : comment fonctionne le cache KV, pourquoi il est mathématiquement obligatoire, quels problèmes il crée, comment le gérer efficacement avec les meilleurs outils du marché (open-source et propriétaires), comment le combiner dans une architecture modulaire, et comment le manager dans la durée pour des millions d'utilisateurs.
-
----
-
-## Table des matières
-
-1. [Fondements mathématiques : pourquoi le cache est obligatoire](#partie-1)
-2. [Les problèmes que le cache crée](#partie-2)
-3. [La philosophie moderne de gestion du cache](#partie-3)
-4. [Panorama complet des outils du marché](#partie-4)
-5. [Gestion du cache par format de modèle](#partie-5)
-6. [Les meilleures combinaisons d'outils](#partie-6)
-7. [Position du cache dans une pipeline MLOps](#partie-7)
-8. [Comment les grands acteurs gèrent leur cache](#partie-8)
-9. [L'impact financier et le ROI](#partie-9)
-10. [Gérer le cache pour des millions d'utilisateurs](#partie-10)
-11. [Architecture modulaire et flexible recommandée](#partie-11)
-12. [Manager le cache dans la durée](#partie-12)
-13. [Checklist finale et glossaire](#partie-13)
+> Complete reference document: how the KV cache works, why it is mathematically mandatory, what problems it creates, how to manage it effectively with the best tools on the market (open-source and proprietary), how to combine them in a modular architecture, and how to manage it over time for millions of users.
 
 ---
 
-<a id="partie-1"></a>
-## 1. Fondements mathématiques : pourquoi le cache est obligatoire
+## Table of Contents
 
-### 1.1 Le mécanisme d'attention
+1. [Mathematical foundations: why the cache is mandatory](#part-1)
+2. [The problems the cache creates](#part-2)
+3. [The modern cache management philosophy](#part-3)
+4. [Comprehensive panorama of market tools](#part-4)
+5. [Cache management by model format](#part-5)
+6. [The best tool combinations](#part-6)
+7. [Position of the cache in an MLOps pipeline](#part-7)
+8. [How major players manage their cache](#part-8)
+9. [Financial impact and ROI](#part-9)
+10. [Managing cache for millions of users](#part-10)
+11. [Recommended modular and flexible architecture](#part-11)
+12. [Managing cache over time](#part-12)
+13. [Final checklist and glossary](#part-13)
 
-Un LLM basé sur l'architecture Transformer génère du texte de manière **autorégressive** : un token à la fois, chaque nouveau token dépendant statistiquement de tous ceux qui le précèdent. Ce lien se calcule via le **mécanisme d'auto-attention (self-attention)**.
+---
 
-Pour chaque token, le modèle projette son embedding en trois vecteurs, via des matrices de poids apprises $W_Q$, $W_K$, $W_V$ :
+<a id="part-1"></a>
+## 1. Mathematical Foundations: Why the Cache Is Mandatory
+
+### 1.1 The Attention Mechanism
+
+A Transformer-based LLM generates text in an **autoregressive** manner: one token at a time, each new token depending statistically on all those that precede it. This link is computed via the **self-attention mechanism**.
+
+For each token, the model projects its embedding into three vectors, via learned weight matrices $W_Q$, $W_K$, $W_V$:
 
 $$Q_i = x_i W_Q \quad K_i = x_i W_K \quad V_i = x_i W_V$$
 
-L'attention pour un token de requête $t$ vis-à-vis de l'ensemble des tokens $1..t$ s'écrit :
+The attention for a query token $t$ with respect to the set of tokens $1..t$ is written:
 
 $$\text{Attention}(Q_t, K_{1:t}, V_{1:t}) = \text{softmax}\left(\frac{Q_t \cdot K_{1:t}^T}{\sqrt{d_k}}\right) \cdot V_{1:t}$$
 
-où $d_k$ est la dimension d'une tête d'attention (le facteur $\sqrt{d_k}$ stabilise numériquement le softmax).
+where $d_k$ is the dimension of an attention head (the $\sqrt{d_k}$ factor numerically stabilizes the softmax).
 
-**Point clé** : pour calculer l'attention du token $t$, il faut les vecteurs $K$ et $V$ de **tous** les tokens précédents. Or ces vecteurs sont **strictement identiques** d'une étape à l'autre — ils ne dépendent que du token qui les a générés, jamais du token qu'on est en train de prédire.
+**Key point**: to compute the attention of token $t$, the $K$ and $V$ vectors of **all** previous tokens are needed. Yet these vectors are **strictly identical** from one step to the next — they depend only on the token that generated them, never on the token being predicted.
 
-### 1.2 La preuve par la complexité algorithmique
+### 1.2 The Proof by Algorithmic Complexity
 
-**Sans cache**, à chaque nouvelle étape $t$, le modèle doit recalculer $K$ et $V$ pour les $t$ tokens de la séquence, puis effectuer le produit matriciel d'attention sur ces $t$ tokens — un coût de $O(t^2)$ par étape (produit $Q \times K^T$ plus pondération par $V$). En sommant sur toute une séquence de longueur $N$ :
+**Without cache**, at each new step $t$, the model must recompute $K$ and $V$ for the $t$ tokens of the sequence, then perform the attention matrix product over these $t$ tokens — a cost of $O(t^2)$ per step (product $Q \times K^T$ plus weighting by $V$). Summing over an entire sequence of length $N$:
 
 $$\sum_{t=1}^{N} O(t^2) = O(N^3)$$
 
-**Exemple concret** : générer 10 000 tokens sans cache demanderait, au vu de cette explosion cubique, des heures voire des jours de calcul redondant sur un GPU moderne — un temps totalement disqualifiant pour un produit interactif.
+**Concrete example**: generating 10,000 tokens without cache would require, given this cubic explosion, hours or even days of redundant computation on a modern GPU — a time totally disqualifying for an interactive product.
 
-**Avec le cache KV**, à l'étape $t$, seuls $Q_t$, $K_t$, $V_t$ (le token courant) sont calculés. $K_{1:t-1}$ et $V_{1:t-1}$ sont lus directement en mémoire. Le coût de l'étape $t$ redevient $O(t)$ (un produit vecteur × matrice), et le coût total sur une séquence de longueur $N$ devient :
+**With the KV cache**, at step $t$, only $Q_t$, $K_t$, $V_t$ (the current token) are computed. $K_{1:t-1}$ and $V_{1:t-1}$ are read directly from memory. The cost of step $t$ returns to $O(t)$ (a vector x matrix product), and the total cost over a sequence of length $N$ becomes:
 
 $$\sum_{t=1}^{N} O(t) = O(N^2)$$
 
-*(Ce $O(N^2)$ restant correspond au coût incompressible de l'attention elle-même — chaque token doit, une fois dans sa vie, être comparé à tous ceux qui le précèdent. Le cache élimine la répétition de ce calcul, pas le calcul en lui-même.)*
+*(This remaining $O(N^2)$ corresponds to the incompressible cost of attention itself — each token must, once in its lifetime, be compared to all those that precede it. The cache eliminates the repetition of this computation, not the computation itself.)*
 
-| Sans cache | Avec cache KV |
+| Without cache | With KV cache |
 |---|---|
-| Complexité totale $O(N^3)$ | Complexité totale $O(N^2)$ |
-| $K$, $V$ recalculés à chaque étape | $K$, $V$ calculés **une seule fois**, réutilisés |
-| Génération de 10k tokens : ordre de grandeur d'heures/jours | Génération de 10k tokens : quelques secondes |
-| Mathématiquement **impraticable** en production | **Seule implémentation viable** de l'attention séquentielle |
+| Total complexity $O(N^3)$ | Total complexity $O(N^2)$ |
+| $K$, $V$ recomputed at each step | $K$, $V$ computed **once**, reused |
+| Generating 10k tokens: order of magnitude hours/days | Generating 10k tokens: a few seconds |
+| Mathematically **impractical** in production | **Only viable implementation** of sequential attention |
 
-### 1.3 Pourquoi il est *mathématiquement impossible* de contourner le cache
+### 1.3 Why It Is *Mathematically Impossible* to Bypass the Cache
 
-Il n'existe **aucune identité algébrique** permettant de déduire $K_i$ et $V_i$ à partir des poids du modèle seuls, sans repasser le token $i$ dans le réseau. Ce sont des **valeurs numériques dépendantes des données** ($x_i W_K$, $x_i W_V$), pas des constantes structurelles. La seule alternative au stockage est donc la répétition intégrale du calcul — d'où : le cache n'est pas une optimisation facultative, c'est **la condition mathématique de possibilité** de l'inférence autorégressive à grande échelle.
+There exists **no algebraic identity** that allows deducing $K_i$ and $V_i$ from the model weights alone, without passing token $i$ through the network. They are **data-dependent numerical values** ($x_i W_K$, $x_i W_V$), not structural constants. The only alternative to storage is therefore full repetition of the computation — hence: the cache is not an optional optimization, it is **the mathematical condition of possibility** for large-scale autoregressive inference.
 
-### 1.4 La taille du cache — formule et exemple chiffré
+### 1.4 Cache Size — Formula and Quantified Example
 
-La taille mémoire du cache KV, pour un batch donné, se calcule ainsi :
+The memory size of the KV cache, for a given batch, is calculated as follows:
 
-$$\text{Taille}_{\text{cache}} = 2 \times B \times L \times n_{kv} \times d_h \times S \times p$$
+$$\text{Cache Size} = 2 \times B \times L \times n_{kv} \times d_h \times S \times p$$
 
-où :
-- $2$ : un tenseur pour K, un pour V
-- $B$ : taille du batch (nombre de séquences traitées en parallèle)
-- $L$ : nombre de couches (layers) du Transformer
-- $n_{kv}$ : nombre de têtes Key-Value (peut être réduit via MQA/GQA — voir §3)
-- $d_h$ : dimension d'une tête d'attention
-- $S$ : longueur de la séquence (contexte)
-- $p$ : précision en octets (2 pour FP16, 1 pour INT8/FP8)
+where:
+- $2$: one tensor for K, one for V
+- $B$: batch size (number of sequences processed in parallel)
+- $L$: number of Transformer layers
+- $n_{kv}$: number of Key-Value heads (can be reduced via MQA/GQA — see Part 3)
+- $d_h$: dimension of an attention head
+- $S$: sequence length (context)
+- $p$: precision in bytes (2 for FP16, 1 for INT8/FP8)
 
-**Exemple concret** — Llama-3-70B (via des configurations GQA typiques : $L = 80$, $n_{kv} = 8$, $d_h = 128$), en FP16 ($p = 2$), pour une seule séquence ($B=1$) de 128 000 tokens :
+**Concrete example** — Llama-3-70B (via typical GQA configurations: $L = 80$, $n_{kv} = 8$, $d_h = 128$), in FP16 ($p = 2$), for a single sequence ($B=1$) of 128,000 tokens:
 
-$$2 \times 1 \times 80 \times 8 \times 128 \times 128\,000 \times 2 \approx 42~\text{Go}$$
+$$2 \times 1 \times 80 \times 8 \times 128 \times 128\,000 \times 2 \approx 42~\text{GB}$$
 
-Ce seul cache, pour une seule requête, **dépasse la VRAM d'un GPU grand public entier** et rivalise avec la taille des poids du modèle lui-même (~140 Go en FP16 pour 70B de paramètres). C'est ce chiffre qui explique pourquoi la gestion du cache est devenue un problème d'ingénierie à part entière.
+This single cache, for a single request, **exceeds the VRAM of an entire consumer GPU** and rivals the size of the model weights themselves (~140 GB in FP16 for 70B parameters). It is this figure that explains why cache management has become an engineering problem in its own right.
 
 ```mermaid
 flowchart LR
-    A["Sans cache KV\nO(N³)"] -->|"stockage des K,V\ndéjà calculés"| B["Avec cache KV\nO(N²) calcul\n+ O(N) mémoire par séquence"]
-    B --> C["Nouveau goulot :\nla VRAM, pas le calcul"]
+    A["Without KV cache\nO(N cubed)"] -->|"storage of already\ncomputed K,V"| B["With KV cache\nO(N squared) compute\n+ O(N) memory per sequence"]
+    B --> C["New bottleneck:\nVRAM, not compute"]
 ```
 
 ---
 
-<a id="partie-2"></a>
-## 2. Les problèmes que le cache crée
+<a id="part-2"></a>
+## 2. The Problems the Cache Creates
 
-Résoudre le problème du calcul a fait naître un problème tout aussi structurant : **la mémoire**. Quatre problèmes concrets en découlent.
+Solving the computation problem gave birth to an equally structuring problem: **memory**. Four concrete problems result.
 
-### 2.1 La croissance linéaire incontrôlée
+### 2.1 Uncontrolled Linear Growth
 
-Le cache grossit à chaque token généré, pour chaque séquence active, et personne ne connaît la longueur finale de la réponse à l'avance. Un système qui alloue "au pire cas" (longueur maximale du modèle) gaspille énormément de VRAM sur des séquences qui se terminent bien avant.
+The cache grows at each generated token, for each active sequence, and no one knows the final response length in advance. A system that allocates "for the worst case" (maximum model length) wastes enormous amounts of VRAM on sequences that end well before.
 
-### 2.2 La fragmentation mémoire
+### 2.2 Memory Fragmentation
 
-Avant les techniques modernes (PagedAttention), la VRAM était allouée en blocs **contigus** de taille maximale par séquence. Comme les séquences ont des longueurs différentes et se terminent à des moments différents, cela crée une fragmentation externe (trous inutilisables entre blocs) et interne (marge réservée mais jamais utilisée) : **60 à 80 % de la VRAM allouée au cache pouvait être gaspillée**.
+Before modern techniques (PagedAttention), VRAM was allocated in **contiguous** blocks of maximum size per sequence. Since sequences have different lengths and end at different times, this creates external fragmentation (unusable holes between blocks) and internal fragmentation (reserved but never used margin): **60 to 80% of the VRAM allocated to the cache could be wasted**.
 
-### 2.3 La redondance inter-requêtes
+### 2.3 Inter-Request Redundancy
 
-Si 1 000 utilisateurs envoient un prompt partageant le même préfixe (même prompt système, même document RAG), un système naïf recalcule ce préfixe 1 000 fois. C'est un gaspillage de calcul *et* de mémoire — le même contenu K/V est stocké en 1 000 exemplaires distincts au lieu d'un seul partagé.
+If 1,000 users send a prompt sharing the same prefix (same system prompt, same RAG document), a naive system recomputes this prefix 1,000 times. This is a waste of computation *and* memory — the same K/V content is stored in 1,000 distinct copies instead of a single shared one.
 
-### 2.4 L'effet cascade en production
+### 2.4 The Cascade Effect in Production
 
-En environnement réel, ces problèmes s'enchaînent :
+In a real environment, these problems chain together:
 
 ```mermaid
 flowchart TB
-    A["Requête surdimensionnée\nou pic de trafic"] --> B["Cache KV sature la VRAM"]
-    B --> C["vLLM décharge (swap)\nvers la RAM CPU"]
-    C --> D{"RAM CPU\naussi saturée ?"}
-    D -->|Oui| E["Swap disque (SSD/NVMe)\nlatence x1000"]
-    D -->|Non| F["Latence dégradée\nmais stable"]
-    E --> G["Time-To-First-Token explose"]
-    G --> H["Timeouts côté clients\nrequêtes dupliquées"]
-    H --> I["Charge amplifiée\nsur les nœuds voisins"]
+    A["Oversized request\nor traffic spike"] --> B["KV cache saturates VRAM"]
+    B --> C["vLLM offloads (swap)\nto CPU RAM"]
+    C --> D{"CPU RAM\nalso saturated?"}
+    D -->|Yes| E["Disk swap (SSD/NVMe)\nlatency x1000"]
+    D -->|No| F["Degraded latency\nbut stable"]
+    E --> G["Time-To-First-Token explodes"]
+    G --> H["Client-side timeouts\nduplicated requests"]
+    H --> I["Amplified load\non neighboring nodes"]
     I --> B
 ```
 
-Ce cercle vicieux — un crash OOM en cascade — est le scénario que toute architecture de production doit prévenir explicitement (voir Partie 11).
+This vicious circle — a cascading OOM crash — is the scenario that any production architecture must explicitly prevent (see Part 11).
 
-### 2.5 Nouveau problème né du volume : le coût économique
+### 2.5 New Problem Born of Volume: Economic Cost
 
-À l'échelle de millions de requêtes, la VRAM (la mémoire la plus chère du data center) devient le facteur limitant du coût d'infrastructure — pas le calcul brut. Chaque octet de cache gaspillé se traduit directement en GPU supplémentaires nécessaires, donc en coût d'exploitation (voir Partie 9).
+At the scale of millions of requests, VRAM (the most expensive memory in the data center) becomes the limiting factor of infrastructure cost — not raw computation. Every byte of wasted cache translates directly into additional GPUs needed, and therefore into operational cost (see Part 9).
 
 ---
 
-<a id="partie-3"></a>
-## 3. La philosophie moderne de gestion du cache
+<a id="part-3"></a>
+## 3. The Modern Cache Management Philosophy
 
-Le changement de paradigme central : le cache KV n'est plus un **tampon temporaire jetable**, mais un **objet mémoire de premier ordre** — une donnée qu'on gère, qu'on partage, qu'on persiste, au même titre que n'importe quelle donnée applicative critique.
+The central paradigm shift: the KV cache is no longer a **disposable temporary buffer**, but a **first-class memory object** — data that is managed, shared, and persisted, just like any critical application data.
 
-### 3.1 Les trois piliers
+### 3.1 The Three Pillars
 
-1. **Le cache est un goulot d'étranglement systémique** — pas le calcul. Sa gestion est un problème d'ingénierie système à part entière, pas un détail d'implémentation du moteur d'inférence.
-2. **"Écrire intelligemment" plutôt que "tout écrire"** — toutes les paires K/V ne se valent pas ; certaines méritent d'être conservées longtemps (préfixes partagés, prompts systèmes), d'autres peuvent être évincées rapidement.
-3. **Optimiser à tous les niveaux** — token, architecture du modèle, et système d'exploitation/orchestration.
+1. **The cache is a systemic bottleneck** — not computation. Its management is an engineering problem in its own right, not an implementation detail of the inference engine.
+2. **"Write intelligently" rather than "write everything"** — not all K/V pairs are equal; some deserve to be kept long (shared prefixes, system prompts), others can be evicted quickly.
+3. **Optimize at all levels** — token, model architecture, and operating system/orchestration.
 
-### 3.2 Les trois niveaux d'optimisation
+### 3.2 The Three Optimization Levels
 
 ```mermaid
 flowchart TB
-    subgraph N1["Niveau Token"]
-        T1["Éviction (LRU, H2O, SnapKV, CAKE)"]
-        T2["Compression / Quantification (FP8, INT8, KIVI)"]
-        T3["Fusion sélective (A³ — Attention-Aware Fusion)"]
+    subgraph N1["Token Level"]
+        T1["Eviction (LRU, H2O, SnapKV, CAKE)"]
+        T2["Compression / Quantization (FP8, INT8, KIVI)"]
+        T3["Selective fusion (A3 -- Attention-Aware Fusion)"]
     end
-    subgraph N2["Niveau Modèle (architecture)"]
+    subgraph N2["Model Level (architecture)"]
         M1["Multi-Query Attention (MQA)"]
         M2["Grouped-Query Attention (GQA)"]
-        M3["Partage inter-couches (Cross-Layer KV Sharing)"]
+        M3["Cross-Layer KV Sharing"]
     end
-    subgraph N3["Niveau Système"]
+    subgraph N3["System Level"]
         S1["PagedAttention (vLLM)"]
         S2["RadixAttention / HiCache (SGLang)"]
-        S3["Middleware distribué (LMCache, Mooncake)"]
+        S3["Distributed middleware (LMCache, Mooncake)"]
         S4["PD Disaggregation"]
     end
     N1 --> N2 --> N3
 ```
 
-**Niveau token** — décider *quoi* garder :
-- **Éviction** : LRU (Least Recently Used) reste la politique de base ; des méthodes plus fines comme **H2O**, **SnapKV** ou **CAKE** (Cascading and Adaptive KV cache Eviction) évaluent l'importance de chaque paire K/V pour ne garder que les tokens critiques.
-- **Compression / quantification** : réduire la précision numérique (FP16 → FP8/INT8), avec des méthodes dédiées comme **KIVI**.
-- **Fusion** : des algorithmes comme **A³** pré-fusionnent le cache de segments de texte selon leur pertinence.
-- **Admission prédictive** : l'approche la plus récente (**Write-Gated KV / WG-KV**) décide *avant même d'écrire* si un token mérite le cache global ou seulement un cache local temporaire — gains rapportés de 46 à 57 % de mémoire économisée et 1,9 à 3,4x d'accélération sur des modèles Llama.
+**Token level** — deciding *what* to keep:
+- **Eviction**: LRU (Least Recently Used) remains the baseline policy; finer methods like **H2O**, **SnapKV**, or **CAKE** (Cascading and Adaptive KV cache Eviction) evaluate the importance of each K/V pair to keep only critical tokens.
+- **Compression / quantization**: reducing numerical precision (FP16 to FP8/INT8), with dedicated methods like **KIVI**.
+- **Fusion**: algorithms like **A3** pre-fuse the cache of text segments based on their relevance.
+- **Predictive admission**: the most recent approach (**Write-Gated KV / WG-KV**) decides *before even writing* whether a token deserves the global cache or only a temporary local cache — reported gains of 46 to 57% memory saved and 1.9 to 3.4x speedup on Llama models.
 
-**Niveau modèle** — réduire *structurellement* la taille du cache :
-- **Multi-Query Attention (MQA)** : toutes les têtes de requête partagent une seule tête K/V → cache divisé par $n_{heads}$.
-- **Grouped-Query Attention (GQA)** : compromis intermédiaire, des groupes de têtes de requête partagent une tête K/V (utilisé par Llama 3, Mistral, etc.).
-- **Cross-Layer KV Sharing** : réutiliser les mêmes K/V entre plusieurs couches du réseau.
+**Model level** — *structurally* reducing cache size:
+- **Multi-Query Attention (MQA)**: all query heads share a single K/V head -> cache divided by $n_{heads}$.
+- **Grouped-Query Attention (GQA)**: intermediate compromise, groups of query heads share a K/V head (used by Llama 3, Mistral, etc.).
+- **Cross-Layer KV Sharing**: reusing the same K/V across multiple network layers.
 
-**Niveau système** — gérer *physiquement* la mémoire (détaillé en Partie 4).
+**System level** — *physically* managing memory (detailed in Part 4).
 
 ---
 
-<a id="partie-4"></a>
-## 4. Panorama complet des outils du marché
+<a id="part-4"></a>
+## 4. Comprehensive Panorama of Market Tools
 
-### 4.1 vLLM — PagedAttention (la fondation)
+### 4.1 vLLM — PagedAttention (The Foundation)
 
-**Mécanisme** : le cache KV est découpé en blocs de taille fixe (souvent 16 tokens, jusqu'à 64 selon la configuration), stockés en mémoire **non contiguë** — exactement comme la pagination mémoire d'un système d'exploitation. Chaque séquence référence ses blocs via une table de pages.
+**Mechanism**: the KV cache is divided into fixed-size blocks (often 16 tokens, up to 64 depending on configuration), stored in **non-contiguous** memory — exactly like an operating system's paged memory. Each sequence references its blocks via a page table.
 
 ```mermaid
 flowchart TB
-    subgraph VRAM["Pool de blocs VRAM"]
+    subgraph VRAM["VRAM Block Pool"]
         direction LR
-        B1["Bloc 1"] --- B2["Bloc 2"] --- B3["Bloc 3\n(libre)"] --- B4["Bloc 4"]
+        B1["Block 1"] --- B2["Block 2"] --- B3["Block 3\n(free)"] --- B4["Block 4"]
     end
-    SeqA["Séquence A\nTable: [1,4]"] --> B1
+    SeqA["Sequence A\nTable: [1,4]"] --> B1
     SeqA --> B4
-    SeqB["Séquence B\nTable: [2]"] --> B2
+    SeqB["Sequence B\nTable: [2]"] --> B2
 ```
 
-- **Automatic Prefix Caching (APC)** : chaque bloc est identifié par un hash du contenu + du préfixe, dans une table de hachage globale — les blocs identiques entre requêtes sont partagés automatiquement.
-- **Politique d'éviction** : LRU.
-- **Résultat mesuré** : le gaspillage mémoire tombe de 60-80 % à **moins de 4 %**, pour un débit jusqu'à 4x supérieur.
-- **Limite** : le cache reste borné à la VRAM d'une seule instance — pas de persistance, pas de partage inter-nœuds nativement.
-- **Quantification native** : vLLM supporte le cache KV en FP8 (`fp8_e4m3`, `fp8_e5m2`), avec calibration par tenseur ou par tête d'attention via `llm-compressor`, ce qui divise l'empreinte mémoire par deux avec une perte de qualité minime.
+- **Automatic Prefix Caching (APC)**: each block is identified by a hash of content + prefix, in a global hash table — identical blocks across requests are shared automatically.
+- **Eviction policy**: LRU.
+- **Measured result**: memory waste drops from 60-80% to **less than 4%**, for throughput up to 4x higher.
+- **Limitation**: the cache remains bounded to a single instance's VRAM — no persistence, no cross-node sharing natively.
+- **Native quantization**: vLLM supports FP8 KV cache (`fp8_e4m3`, `fp8_e5m2`), with per-tensor or per-attention-head calibration via `llm-compressor`, halving the memory footprint with minimal quality loss.
 
-### 4.2 SGLang — RadixAttention et HiCache
+### 4.2 SGLang — RadixAttention and HiCache
 
-**RadixAttention** organise le cache dans un **arbre radix** : chaque nœud représente le cache K/V d'un segment de tokens consécutifs ; un chemin racine → feuille représente le préfixe complet d'une requête. Les préfixes partagés entre requêtes réutilisent naturellement les mêmes nœuds.
+**RadixAttention** organizes the cache in a **radix tree**: each node represents the K/V cache of a segment of consecutive tokens; a root-to-leaf path represents the complete prefix of a request. Prefixes shared between requests naturally reuse the same nodes.
 
-**HiCache** étend RadixAttention avec une hiérarchie à trois niveaux inspirée du cache CPU moderne, via une structure appelée **HiRadixTree** qui référence où se trouve chaque segment de cache, quel que soit son niveau de stockage :
+**HiCache** extends RadixAttention with a three-level hierarchy inspired by modern CPU caches, via a structure called **HiRadixTree** that references where each cache segment is located, regardless of its storage level:
 
-| Niveau | Support physique | Rôle |
+| Level | Physical medium | Role |
 |---|---|---|
-| **L1** | Mémoire GPU | Cache actif, le plus rapide |
-| **L2** | Mémoire hôte (CPU RAM) | Cache tiède, capacité étendue |
-| **L3** | Stockage distribué (Mooncake, 3FS, NIXL, AIBrix KVCache) | Cache froid, persistant, partagé cluster-wide |
+| **L1** | GPU memory | Active cache, fastest |
+| **L2** | Host memory (CPU RAM) | Warm cache, extended capacity |
+| **L3** | Distributed storage (Mooncake, 3FS, NIXL, AIBrix KVCache) | Cold cache, persistent, cluster-wide sharing |
 
-**Résultats mesurés** publiés par l'équipe SGLang/LMSYS : sur un scénario d'agent de code avec des dialogues dépassant 25K tokens, l'intégration de HiCache avec un backend 3FS a fait chuter le TTFT moyen de 56 %, doublé le débit d'inférence, et fait passer le taux de cache hit de 40 % à 80 %In a coding agent scenario using Qwen3-Coder-480B, the observed dialogues often stretched past 25K tokens around 8 turns per session. Without full KV cache retention, nearly every request required costly re-computation. By integrating SGLang HiCache with DeepSeek 3FS KVStore for large-scale historical KV caching, the session's average TTFT dropped by 56%, inference throughput doubled, and the cache hit rate jumped from 40% to 80%. Sur DeepSeek-R1-671B en déploiement PD-disaggregated, les cache hits ont réduit le TTFT de 84 % en moyenneIn our evaluation, we tested the DeepSeek-R1-671B model under PD-disaggregated deployment using in-house online requests sampled from a general QA scenario. On average, cache hits achieved an 84% reduction in TTFT compared to full re-computation, et globalement HiCache a atteint jusqu'à 6x de gain de débit et jusqu'à 80 % de réduction du TTFTIn our measurements, HiCache achieved up to 6× throughput improvement and up to 80% reduction in TTFT, closely mirroring the results reported by the community.
+**Measured results** published by the SGLang/LMSYS team: in a coding agent scenario with dialogues exceeding 25K tokens, integrating HiCache with a 3FS backend reduced average TTFT by 56%, doubled inference throughput, and increased the cache hit rate from 40% to 80%. On DeepSeek-R1-671B in PD-disaggregated deployment, cache hits reduced TTFT by 84% on average. Overall, HiCache achieved up to 6x throughput improvement and up to 80% reduction in TTFT.
 
-### 4.3 LMCache — le middleware de cache universel
+### 4.3 LMCache — The Universal Cache Middleware
 
-LMCache s'est imposé comme la référence open-source pour transformer le cache KV en **donnée persistante et partageable**, indépendamment du moteur d'inférenceLMCache is a KV cache management layer for LLM inference. It turns KV cache from a temporary state into reusable AI-native knowledge that can be stored persistently, reused across multiple serving engines, monitored with an observability stack, and transformed for better generation quality.
+LMCache has established itself as the open-source reference for transforming the KV cache into **persistent and shareable data**, independent of the inference engine.
 
-**Architecture** : LMCache fonctionne comme un **processus démon indépendant** du moteur d'inférence — une panne du moteur n'entraîne pas la perte du cache (pas de "fate-sharing")Engine-independent deployment: LMCache, as a standalone daemon process, manages KV cache independently from the inference engine process, so that KV cache will not be lost even if the inference engine crashes.
+**Architecture**: LMCache runs as an **independent daemon process** from the inference engine — an engine crash does not cause cache loss (no "fate-sharing").
 
-**Backends de stockage pluggables** : LMCache s'interface avec une grande variété de backends via une interface unifiée : RAM CPU, disque local (SSD), Redis/Valkey, Mooncake, InfiniStore, stockage compatible S3, NIXL, GDSLMCache supports storage backends including CPU RAM, local disk (SSD), Redis/Valkey, Mooncake, InfiniStore, S3-compatible object storage, NIXL, and GDS.
+**Pluggable storage backends**: LMCache interfaces with a wide variety of backends via a unified interface: CPU RAM, local disk (SSD), Redis/Valkey, Mooncake, InfiniStore, S3-compatible storage, NIXL, GDS.
 
-**Fonctionnalités avancées** :
-- **Non-prefix KV reuse** : réutilisation du cache au-delà du simple préfixe, via **CacheBlend**, qui recalcule sélectivement seulement les tokens nécessaires pour préserver la qualitéNon-prefix KV reuse: Extend KV reuse beyond prefix caching by reusing cached KV blocks at any position in the prompt. This leverages CacheBlend to selectively recompute tokens for quality recovery.
-- **PD disaggregation** : transfert du cache entre workers de prefill et de decode via NVLink, RDMA ou TCP (via NIXL)PD disaggregation and KV transfer: Support KV cache transfer from prefill workers to decode workers over NVLink, RDMA, or TCP through transport layers such as NIXL.
-- **Observabilité de production** : métriques Kubernetes standard, métriques spécifiques au cache (hit rate par requête/par token, cycle de vie), métriques de gestion par utilisateurProduction-level KV cache observability: LMCache provides a rich set of KV cache observability metrics, including typical Kubernetes metrics (health monitoring, performance diagnostics), KV-cache-specific metrics (request-level and token-level prefix cache hits, lifecycle, request-level KV cache performance), management metrics (user-specific usage).
-- **Architecture multiprocessus (MP)**, sortie en avril 2026, permettant de faire tourner LMCache comme un service partagé entre plusieurs moteurs.
+**Advanced features**:
+- **Non-prefix KV reuse**: cache reuse beyond simple prefix matching, via **CacheBlend**, which selectively recomputes only the necessary tokens to preserve quality.
+- **PD disaggregation**: cache transfer between prefill and decode workers via NVLink, RDMA, or TCP (via NIXL).
+- **Production observability**: standard Kubernetes metrics, cache-specific metrics (hit rate per request/per token, lifecycle), per-user management metrics.
+- **Multi-process architecture (MP)**, released in April 2026, allowing LMCache to run as a shared service across multiple engines.
 
-**Résultats mesurés** : jusqu'à **15x d'amélioration du débit** combiné à vLLM sur des workloads de question-réponse multi-tours et d'analyse de documentsOur evaluation shows that combining LMCACHE with vLLM achieves up to 15x improvement in throughput across workloads such as multi-round question answering and document analysis. Une étude de cas chiffrée sur un cluster 4×H100 montre une réduction de 69 % du coût de prefill pour 1 000 requêtes partageant un contexte système de 128K tokens, avec un TTFT ramené de 11 secondes à 1,5 seconde à 80 % de taux de hitOn a Llama 3.1 70B chatbot at 128K system prompt, this cuts TTFT from 11s to 1.5s and allows the GPU to handle 15x more decode requests per second instead of re-computing the same prefill. LMCache a atteint sa maturité de production en janvier 2026 et est désormais utilisé par Google Cloud GKE Inference, CoreWeave et CohereLMCache graduated to production in January 2026 and is now used by Google Cloud GKE Inference, CoreWeave, and Cohere, et a rejoint la PyTorch Foundation à l'automne 2025.
+**Measured results**: up to **15x throughput improvement** combined with vLLM on multi-turn question-answering and document analysis workloads. A quantified case study on a 4xH100 cluster shows a 69% reduction in prefill cost for 1,000 requests sharing a 128K-token system prompt, with TTFT reduced from 11 seconds to 1.5 seconds at 80% hit rate. LMCache reached production maturity in January 2026 and is now used by Google Cloud GKE Inference, CoreWeave, and Cohere, and joined the PyTorch Foundation in fall 2025.
 
-**Architecture de tiers typique** (documentée par la communauté) :
+**Typical tiered architecture** (documented by the community):
 
-| Tier | Support | Latence | Capacité |
+| Tier | Medium | Latency | Capacity |
 |---|---|---|---|
-| Tier 0 | GPU HBM | sub-milliseconde | limitée à la VRAM (80 Go sur H100 SXM5) |
-| Tier 1 | CPU DRAM | ~5 µs | 256-512 Go par nœud |
-| Tier 2 | NVMe local | 100-500 µs | 2-4 To |
-| Tier 3 | Stockage distant (Redis, S3, Mooncake) | réseau | quasi-illimité |
+| Tier 0 | GPU HBM | sub-millisecond | limited to VRAM (80 GB on H100 SXM5) |
+| Tier 1 | CPU DRAM | ~5 us | 256-512 GB per node |
+| Tier 2 | Local NVMe | 100-500 us | 2-4 TB |
+| Tier 3 | Remote storage (Redis, S3, Mooncake) | network | near-unlimited |
 
 ### 4.4 NVIDIA Dynamo KVBM (KV Block Manager)
 
-Développé par NVIDIA, il **sépare la gestion mémoire des moteurs d'inférence** (vLLM, TensorRT-LLM) pour offrir une hiérarchie GPU ↔ CPU ↔ Disque avec transferts asynchrones optimisés. Dynamo s'intègre nativement avec vLLM et LMCacheBy integrating with popular inference engines like vLLM and open-source tools like LMCache, NVIDIA Dynamo simplifies KV Cache management, enabling efficient cache reuse and reduced recomputation. Des partenaires de stockage haute performance (Vast, WEKA) ont démontré des débits de 35 Go/s vers un seul GPU H100 via le plugin GPU Direct Storage (GDS), confirmant que le stockage n'est pas le goulot d'étranglementUsing the GPU Direct Storage (GDS) plugin in Dynamo, Vast achieved 35 GB/s throughput to a single NVIDIA H100 GPU, demonstrating full GPU saturation and confirming that storage was not a performance bottleneck.
+Developed by NVIDIA, it **separates memory management from inference engines** (vLLM, TensorRT-LLM) to offer a GPU to CPU to disk hierarchy with optimized asynchronous transfers. Dynamo integrates natively with vLLM and LMCache. High-performance storage partners (Vast, WEKA) have demonstrated 35 GB/s throughput to a single H100 GPU via the GPU Direct Storage (GDS) plugin, confirming that storage is not the bottleneck.
 
-### 4.5 Mooncake — l'architecture centrée sur le KVCache
+### 4.5 Mooncake — The KVCache-Centric Architecture
 
-Mooncake est la plateforme de service développée par Moonshot AI pour Kimi. Sa philosophie est radicale : au lieu de traiter le cache comme un sous-produit de l'inférence, **tout le système est organisé autour de lui**It features a KVCache-centric disaggregated architecture that separates the prefill and decoding clusters. It also leverages the underutilized CPU, DRAM, and SSD resources of the GPU cluster to implement a disaggregated cache of KVCache.
+Mooncake is the serving platform developed by Moonshot AI for Kimi. Its philosophy is radical: instead of treating the cache as a byproduct of inference, **the entire system is organized around it**.
 
-- **Séparation prefill/decode** : les deux phases tournent sur des clusters distincts.
-- **Mooncake Store** : pool de cache distribué mutualisant CPU, DRAM, SSD et RDMA de l'ensemble du cluster GPU.
-- **Conductor** : le scheduler central qui route chaque requête en fonction de la localisation actuelle du cache et de la chargeConductor is responsible for dispatching requests based on the current distribution of the KVCache and workloads. It also replicates or swaps certain blocks of the KVCache if it is beneficial for future inference.
-- **Rejet précoce prédictif** : en cas de surcharge, Mooncake rejette intelligemment certaines requêtes en amont plutôt que de dégrader tout le cluster.
+- **Prefill/decode separation**: the two phases run on distinct clusters.
+- **Mooncake Store**: a distributed cache pool mutualizing CPU, DRAM, SSD, and RDMA across the entire GPU cluster.
+- **Conductor**: the central scheduler that routes each request based on current cache location and load.
+- **Predictive early rejection**: under overload, Mooncake intelligently rejects certain requests upstream rather than degrading the entire cluster.
 
-**Résultats mesurés** : jusqu'à **525 % d'augmentation de débit** dans certains scénarios simulés respectant les SLOExperiments show that Mooncake excels in long-context scenarios. Compared to the baseline method, Mooncake can achieve up to a 525% increase in throughput in certain simulated scenarios while adhering to SLOs, et en production, une augmentation de la capacité effective de traitement de **59 % à 498 %** selon les traces réellesIn tests using real traces, Mooncake increases the effective request capacity by 59% ∼ 498% when compared to baseline methods, all while complying with SLOs. Currently, Mooncake is operational across thousands of nodes, processing over 100 billion tokens daily. Le système tourne aujourd'hui sur des milliers de nœuds et traite plus de 100 milliards de tokens par jour.
+**Measured results**: up to **525% throughput increase** in certain simulated scenarios adhering to SLOs. In production, an increase in effective processing capacity of **59% to 498%** depending on real traces. The system now runs on thousands of nodes and processes more than 100 billion tokens per day.
 
-### 4.6 Autres outils spécialisés notables
+### 4.6 Other Notable Specialized Tools
 
-| Outil | Spécialisation | Point différenciant |
+| Tool | Specialization | Differentiating point |
 |---|---|---|
-| **Unified Cache Manager (UCM)** | Cache "sparse" pour contextes très longs | Séparation compute/storage, réduction de latence 3-10x sur dialogues multi-tours |
-| **WombatKV** | Cache sur stockage objet (S3) | Persistance extrême, cache adressable par contenu, survit aux redémarrages |
-| **llm-d KV-Cache Manager** | Routage conscient du cache | Vue temps réel de la localisation du cache sur un cluster vLLM pour router intelligemment |
-| **PiKV** | Cache pour architectures Mixture-of-Experts (MoE) | Cache distribué en parallèle, compression adaptée au routage MoE |
-| **EdgeSync-LLM** | Inférence en périphérie (edge, Android) | Agnostique du moteur (llama.cpp, MLC-LLM), cache de fragments légers |
-| **InfiniGen / H2O** | Recherche académique sur l'éviction | Déchargement de tenseurs, éviction de tokens par score d'importance |
-| **Redis / Valkey** | Backend de stockage générique | Utilisé comme couche L2/L3 par LMCache et d'autres, faible latence (5-15 ms) |
-| **Memcached** | Backend de stockage générique | Alternative plus simple à Redis pour du cache généraliste |
+| **Unified Cache Manager (UCM)** | "Sparse" cache for very long contexts | Compute/storage separation, 3-10x latency reduction on multi-turn dialogues |
+| **WombatKV** | Cache on object storage (S3) | Extreme persistence, content-addressable cache, survives restarts |
+| **llm-d KV-Cache Manager** | Cache-aware routing | Real-time view of cache location on a vLLM cluster for intelligent routing |
+| **PiKV** | Cache for Mixture-of-Experts (MoE) architectures | Distributed cache in parallel, compression adapted to MoE routing |
+| **EdgeSync-LLM** | Edge inference (Android) | Engine-agnostic (llama.cpp, MLC-LLM), lightweight fragment cache |
+| **InfiniGen / H2O** | Academic research on eviction | Tensor offloading, token eviction by importance score |
+| **Redis / Valkey** | Generic storage backend | Used as L2/L3 layer by LMCache and others, low latency (5-15 ms) |
+| **Memcached** | Generic storage backend | Simpler alternative to Redis for general-purpose caching |
 
-### 4.7 Tableau de synthèse — quand choisir quoi
+### 4.7 Summary Table — When to Choose What
 
-| Besoin dominant | Outil recommandé |
+| Dominant need | Recommended tool |
 |---|---|
-| Éliminer la fragmentation mémoire GPU sur une seule instance | **vLLM (PagedAttention)** |
-| Contextes très longs, dialogues multi-tours, cache hiérarchique intégré au moteur | **SGLang (HiCache)** |
-| Persistance et partage inter-instances/inter-moteurs, indépendance vis-à-vis du moteur | **LMCache** |
-| Écosystème NVIDIA complet avec transferts GPUDirect Storage | **NVIDIA Dynamo KVBM** |
-| Cluster à très grande échelle, séparation stricte prefill/decode | **Mooncake** |
-| Cache adressable, persistant sur objet, partage inter-équipes | **WombatKV** |
-| Routage optimal dans un cluster vLLM multi-pods | **llm-d KV-Cache Manager** |
-| Modèles Mixture-of-Experts | **PiKV** |
-| Inférence sur device/edge | **EdgeSync-LLM** |
+| Eliminate GPU memory fragmentation on a single instance | **vLLM (PagedAttention)** |
+| Very long contexts, multi-turn dialogues, hierarchical cache integrated into the engine | **SGLang (HiCache)** |
+| Persistence and cross-instance/cross-engine sharing, engine independence | **LMCache** |
+| Complete NVIDIA ecosystem with GPUDirect Storage transfers | **NVIDIA Dynamo KVBM** |
+| Very large-scale cluster, strict prefill/decode separation | **Mooncake** |
+| Addressable, object-persistent cache, cross-team sharing | **WombatKV** |
+| Optimal routing in a multi-pod vLLM cluster | **llm-d KV-Cache Manager** |
+| Mixture-of-Experts models | **PiKV** |
+| On-device/edge inference | **EdgeSync-LLM** |
 
 ---
 
-<a id="partie-5"></a>
-## 5. Gestion du cache par format de modèle
+<a id="part-5"></a>
+## 5. Cache Management by Model Format
 
-Il faut distinguer clairement deux objets : le **format du modèle** (comment les poids sont stockés, une fois pour toutes) et le **cache KV** (un objet dynamique créé à chaque inférence). Le format des poids ne détermine pas directement la gestion du cache — c'est le **moteur d'inférence** qui l'implémente. Mais chaque écosystème a ses spécificités.
+One must clearly distinguish two objects: the **model format** (how weights are stored, once and for all) and the **KV cache** (a dynamic object created at each inference). The weight format does not directly determine cache management — it is the **inference engine** that implements it. But each ecosystem has its specificities.
 
-### 5.1 SafeTensors — le conteneur de persistance
+### 5.1 SafeTensors — The Persistence Container
 
-SafeTensors ne gère pas le cache activement ; il sert de **format de sérialisation sûr** pour le persister sur disque :
+SafeTensors does not actively manage the cache; it serves as a **safe serialization format** for persisting it to disk:
 
-1. **Quantification** : le cache FP16 est réduit à 4 bits (Q4) pour diviser sa taille par 4.
-2. **Sérialisation** : écriture dans un fichier `.safetensors` avec métadonnées (forme, type).
-3. **Restauration** : au redémarrage, le moteur lit, déquantifie, et réinjecte directement dans la couche d'attention — **sans repasser par un pré-remplissage complet**.
+1. **Quantization**: the FP16 cache is reduced to 4 bits (Q4) to divide its size by 4.
+2. **Serialization**: writing to a `.safetensors` file with metadata (shape, type).
+3. **Restoration**: on restart, the engine reads, dequantizes, and reinjects directly into the attention layer — **without going through a complete prefill**.
 
-Impact mesuré : réduction du TTFT pouvant atteindre un facteur **136x** pour un modèle Gemma 3 12B lors de la restauration d'un cache persisté.
+Measured impact: TTFT reduction up to a factor of **136x** for a Gemma 3 12B model when restoring a persisted cache.
 
-### 5.2 ONNX — le défi du graphe statique
+### 5.2 ONNX — The Static Graph Challenge
 
-ONNX représente le modèle comme un graphe d'opérations **statique**, alors que le cache KV est **dynamique** (sa taille change à chaque token). Solutions employées :
+ONNX represents the model as a **static** operations graph, whereas the KV cache is **dynamic** (its size changes at each token). Solutions employed:
 
-- **Double export** : un graphe pour le *prefill* (sans cache), un graphe pour le *decode* (avec `past_key_values` en entrée et `present_key_values` en sortie).
-- **`past_present_share_buffer`** : optimisation d'ONNX Runtime qui fait pointer les buffers "passé" et "présent" vers le même bloc mémoire, évitant les copies inutiles.
-- **API haut niveau** : ONNX Runtime GenAI (`generate()`) gère le cache en interne automatiquement.
+- **Dual export**: one graph for *prefill* (without cache), one graph for *decode* (with `past_key_values` as input and `present_key_values` as output).
+- **`past_present_share_buffer`**: an ONNX Runtime optimization that makes "past" and "present" buffers point to the same memory block, avoiding unnecessary copies.
+- **High-level API**: ONNX Runtime GenAI (`generate()`) manages the cache internally automatically.
 
-### 5.3 GGUF — l'optimisation pour l'inférence locale
+### 5.3 GGUF — Optimization for Local Inference
 
-Format de prédilection de llama.cpp et Ollama. Le cache est géré **entièrement par le moteur**, indépendamment du format de poids (qui gère lui sa propre quantification : Q4_K_M, Q8_0, etc.). Pour un modèle 7B avec un contexte de 4K tokens, le cache KV nécessite environ 2 Go supplémentaires, alloués en CPU ou GPU selon la configuration.
+The format of choice for llama.cpp and Ollama. The cache is managed **entirely by the engine**, independently of the weight format (which handles its own quantization: Q4_K_M, Q8_0, etc.). For a 7B model with a 4K-token context, the KV cache requires approximately 2 GB additional, allocated in CPU or GPU depending on configuration.
 
-### 5.4 TensorRT-LLM / TensorRT Engine — l'optimisation matérielle poussée
+### 5.4 TensorRT-LLM / TensorRT Engine — Pushed Hardware Optimization
 
-Le format d'entrée est un moteur `.engine` compilé, optimisé pour une architecture GPU précise. Fonctionnalités de cache avancées natives :
-- **Paged KV Cache** (blocs de taille fixe, allocation dynamique)
-- **KV Cache Reuse** (partage de préfixe)
-- **Quantification FP8** du cache
-- **Offloading** vers la mémoire hôte en cas de saturation GPU
-- Contrôle fin via `free_gpu_memory_fraction`
+The input format is a compiled `.engine` file, optimized for a specific GPU architecture. Native advanced cache features:
+- **Paged KV Cache** (fixed-size blocks, dynamic allocation)
+- **KV Cache Reuse** (prefix sharing)
+- **FP8 quantization** of the cache
+- **Offloading** to host memory in case of GPU saturation
+- Fine control via `free_gpu_memory_fraction`
 
-### 5.5 Synthèse
+### 5.5 Summary
 
-| Format | Rôle | Gestion du cache KV |
+| Format | Role | KV cache management |
 |---|---|---|
-| SafeTensors | Persistance sûre des tenseurs | Conteneur de sauvegarde/restauration du cache sur disque |
-| ONNX | Interopérabilité | Nécessite export dual + gestion explicite des buffers |
-| GGUF | Inférence locale (CPU) | Déléguée entièrement au moteur (llama.cpp) |
-| TensorRT Engine | Performance GPU NVIDIA | Pagination, quantification et partage natifs, très avancés |
+| SafeTensors | Safe tensor persistence | Cache save/restore container on disk |
+| ONNX | Interoperability | Requires dual export + explicit buffer management |
+| GGUF | Local inference (CPU) | Fully delegated to the engine (llama.cpp) |
+| TensorRT Engine | NVIDIA GPU performance | Native paging, quantization, and sharing, very advanced |
 
-En pratique, un projet mature combine ces formats : **SafeTensors** pour persister le cache, **ONNX** pour l'interopérabilité multi-plateforme, **TensorRT-LLM** ou **vLLM** pour l'inférence haute performance en production.
+In practice, a mature project combines these formats: **SafeTensors** to persist the cache, **ONNX** for cross-platform interoperability, **TensorRT-LLM** or **vLLM** for high-performance production inference.
 
 ---
 
-<a id="partie-6"></a>
-## 6. Les meilleures combinaisons d'outils
+<a id="part-6"></a>
+## 6. The Best Tool Combinations
 
-Aucun outil ne couvre seul tous les besoins. La bonne pratique consiste à **empiler des couches complémentaires**.
+No single tool covers all needs. The best practice is to **stack complementary layers**.
 
-### 6.1 La combinaison de référence : moteur + middleware + stockage
+### 6.1 The Reference Combination: Engine + Middleware + Storage
 
 ```mermaid
 flowchart TB
-    subgraph Moteur["Couche 1 — Moteur d'inférence"]
-        VLLM["vLLM (PagedAttention + APC)\nou SGLang (RadixAttention)"]
+    subgraph Engine["Layer 1 -- Inference Engine"]
+        VLLM["vLLM (PagedAttention + APC)\nor SGLang (RadixAttention)"]
     end
-    subgraph Middleware["Couche 2 — Middleware de cache distribué"]
-        LMC["LMCache\n(extraction, hiérarchie, partage)"]
+    subgraph Middleware["Layer 2 -- Distributed Cache Middleware"]
+        LMC["LMCache\n(extraction, hierarchy, sharing)"]
     end
-    subgraph Stockage["Couche 3 — Stockage persistant"]
-        REDIS["Redis / Valkey\n(faible latence)"]
-        MOON["Mooncake Store\n(RDMA, très grande échelle)"]
-        S3["S3 / objet\n(capacité quasi-illimitée)"]
+    subgraph Storage["Layer 3 -- Persistent Storage"]
+        REDIS["Redis / Valkey\n(low latency)"]
+        MOON["Mooncake Store\n(RDMA, very large scale)"]
+        S3["S3 / object\n(near-unlimited capacity)"]
     end
-    Moteur -->|"cache miss local"| Middleware
+    Engine -->|"local cache miss"| Middleware
     Middleware --> REDIS
     Middleware --> MOON
     Middleware --> S3
 ```
 
-**Flux type d'une requête** :
+**Typical request flow**:
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant M as Moteur (vLLM/SGLang)
+    participant M as Engine (vLLM/SGLang)
     participant L as LMCache
-    participant S as Stockage (Redis/Mooncake/S3)
+    participant S as Storage (Redis/Mooncake/S3)
 
-    C->>M: Requête (prompt)
-    M->>M: Vérifie cache local GPU (L0)
-    alt Cache hit local
-        M-->>C: Génération directe (skip prefill)
-    else Cache miss local
-        M->>L: Interroge le cache distribué
-        L->>S: Recherche dans L1/L2/L3
-        alt Cache hit distant
-            S-->>L: Retourne les blocs KV
-            L-->>M: Injecte le cache en VRAM
-            M-->>C: Skip prefill, génère directement
-        else Cache miss total
-            M->>M: Prefill complet + génération
-            M->>L: Envoie le nouveau cache
-            L->>S: Stocke pour réutilisation future
+    C->>M: Request (prompt)
+    M->>M: Check local GPU cache (L0)
+    alt Local cache hit
+        M-->>C: Direct generation (skip prefill)
+    else Local cache miss
+        M->>L: Query distributed cache
+        L->>S: Search in L1/L2/L3
+        alt Remote cache hit
+            S-->>L: Return KV blocks
+            L-->>M: Inject cache into VRAM
+            M-->>C: Skip prefill, generate directly
+        else Total cache miss
+            M->>M: Full prefill + generation
+            M->>L: Send new cache
+            L->>S: Store for future reuse
         end
     end
 ```
 
-### 6.2 Pourquoi cette combinaison fonctionne
+### 6.2 Why This Combination Works
 
-- **vLLM/SGLang** résolvent la fragmentation et l'usage GPU local — mais leur cache est un "silo" borné à une instance.
-- **LMCache** (ou Mooncake/HiCache) brise ce silo : le cache devient partageable entre requêtes, entre instances, et persistant entre redémarrages.
-- **Le stockage** (Redis pour la vitesse, Mooncake pour l'échelle RDMA, S3 pour la capacité/le coût) fournit la capacité que la VRAM ne peut jamais offrir.
+- **vLLM/SGLang** solve fragmentation and local GPU usage — but their cache is a "silo" bounded to a single instance.
+- **LMCache** (or Mooncake/HiCache) breaks this silo: the cache becomes shareable across requests, across instances, and persistent across restarts.
+- **Storage** (Redis for speed, Mooncake for RDMA scale, S3 for capacity/cost) provides the capacity that VRAM can never offer.
 
-### 6.3 Autres combinaisons notables
+### 6.3 Other Notable Combinations
 
-- **SGLang + HiCache + Mooncake Store** : combinaison native recommandée par l'équipe SGLang pour les contextes ultra-longs et le déploiement PD-disaggregatedMooncake serves as a high-performance L3 storage backend for SGLang HiCache, enabling distributed KV cache storage across multiple servers with RDMA-accelerated data transfer.
-- **vLLM + NVIDIA Dynamo + LMCache** : combinaison optimale sur infrastructure NVIDIA complète, avec transferts GPUDirect Storage.
-- **TensorRT-LLM + LMCache (connecteur MP)** : LMCache expose désormais un adaptateur natif pour TensorRT-LLM, permettant de partager le même cache entre vLLM et TensorRT-LLM au sein d'un même cluster hétérogène.
+- **SGLang + HiCache + Mooncake Store**: native combination recommended by the SGLang team for ultra-long contexts and PD-disaggregated deployment.
+- **vLLM + NVIDIA Dynamo + LMCache**: optimal combination on full NVIDIA infrastructure, with GPUDirect Storage transfers.
+- **TensorRT-LLM + LMCache (MP connector)**: LMCache now exposes a native adapter for TensorRT-LLM, allowing the same cache to be shared between vLLM and TensorRT-LLM within the same heterogeneous cluster.
 
-### 6.4 Principe de modularité
+### 6.4 The Modularity Principle
 
-Le principe directeur pour une architecture **flexible et pérenne** : découpler strictement le moteur d'inférence du middleware de cache, via une interface de connecteur standardisée (comme le fait LMCache avec son "modular KV cache connector"a modular KV cache connector component, decoupling LMCACHE from the rapid evolution of inference engines). Cela permet de changer de moteur d'inférence (vLLM → SGLang → TensorRT-LLM) sans perdre l'investissement fait dans la couche de cache distribué.
+The guiding principle for a **flexible and durable** architecture: strictly decouple the inference engine from the cache middleware, via a standardized connector interface (as LMCache does with its "modular KV cache connector"). This allows changing the inference engine (vLLM to SGLang to TensorRT-LLM) without losing the investment made in the distributed cache layer.
 
 ---
 
-<a id="partie-7"></a>
-## 7. Position du cache dans une pipeline MLOps
+<a id="part-7"></a>
+## 7. Position of the Cache in an MLOps Pipeline
 
 ```mermaid
 flowchart LR
-    subgraph Dev["1. Développement"]
-        D1["Tests de prompts\nCaching des appels API"]
+    subgraph Dev["1. Development"]
+        D1["Prompt testing\nAPI call caching"]
     end
-    subgraph Deploy["2. Déploiement / Inférence"]
-        D2["Orchestration\n(routage cache-aware)"]
-        D3["Cache local GPU\n(PagedAttention/RadixAttention)"]
-        D4["Cache distribué\n(LMCache/HiCache)"]
-        D5["Stockage persistant\n(Redis/S3/Mooncake)"]
+    subgraph Deploy["2. Deployment / Inference"]
+        D2["Orchestration\n(cache-aware routing)"]
+        D3["Local GPU cache\n(PagedAttention/RadixAttention)"]
+        D4["Distributed cache\n(LMCache/HiCache)"]
+        D5["Persistent storage\n(Redis/S3/Mooncake)"]
     end
-    subgraph Ops["3. Exploitation continue"]
-        O1["Observabilité\n(Prometheus/Grafana)"]
+    subgraph Ops["3. Continuous Operations"]
+        O1["Observability\n(Prometheus/Grafana)"]
         O2["Autoscaling\n(KEDA)"]
         O3["GitOps\n(Helm/ArgoCD)"]
     end
     Dev --> Deploy --> Ops
-    Ops -.rétroaction.-> Deploy
+    Ops -.feedback.-> Deploy
 ```
 
-- **Phase développement** : itération sur les prompts, avec un caching léger côté API pour accélérer les tests et limiter les coûts.
-- **Phase déploiement** : le cœur du système — orchestration, cache local, cache distribué, stockage, exactement comme décrit dans les Parties 4 et 6.
-- **Phase d'exploitation continue** : observabilité, autoscaling, déploiement GitOps — c'est ce qui transforme une architecture de cache correcte en un **système géré dans la durée** (voir Partie 12).
+- **Development phase**: prompt iteration, with lightweight API-side caching to accelerate tests and limit costs.
+- **Deployment phase**: the core of the system — orchestration, local cache, distributed cache, storage, exactly as described in Parts 4 and 6.
+- **Continuous operations phase**: observability, autoscaling, GitOps deployment — this is what transforms a correct cache architecture into a **system managed over time** (see Part 12).
 
-Le cache n'est donc jamais une "brique isolée" : c'est une couche transversale qui traverse tout le cycle de vie MLOps, du prompt engineering jusqu'au rollback en production.
+The cache is therefore never an "isolated brick": it is a transversal layer that spans the entire MLOps lifecycle, from prompt engineering to production rollback.
 
 ---
 
-<a id="partie-8"></a>
-## 8. Comment les grands acteurs gèrent leur cache
+<a id="part-8"></a>
+## 8. How Major Players Manage Their Cache
 
-Les principaux fournisseurs d'API appliquent tous une forme de **prompt caching** — l'application, côté client de leur API, de la même philosophie que le cache KV interne.
+Major API providers all apply some form of **prompt caching** — the application, on the client side of their API, of the same philosophy as internal KV caching.
 
-| Fournisseur | Mécanisme | Conditions | Réduction de coût |
+| Provider | Mechanism | Conditions | Cost reduction |
 |---|---|---|---|
-| **OpenAI** | Automatique | Prompts ≥ 1024 tokens, réutilisation par tranches de 128 tokens | Jusqu'à 90 % sur les tokens d'entrée |
-| **Anthropic** | Manuel (`cache_control`) | Blocs à marquer explicitement, TTL de 5 min ou 1 heure | Jusqu'à 90 % sur les tokens en cache |
-| **Google (Gemini)** | Explicite + implicite | Explicite = cache persistant créé à la demande ; implicite = automatique sur modèles récents | Jusqu'à 75 % |
-| **DeepSeek** | Automatique, sur disque | Cache automatique pour les préfixes de prompts | Réduction d'un ordre de grandeur |
+| **OpenAI** | Automatic | Prompts >= 1024 tokens, reuse in 128-token increments | Up to 90% on input tokens |
+| **Anthropic** | Manual (`cache_control`) | Blocks to mark explicitly, TTL of 5 min or 1 hour | Up to 90% on cached tokens |
+| **Google (Gemini)** | Explicit + implicit | Explicit = persistent cache created on demand; implicit = automatic on recent models | Up to 75% |
+| **DeepSeek** | Automatic, on disk | Automatic cache for prompt prefixes | Order-of-magnitude reduction |
 
-**Recommandation pratique pour vos applications** :
-- Structurez systématiquement vos prompts avec les éléments **statiques et volumineux en premier** (instructions système, contexte RAG, schémas d'outils), et les éléments **variables en dernier** (question spécifique de l'utilisateur).
-- Utilisez les mécanismes natifs des fournisseurs (`cache_control` pour Anthropic, structuration pour OpenAI/DeepSeek) plutôt que de réinventer une couche de cache applicative.
-
----
-
-<a id="partie-9"></a>
-## 9. L'impact financier et le ROI
-
-### 9.1 Le principe économique fondamental
-
-L'objectif stratégique : **briser l'équation coût = utilisateurs × requêtes**. Sans cache, chaque requête coûte le plein tarif du calcul. Avec un cache bien géré, le coût dépend de la **nouveauté** de la requête, pas de son volume brut.
-
-### 9.2 Chiffres de référence
-
-- Les tokens en cache sont facturés jusqu'à **10x moins cher** que les tokens standards chez les principaux fournisseurs d'API.
-- Une architecture combinant vLLM + LMCache correctement configurée peut réduire les coûts d'infrastructure GPU de **60 à 90 %** sur des charges à fort taux de réutilisation (RAG, chatbots avec prompt système long, agents multi-tours).
-- Étude de cas chiffrée : pour un document "chaud" de 3 774 tokens servi à 80 millions d'agents, le coût de recalcul intégral s'élèverait à environ 1,5 million de dollars, contre environ 0,03 million en réutilisant le cache — un facteur de réduction de **49,7x**.
-- Sur un cluster 4×H100 SXM5 en spot ($5,72/h), un scénario de 1 000 requêtes à 128K tokens de contexte partagé passe de $17,47 sans cache à environ $5,44 avec 80 % de hit rate — soit **69 % d'économie sur le seul poste prefill**Without LMCache, 1,000 requests with a 128K-token system prompt each cost roughly: 1,000 × 11s × $0.001588/cluster-second = $17.47 in prefill compute · With LMCache at 80% cache hit rate (800 hits at 1.5s, 200 cold at 11s): 200 × 11s + 800 × 1.5s = 2,200 + 1,200 = 3,400 cluster-seconds.
-
-### 9.3 Le calcul du ROI
-
-$$\text{ROI} = \frac{\text{Coût GPU économisé (calcul redondant évité)} - \text{Coût du stockage additionnel (RAM/SSD/S3)}}{\text{Coût du stockage additionnel}}$$
-
-Le stockage (RAM, SSD, objet) est systématiquement un ordre de grandeur moins cher que la VRAM GPU. Le ROI devient donc quasi automatiquement positif dès que le **taux de cache hit** dépasse un seuil relativement bas (de l'ordre de 20-30 % selon la configuration matérielle) — au-delà, chaque point de hit rate supplémentaire est un gain quasi pur.
-
-### 9.4 Facteurs qui déterminent la rentabilité
-
-1. **Le taux de réutilisation du cache (hit rate)** — le levier le plus puissant, directement lié à la structuration des prompts (statique en premier, variable en dernier).
-2. **La bande passante réseau** vers le stockage distant — en dessous d'un certain débit, charger depuis un cache distant peut devenir plus lent que recalculer ; LMCache documente un point de croisement autour de contextes de 256K tokens sur des liens à 32 GbpsWhen the network bandwidth is low (i.e., 32 Gbps), LMCACHE's KV cache loading outperforms naive prefilling only when the input context length exceeds 256K tokens. In contrast, when the bandwidth is higher (i.e., 64 or 128 Gbps), LMCACHE's loading consistently achieves lower delay than naive prefilling across all context lengths.
-3. **La politique de troncature de contexte** — attention : tronquer le contexte pour économiser du calcul peut, paradoxalement, réduire le taux de hit du cache de préfixe de moitiécontext truncation, which is a widely applied technique in industry, can greatly reduce prefix cache hit ratio by half. Un arbitrage explicite est nécessaire entre les deux optimisations.
+**Practical recommendation for your applications**:
+- Systematically structure your prompts with **static and voluminous elements first** (system instructions, RAG context, tool schemas), and **variable elements last** (the user's specific question).
+- Use providers' native mechanisms (`cache_control` for Anthropic, structuring for OpenAI/DeepSeek) rather than reinventing an application-level cache layer.
 
 ---
 
-<a id="partie-10"></a>
-## 10. Gérer le cache pour des millions d'utilisateurs
+<a id="part-9"></a>
+## 9. Financial Impact and ROI
 
-### 10.1 Les deux leviers structurants
+### 9.1 The Fundamental Economic Principle
 
-1. **Maximiser le cache hit** : structurer systématiquement les prompts (statique → variable), activer le prefix caching partout, et router les requêtes similaires vers les mêmes pods (sticky routing par affinité).
-2. **Hiérarchiser le cache** : ne jamais tout garder en VRAM. Répartir sur plusieurs niveaux selon la fréquence d'accès.
+The strategic objective: **break the equation cost = users x requests**. Without cache, each request costs the full computation price. With well-managed cache, the cost depends on the **novelty** of the request, not its raw volume.
 
-### 10.2 Architecture de cache à grande échelle
+### 9.2 Reference Figures
 
-| Niveau | Support | Latence typique | Rôle à l'échelle |
+- Cached tokens are billed up to **10x cheaper** than standard tokens at major API providers.
+- An architecture combining vLLM + LMCache correctly configured can reduce GPU infrastructure costs by **60 to 90%** on workloads with high prefix reuse (RAG, chatbots with long system prompts, multi-turn agents).
+- Quantified case study: for a "hot" document of 3,774 tokens served to 80 million agents, the full recomputation cost would be approximately 1.5 million dollars, versus approximately 0.03 million when reusing the cache — a reduction factor of **49.7x**.
+- On a 4xH100 SXM5 spot cluster ($5.72/h), a scenario of 1,000 requests at 128K tokens of shared context goes from $17.47 without cache to approximately $5.44 with 80% hit rate — **69% savings on prefill alone**.
+
+### 9.3 ROI Calculation
+
+$$\text{ROI} = \frac{\text{GPU cost saved (avoided redundant computation)} - \text{Additional storage cost (RAM/SSD/S3)}}{\text{Additional storage cost}}$$
+
+Storage (RAM, SSD, object) is systematically an order of magnitude cheaper than GPU VRAM. The ROI therefore becomes quasi-automatically positive as soon as the **cache hit rate** exceeds a relatively low threshold (around 20-30% depending on hardware configuration) — beyond that, each additional hit rate point is near-pure gain.
+
+### 9.4 Factors That Determine Profitability
+
+1. **Cache reuse rate (hit rate)** — the most powerful lever, directly linked to prompt structuring (static first, variable last).
+2. **Network bandwidth** to remote storage — below a certain throughput, loading from a remote cache can become slower than recomputing; LMCache documents a crossover point around 256K-token contexts on 32 Gbps links.
+3. **Context truncation policy** — attention: truncating context to save computation can, paradoxically, reduce the prefix cache hit rate by half. An explicit trade-off is necessary between the two optimizations.
+
+---
+
+<a id="part-10"></a>
+## 10. Managing Cache for Millions of Users
+
+### 10.1 The Two Structuring Levers
+
+1. **Maximize cache hit**: systematically structure prompts (static to variable), activate prefix caching everywhere, and route similar requests to the same pods (sticky routing by affinity).
+2. **Hierarchize the cache**: never keep everything in VRAM. Distribute across multiple levels according to access frequency.
+
+### 10.2 Large-Scale Cache Architecture
+
+| Level | Medium | Typical latency | Role at scale |
 |---|---|---|---|
-| L0 | VRAM GPU | sub-ms | Requêtes très fréquentes, session active |
-| L1 | RAM CPU | ~5 µs | Requêtes récentes, capacité 5-10x supérieure à la VRAM |
-| L2 | NVMe local | 100-500 µs | Historique de session, contenus tièdes |
-| L3 | Stockage distribué (Redis/Mooncake/S3) | 5-15 ms (Redis) à quelques dizaines de ms (S3) | Persistance long terme, partage cluster-wide, capacité quasi-illimitée |
+| L0 | GPU VRAM | sub-ms | Very frequent requests, active session |
+| L1 | CPU RAM | ~5 us | Recent requests, capacity 5-10x greater than VRAM |
+| L2 | Local NVMe | 100-500 us | Session history, warm content |
+| L3 | Distributed storage (Redis/Mooncake/S3) | 5-15 ms (Redis) to tens of ms (S3) | Long-term persistence, cluster-wide sharing, near-unlimited capacity |
 
-### 10.3 Routage conscient du cache (cache-aware routing)
+### 10.3 Cache-Aware Routing
 
-À l'échelle de millions de requêtes, le routage devient un problème critique : envoyer une requête vers un pod qui ne possède pas le cache pertinent annule le bénéfice de toute la hiérarchie. Des outils comme **llm-d KV-Cache Manager** maintiennent une vue quasi temps-réel de la localisation du cache sur l'ensemble du cluster pour orienter chaque requête vers le pod optimal.
+At the scale of millions of requests, routing becomes a critical problem: sending a request to a pod that does not hold the relevant cache cancels the benefit of the entire hierarchy. Tools like **llm-d KV-Cache Manager** maintain a near-real-time view of cache location across the entire cluster to direct each request to the optimal pod.
 
-### 10.4 Le rejet prédictif sous charge
+### 10.4 Predictive Rejection Under Load
 
-Mooncake introduit un principe précieux à cette échelle : plutôt que d'accepter toute requête et de dégrader tout le cluster en cas de surcharge, un **rejet précoce basé sur une prédiction de charge** protège le système — il vaut mieux refuser proprement 5 % des requêtes que dégrader la latence de 100 % d'entre elles.
+Mooncake introduces a valuable principle at this scale: rather than accepting every request and degrading the entire cluster under overload, an **early rejection based on load prediction** protects the system — it is better to cleanly refuse 5% of requests than to degrade the latency of 100% of them.
 
-### 10.5 Checklist "millions d'utilisateurs"
+### 10.5 "Millions of Users" Checklist
 
-- [ ] Prefix caching activé sur 100 % des pods (vLLM APC ou SGLang RadixAttention)
-- [ ] Middleware de cache distribué déployé (LMCache ou HiCache+Mooncake)
-- [ ] Routage cache-aware en place (sticky routing minimal, ou solution dédiée type llm-d)
-- [ ] Hiérarchie de stockage complète (GPU → CPU → NVMe → distant) configurée et dimensionnée
-- [ ] Politique de rejet précoce / load shedding sous surcharge
-- [ ] Monitoring du hit rate en continu, avec alerte si le hit rate chute sous un seuil cible
-- [ ] Tests de charge réguliers reproduisant le trafic réel (proportion de préfixes partagés, longueur de contexte)
+- [ ] Prefix caching activated on 100% of pods (vLLM APC or SGLang RadixAttention)
+- [ ] Distributed cache middleware deployed (LMCache or HiCache+Mooncake)
+- [ ] Cache-aware routing in place (minimal sticky routing, or dedicated solution like llm-d)
+- [ ] Complete storage hierarchy (GPU to CPU to NVMe to remote) configured and sized
+- [ ] Early rejection / load shedding policy under overload
+- [ ] Continuous hit rate monitoring, with alert if hit rate drops below a target threshold
+- [ ] Regular load tests reproducing real traffic (proportion of shared prefixes, context length)
 
 ---
 
-<a id="partie-11"></a>
-## 11. Architecture modulaire et flexible recommandée
+<a id="part-11"></a>
+## 11. Recommended Modular and Flexible Architecture
 
-L'architecture ci-dessous synthétise l'ensemble du document en une pile complète, pensée pour être **modulaire** (chaque couche remplaçable indépendamment) et **flexible** (adaptable d'un déploiement mono-GPU à un cluster multi-milliers de nœuds).
+The architecture below synthesizes the entire document into a complete stack, designed to be **modular** (each layer replaceable independently) and **flexible** (adaptable from a single-GPU deployment to a multi-thousand-node cluster).
 
 ```mermaid
 flowchart TB
-    U["Utilisateurs"] --> GW["API Gateway\n(validation, rate limiting,\nrouting cache-aware)"]
+    U["Users"] --> GW["API Gateway\n(validation, rate limiting,\ncache-aware routing)"]
 
-    GW --> ORCH["Orchestrateur Kubernetes\n(QoS Guaranteed, isolation matérielle)"]
+    GW --> ORCH["Kubernetes Orchestrator\n(QoS Guaranteed, hardware isolation)"]
 
     ORCH --> ENGINE
 
-    subgraph ENGINE["Moteur d'inférence (interchangeable)"]
+    subgraph ENGINE["Inference Engine (interchangeable)"]
         direction LR
         E1["vLLM\nPagedAttention + APC"]
         E2["SGLang\nRadixAttention + HiCache"]
         E3["TensorRT-LLM\nPaged + Quantized KV"]
     end
 
-    ENGINE <--> CONNECTOR["Connecteur de cache modulaire\n(interface standardisée)"]
+    ENGINE <--> CONNECTOR["Modular Cache Connector\n(standardized interface)"]
 
-    CONNECTOR <--> MW["Middleware de cache distribué\n(LMCache / Dynamo KVBM)"]
+    CONNECTOR <--> MW["Distributed Cache Middleware\n(LMCache / Dynamo KVBM)"]
 
-    MW --> TIER1["L1: RAM CPU"]
-    MW --> TIER2["L2: NVMe local"]
-    MW --> TIER3["L3: Stockage distribué\n(Mooncake / Redis / S3)"]
+    MW --> TIER1["L1: CPU RAM"]
+    MW --> TIER2["L2: Local NVMe"]
+    MW --> TIER3["L3: Distributed storage\n(Mooncake / Redis / S3)"]
 
-    ENGINE -.métriques.-> OBS["Observabilité\n(Prometheus + Grafana)"]
-    OBS --> AS["Autoscaling KEDA"]
+    ENGINE -.metrics.-> OBS["Observability\n(Prometheus + Grafana)"]
+    OBS --> AS["KEDA Autoscaling"]
     OBS --> AM["Alertmanager"]
     AS -.scale.-> ORCH
 
@@ -565,87 +565,87 @@ flowchart TB
     ARGO -.sync/rollback.-> ORCH
 ```
 
-### 11.1 Pourquoi cette architecture est modulaire
+### 11.1 Why This Architecture Is Modular
 
-- Le **moteur d'inférence** est interchangeable grâce au connecteur de cache standardisé — migrer de vLLM à SGLang ou TensorRT-LLM ne casse pas la couche de cache distribué.
-- Le **middleware de cache** (LMCache ou Dynamo KVBM) est lui-même découplé du backend de stockage — on peut passer de Redis à Mooncake sans réécrire la logique applicative.
-- L'**observabilité et l'autoscaling** sont branchés sur des métriques standardisées (Prometheus), indépendantes du moteur choisi.
+- The **inference engine** is interchangeable thanks to the standardized cache connector — migrating from vLLM to SGLang or TensorRT-LLM does not break the distributed cache layer.
+- The **cache middleware** (LMCache or Dynamo KVBM) is itself decoupled from the storage backend — one can switch from Redis to Mooncake without rewriting application logic.
+- **Observability and autoscaling** are connected to standardized metrics (Prometheus), independent of the chosen engine.
 
-### 11.2 Pourquoi elle est flexible
+### 11.2 Why It Is Flexible
 
-- Un déploiement mono-GPU peut n'utiliser que la couche `ENGINE` (PagedAttention seul suffit déjà à réduire le gaspillage à moins de 4 %).
-- Un déploiement multi-nœuds ajoute progressivement `CONNECTOR` + `MW` + les tiers de stockage, sans réécrire la couche `ENGINE`.
-- Un déploiement à très grande échelle (des milliers de nœuds) active la disaggregation prefill/decode et un stockage RDMA type Mooncake Store, en gardant la même architecture logique.
+- A single-GPU deployment can use only the `ENGINE` layer (PagedAttention alone already reduces waste to less than 4%).
+- A multi-node deployment progressively adds `CONNECTOR` + `MW` + storage tiers, without rewriting the `ENGINE` layer.
+- A very large-scale deployment (thousands of nodes) activates prefill/decode disaggregation and RDMA storage like Mooncake Store, keeping the same logical architecture.
 
 ---
 
-<a id="partie-12"></a>
-## 12. Manager le cache dans la durée
+<a id="part-12"></a>
+## 12. Managing Cache Over Time
 
-Gérer le cache n'est pas un projet ponctuel mais une **discipline opérationnelle continue**. Quatre dimensions à maintenir dans le temps :
+Managing the cache is not a one-time project but a **continuous operational discipline**. Four dimensions to maintain over time:
 
-### 12.1 Observabilité continue
+### 12.1 Continuous Observability
 
-Surveiller en permanence : `gpu_cache_usage_perc`, `num_requests_waiting`, le taux de cache hit par niveau (L0/L1/L2/L3), et le TTFT. Un cache qui fonctionnait bien à 100 requêtes/s peut se dégrader silencieusement à 10 000 requêtes/s si le hit rate chute sans alerte associée.
+Continuously monitor: `gpu_cache_usage_perc`, `num_requests_waiting`, the hit rate per level (L0/L1/L2/L3), and TTFT. A cache that worked well at 100 requests/s can silently degrade at 10,000 requests/s if the hit rate drops without an associated alert.
 
-### 12.2 Réévaluation périodique du dimensionnement
+### 12.2 Periodic Resizing
 
-À mesure que le trafic et les modèles évoluent (contextes plus longs, nouveaux modèles GQA vs MHA), les paramètres de dimensionnement (`gpu-memory-utilization`, taille des tiers L1/L2/L3) doivent être réévalués — idéalement trimestriellement, ou après tout changement significatif de modèle ou de charge.
+As traffic and models evolve (longer contexts, new GQA vs MHA models), sizing parameters (`gpu-memory-utilization`, L1/L2/L3 tier sizes) must be reevaluated — ideally quarterly, or after any significant model or load change.
 
-### 12.3 Gouvernance des changements (GitOps)
+### 12.3 Change Governance (GitOps)
 
-Toute modification de configuration de cache doit passer par Git + ArgoCD, jamais en modification manuelle sur un nœud de production. Cela garantit un historique complet, une capacité de rollback immédiate, et la reproductibilité des tests de charge en amont.
+Any cache configuration change must go through Git + ArgoCD, never through manual modification on a production node. This guarantees a complete history, immediate rollback capability, and reproducibility of upstream load tests.
 
-### 12.4 Tests de charge récurrents
+### 12.4 Recurring Load Tests
 
-Le comportement du cache dépend fortement du matériel sous-jacent (architecture GPU, bande passante NVLink/RDMA) et du profil de trafic réel (proportion de préfixes partagés, longueur moyenne de contexte). Des tests de charge périodiques — pas seulement au lancement — permettent de détecter une dérive avant qu'elle n'impacte les utilisateurs.
+Cache behavior strongly depends on the underlying hardware (GPU architecture, NVLink/RDMA bandwidth) and the real traffic profile (proportion of shared prefixes, average context length). Periodic load tests — not just at launch — allow detecting drift before it impacts users.
 
-### 12.5 Cycle de vie complet
+### 12.5 Complete Lifecycle
 
 ```mermaid
 flowchart LR
-    A["Dimensionner\n(formules §1.4)"] --> B["Déployer\n(GitOps)"]
-    B --> C["Observer\n(Prometheus/Grafana)"]
-    C --> D["Alerter & Scaler\n(Alertmanager/KEDA)"]
-    D --> E["Analyser les tendances\n(hit rate, coût)"]
-    E --> F["Réajuster la config"]
+    A["Size\n(formulas from 1.4)"] --> B["Deploy\n(GitOps)"]
+    B --> C["Observe\n(Prometheus/Grafana)"]
+    C --> D["Alert & Scale\n(Alertmanager/KEDA)"]
+    D --> E["Analyze trends\n(hit rate, cost)"]
+    E --> F["Readjust config"]
     F --> B
 ```
 
 ---
 
-<a id="partie-13"></a>
-## 13. Checklist finale et glossaire
+<a id="part-13"></a>
+## 13. Final Checklist and Glossary
 
-### 13.1 Checklist de gestion complète du cache KV
+### 13.1 Complete KV Cache Management Checklist
 
-- [ ] Le mécanisme mathématique du cache est compris par l'équipe (§1) — sert de base à tout arbitrage technique
-- [ ] Les paramètres du moteur d'inférence sont calibrés en mode défensif (`gpu-memory-utilization` 0.85-0.90, `max-model-len` plafonné au besoin réel)
-- [ ] Le prefix caching est activé (APC vLLM ou RadixAttention SGLang)
-- [ ] Un middleware de cache distribué est déployé si le cluster dépasse une poignée de nœuds (LMCache, Dynamo KVBM, ou Mooncake selon l'échelle)
-- [ ] La hiérarchie de stockage (GPU → CPU → NVMe → distant) est dimensionnée selon les formules de la Partie 1
-- [ ] Le routage est cache-aware (sticky routing minimal, ou solution dédiée à grande échelle)
-- [ ] L'observabilité couvre le hit rate à chaque niveau, pas seulement la VRAM
-- [ ] L'autoscaling réagit aux métriques de cache (`num_requests_waiting`, `gpu_cache_usage_perc`), pas au CPU/RAM classique
-- [ ] La configuration est versionnée et déployée en GitOps, avec rollback testé
-- [ ] Un calcul de ROI est documenté (taux de hit vs coût de stockage additionnel)
-- [ ] Des tests de charge périodiques valident le comportement réel sous trafic représentatif
+- [ ] The mathematical mechanism of the cache is understood by the team (Part 1) — serves as the basis for all technical trade-offs
+- [ ] Inference engine parameters are calibrated in defensive mode (`gpu-memory-utilization` 0.85-0.90, `max-model-len` capped at actual need)
+- [ ] Prefix caching is activated (vLLM APC or SGLang RadixAttention)
+- [ ] A distributed cache middleware is deployed if the cluster exceeds a handful of nodes (LMCache, Dynamo KVBM, or Mooncake depending on scale)
+- [ ] The storage hierarchy (GPU to CPU to NVMe to remote) is sized according to the formulas in Part 1
+- [ ] Routing is cache-aware (minimal sticky routing, or dedicated solution at large scale)
+- [ ] Observability covers the hit rate at each level, not just VRAM
+- [ ] Autoscaling reacts to cache metrics (`num_requests_waiting`, `gpu_cache_usage_perc`), not to classic CPU/RAM
+- [ ] Configuration is versioned and deployed via GitOps, with tested rollback
+- [ ] An ROI calculation is documented (hit rate vs additional storage cost)
+- [ ] Periodic load tests validate real behavior under representative traffic
 
-### 13.2 Glossaire
+### 13.2 Glossary
 
-| Terme | Définition |
+| Term | Definition |
 |---|---|
-| **KV Cache** | Structure mémoire stockant les vecteurs Key et Value déjà calculés pour éviter leur recalcul |
-| **PagedAttention** | Technique de vLLM qui pagine le cache KV en blocs non contigus, façon mémoire virtuelle d'un OS |
-| **RadixAttention** | Technique de SGLang organisant le cache dans un arbre radix pour un partage de préfixe optimal |
-| **Prefix Caching / APC** | Réutilisation automatique du cache pour les tokens partagés entre requêtes |
-| **TTFT** | Time To First Token — délai avant le premier token généré, très sensible au cache |
-| **PD Disaggregation** | Séparation physique des phases prefill (calcul intensif) et decode (mémoire intensive) sur des nœuds différents |
-| **GQA / MQA** | Grouped/Multi-Query Attention — réductions architecturales de la taille du cache par partage de têtes |
-| **Cache hit / miss** | Succès ou échec de la recherche d'un segment de cache déjà calculé |
-| **Load shedding** | Rejet volontaire de requêtes (HTTP 429) pour protéger la stabilité du système sous charge |
-| **QoS Guaranteed** | Classe de qualité de service Kubernetes où requests = limits, protégeant le pod de l'éviction |
+| **KV Cache** | Memory structure storing already-computed Key and Value vectors to avoid their recomputation |
+| **PagedAttention** | vLLM technique that pages the KV cache in non-contiguous blocks, like OS virtual memory |
+| **RadixAttention** | SGLang technique organizing the cache in a radix tree for optimal prefix sharing |
+| **Prefix Caching / APC** | Automatic cache reuse for tokens shared between requests |
+| **TTFT** | Time To First Token — delay before the first generated token, highly sensitive to cache |
+| **PD Disaggregation** | Physical separation of prefill (computation-intensive) and decode (memory-intensive) phases on different nodes |
+| **GQA / MQA** | Grouped/Multi-Query Attention — architectural reductions of cache size through head sharing |
+| **Cache hit / miss** | Success or failure of finding an already-computed cache segment |
+| **Load shedding** | Voluntary request rejection (HTTP 429) to protect system stability under load |
+| **QoS Guaranteed** | Kubernetes quality of service class where requests = limits, protecting the pod from eviction |
 
 ---
 
-*Document de synthèse — combine les fondements mathématiques de l'attention Transformer, l'état de l'art des outils open-source de gestion du cache KV (vLLM, SGLang, LMCache, Mooncake, NVIDIA Dynamo, et l'écosystème élargi), les pratiques de production Kubernetes/GitOps, et l'analyse financière du ROI — pour concevoir et manager un système de cache KV modulaire, flexible et économiquement optimisé, du prototype à l'échelle de millions d'utilisateurs.*
+*Synthesis document — combines the mathematical foundations of Transformer attention, the state of the art of open-source KV cache management tools (vLLM, SGLang, LMCache, Mooncake, NVIDIA Dynamo, and the broader ecosystem), Kubernetes/GitOps production practices, and financial ROI analysis — to design and manage a modular, flexible, and economically optimized KV cache system, from prototype to millions of users.*

@@ -192,6 +192,51 @@ nodeSelector:
 # CPU RAM, inference latency spikes by 10-100x.
 gpuNodeSwapoff: true
 
+# --- LMCache: distributed KV cache middleware (Bible §4.3) ---
+# Turns KV cache from per-instance silo into persistent, shareable,
+# cluster-wide resource. Enables L1 (CPU) / L2 (NVMe) / L3 (Redis/S3)
+# tiered cache hierarchy for cross-pod prefix reuse.
+# Up to 15x throughput improvement, 69% prefill cost reduction.
+lmcache:
+  enabled: false
+  image:
+    repository: lmcache/lmcache-server
+    tag: latest
+    pullPolicy: IfNotPresent
+  cpuWorkers: 4
+  disk:
+    enabled: false
+    path: /var/lib/lmcache
+    hostPath: /var/lib/lmcache
+    maxSize: 100GiB
+  redis:
+    enabled: false
+    host: ""
+    port: 6379
+  s3:
+    enabled: false
+    endpoint: ""
+    bucket: ""
+    region: us-east-1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 16Gi
+
+# --- SafeTensors cache persistence (Bible §5.1) ---
+# Persists KV cache to disk for fast restart: on pod restart, the cache
+# is restored directly into the attention layer without re-prefill.
+# Up to 136x TTFT reduction (Gemma 3 12B benchmark).
+cachePersistence:
+  enabled: false
+  path: /cache/kv
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 20Gi
+
 tolerations:
   - key: nvidia.com/gpu
     operator: Exists

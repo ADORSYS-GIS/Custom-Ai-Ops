@@ -1,0 +1,48 @@
+{{- if .Values.gateway }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}-cache-routing
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  cache-routing-policy.yaml: |
+    # Cache-Aware Routing Policy
+    # See docs/explain/bible-kv-cache.md §10.3 and §12.3.
+    #
+    # Ensures requests sharing a common prefix are routed to the same
+    # backend pod, maximizing KV cache hit rate at the cluster level.
+    # Without this, a round-robin LB destroys the prefix cache benefit
+    # by dispersing similar requests across replicas.
+
+  prefix-hash-routing.lua: |
+    -- Envoy Lua filter for prefix-hash-based sticky routing.
+    -- Hashes the first N tokens of the request body (system prompt / RAG context)
+    -- and injects the result as x-cache-affinity-key header.
+    -- The backend traffic policy then routes by this header via consistent-hash.
+    --
+    -- See bible-kv-cache.md §10.3: "At scale, a simple round-robin LB
+    -- destroys the cache benefit by dispersing similar requests."
+
+    local prefix_bytes = 512  -- hash first 512 bytes of body (covers system prompt)
+
+    local function hash_prefix(str)
+        local h = 2166136261
+        for i = 1, #str do
+            h = h ~ string.byte(str, i)
+            h = h * 16777619
+            h = h & 0xFFFFFFFF
+        end
+        return string.format("%08x", h)
+    end
+
+    function envoy_on_request(request_handle)
+        local body = request_handle:body():get_bytes(prefix_bytes)
+        if body then
+            request_handle:headers():add("x-cache-affinity-key", hash_prefix(body))
+        end
+    end
+{{- end }}

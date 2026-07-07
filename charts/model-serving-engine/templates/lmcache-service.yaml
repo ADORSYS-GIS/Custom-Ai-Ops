@@ -1,0 +1,19 @@
+{{- if .Values.lmcache.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-lmcache
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lmcache
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: metrics
+      port: 8330
+      targetPort: 8330
+      protocol: TCP
+{{- end }}
