@@ -62,7 +62,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 #### Security & Supply Chain
 
 ![cosign](https://img.shields.io/badge/cosign-2.2+-76B900.svg)
-![External Secrets Operator](https://img.shields.io/badge/External%20Secrets-0.9+-326CE5.svg)
+![External Secrets Operator](https://img.shields.io/badge/External%20Secrets-0.10+-326CE5.svg)
 ![gitleaks](https://img.shields.io/badge/gitleaks-8.0+-FF4F4F.svg)
 
 #### Testing & CI/CD
@@ -455,9 +455,9 @@ This decision tree is codified in the `engine-selector` Rust CLI tool — not le
 Custom-Ai-Ops/
 ├── tools/                           # Rust CLI tools (workspace)
 │   ├── engine-selector/             # Format→engine→family→cache-strategy decision tree (31 tests)
-│   ├── vram-budget-calc/           # VRAM budget calculator (14 tests)
-│   ├── model-onboarding/           # New model scaffold tool
-│   └── cache-roi-calc/             # KV cache ROI calculator (16 tests, Bible §9 formula)
+│   ├── vram-budget-calc/           # VRAM budget calculator (16 tests)
+│   ├── model-onboarding/           # New model scaffold tool (14 tests)
+│   └── cache-roi-calc/             # KV cache ROI calculator (Bible §9 formula)
 │
 ├── charts/                          # Helm charts (5 total)
 │   ├── bjw-template/               # Common base library chart
@@ -500,8 +500,8 @@ Custom-Ai-Ops/
 │   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard
 │
 ├── models/                          # Model registry and per-model documentation
-│   ├── registry.yaml                # Declarative registry (4 models)
-│   └── llama-3-8b-instruct/         # Example model: model.md + budget.md + eval-report.md
+│   ├── registry.yaml                # Declarative registry (3 models)
+│   └── registry/                    # Per-model documentation directory
 │
 ├── tests/                           # Test suites
 │   ├── smoke/                       # Post-deployment smoke tests (bash: health, auth, chat, cost)
@@ -518,16 +518,21 @@ Custom-Ai-Ops/
 │   │   ├── 05-observability.md      #   LGTM stack, dashboards, anomaly detection
 │   │   ├── 06-resilience-and-dr.md  #   Auto-healing layers, rollback strategy
 │   │   └── 07-capacity-forecasting.md # Holt-Winters, KEDA predictive, recording rules
+│   ├── explain/                     # Deep-dive technical references
+│   │   ├── kv-cache.md              #   6-layer KV cache management architecture
+│   │   ├── bible-kv-cache.md        #   KV Cache Bible (13 sections)
+│   │   └── gpu.md                   #   In-depth GPU reference guide (332 lines)
 │   ├── adr/                         # Architecture Decision Records
 │   │   ├── 0001-multi-format-architecture.md
 │   │   ├── 0002-envoy-ai-gateway.md
 │   │   └── 0003-separate-engine-charts.md
-│   ├── hardware/
-│   │   └── gpu.md                   # In-depth GPU reference guide (348 lines)
-│   └── runbooks/                    # Incident response procedures
-│       ├── gpu-node-failure.md      #   Cordon/drain, ECC/Xid/temp checks
-│       ├── latency-spike.md         #   Check failover, GPU throttle, scale up
-│       └── pod-crashloop.md         #   OOM/model-not-found/probe-failure
+│   ├── runbooks/                    # Incident response procedures
+│   │   ├── gpu-node-failure.md      #   Cordon/drain, ECC/Xid/temp checks
+│   │   ├── latency-spike.md         #   Check failover, GPU throttle, scale up
+│   │   └── pod-crashloop.md         #   OOM/model-not-found/probe-failure
+│   ├── env.md                       # Environment variables, secrets, external connections reference (19 sections)
+│   ├── external-tools.md            # External platform configuration guide (12 platforms, 14 sections)
+│   └── integration-report.md        # ArgoCD + external platform integration report (13 sections)
 │
 ├── .github/workflows/ci.yaml        # CI: rust-tools, helm-lint, registry-consistency, vram-validation
 │
@@ -564,8 +569,9 @@ cargo test
 
 # Run tests for a specific tool
 cargo test --bin engine-selector     # 31 tests
-cargo test --bin vram-budget-calc    # 14 tests
-cargo test --bin cache-roi-calc      # 16 tests
+cargo test --bin vram-budget-calc    # 16 tests
+cargo test --bin model-onboarding    # 14 tests
+cargo test --bin cache-roi-calc     # 0 tests (CLI tool, no unit tests)
 ```
 
 ### 3. Use the Tools
@@ -663,7 +669,7 @@ The declarative registry (`models/registry.yaml`) tracks all models with their f
 | phi-3-mini-instruct | ONNX | ONNX GenAI | LIVE | 4 GB | L4 | int4 | 4096 |
 | llama-3-70b-instruct | Safetensors | vLLM | STANDBY | 80 GB | H100 | fp16 | 8192 |
 
-Each model has a dedicated directory with:
+When a model is onboarded via `model-onboarding`, it gets a dedicated directory with:
 - **`model.md`** — Model datasheet (VRAM budget, status, context, fallback model)
 - **`budget.md`** — Detailed VRAM calculation (proven by `vram-budget-calc`)
 - **`eval-report.md`** — Quality validation results (MMLU, HellaSwag, ARC, TruthfulQA, latency benchmarks)
@@ -739,6 +745,8 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 | KV Cache | LMCacheL2HitRateLow | L2 NVMe hit < 20% for 15m | Warning |
 | KV Cache | LMCacheL3HitRateLow | L3 Redis/S3 hit < 10% for 15m | Warning |
 | KV Cache | SSMModelPagedAttentionMisconfigured | SSM pod with PagedAttention args | Critical |
+| KV Cache | VLLMPrefillSkipRateLow | prefill skip < 10% while queue busy | Info |
+| KV Cache | CacheRoutingHeaderAbsent | `x-cache-affinity-key` missing during traffic | Info |
 
 ### Alert Routing
 
@@ -874,7 +882,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yaml`) runs 4 jobs:
 
 | Job | Description | Blocking |
 |---|---|---|
-| `rust-tools` | Build + test all 3 crates, clippy (deny warnings), fmt check | Yes |
+| `rust-tools` | Build + test all 4 crates, clippy (deny warnings), fmt check | Yes |
 | `helm-lint` | Lint all 5 charts + template dry-run with test values | Yes |
 | `registry-consistency` | Validate each registry entry has chart dir, model dir, and required files | Yes |
 | `vram-budget-validation` | Build `vram-budget-calc` and run for all LIVE/STAGED models — fails if budget exceeded | Yes |
@@ -941,12 +949,6 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | [0002](docs/adr/0002-envoy-ai-gateway.md) | Envoy AI Gateway federation |
 | [0003](docs/adr/0003-separate-engine-charts.md) | Separate engine charts per format |
 
-### Hardware Guide (`docs/hardware/`)
-
-| Doc | Description |
-|---|---|
-| [gpu.md](docs/hardware/gpu.md) | In-depth GPU reference: 3 families (consumer/workstation/datacenter), prefill vs decode, CUDA gap, per-GPU datasheets (RTX 4090/5090, 6000 Ada, H100, H200, B200, MI300X, MI300A), microarchitecture comparison, runtimes (vLLM), infrastructure constraints (power, cooling, network) |
-
 ### Runbooks (`docs/runbooks/`)
 
 | Runbook | Scenario |
@@ -961,12 +963,15 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 |---|---|
 | [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps, distributed cache middleware, cache-aware routing) |
 | [bible-kv-cache.md](docs/explain/bible-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
+| [gpu.md](docs/explain/gpu.md) | In-depth GPU reference: 3 families (consumer/workstation/datacenter), prefill vs decode, CUDA gap, per-GPU datasheets, microarchitecture comparison, infrastructure constraints |
 
 ### Integration & External Tools (`docs/`)
 
 | Doc | Description |
 |---|---|
 | [integration-report.md](docs/integration-report.md) | Complete ArgoCD + external platform integration report (13 sections + 3 appendices: Git providers, ArgoCD config, registry, secrets, observability, alerting, SaaS fallback, CI/CD, multi-cluster, security, topology, checklist) |
+| [external-tools.md](docs/external-tools.md) | Hands-on configuration guide for 12 external platforms (GitHub, ArgoCD, Helm repos, ESO, SaaS LLM, registries, PagerDuty, Slack, Prometheus, Longhorn, NVIDIA, cert-manager, KEDA) with exact commands, verification, troubleshooting |
+| [env.md](docs/env.md) | Complete inventory of every environment variable, API key, secret, external URL, and HTTP header convention (19 sections: quick reference, GitHub, ArgoCD, ESO, SaaS, registries, alerting, observability, LMCache, cert-manager, KEDA, GPU, Longhorn, tests, runtime, Helm repos, bootstrap, verification, HTTP headers) |
 
 ---
 
@@ -1060,8 +1065,8 @@ The gateway supports automatic failover to SaaS providers when self-hosted laten
 
 | Severity | Destination | Trigger |
 |---|---|---|
-| Critical | PagerDuty + Slack `#ops-alerts` | Sync failed, health degraded, KV cache critical |
-| Warning | Slack `#ops-alerts` | Sync running, KV cache high, latency high |
+| Critical | PagerDuty + Slack `#ml-incidents` | Sync failed, health degraded, KV cache critical |
+| Warning | Slack `#ml-ops` | Sync running, KV cache high, latency high |
 | GPU | Slack `#gpu-ops` | Thermal throttle, ECC errors, VRAM exhaustion |
 
 ### CI/CD Pipeline
