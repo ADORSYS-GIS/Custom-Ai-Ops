@@ -1,54 +1,54 @@
-# ONNX : Le Document de Référence Complet
-### Origines, mathématiques, gestion du cache, comparatif agressif avec tous les formats concurrents, consommation énergétique et déploiement à l'échelle de millions d'utilisateurs
+# ONNX: The Complete Reference Document
+### Origins, mathematics, cache management, aggressive comparison with all competing formats, energy consumption, and deployment at the scale of millions of users
 
 ---
 
-## Sommaire
+## Table of Contents
 
-1. [Pourquoi ONNX a été créé : le problème des silos](#1)
-2. [Comment ONNX fonctionne : les trois piliers](#2)
-3. [Le stockage mathématique des poids et des biais](#3)
-4. [Comment ONNX gère l'inférence : anatomie du pipeline d'exécution](#4)
-5. [Comment ONNX gère le cache KV](#5)
-6. [Comparatif agressif : ONNX contre chaque format concurrent](#6)
-7. [L'équation mathématique complète : ONNX face à l'attention et au cache](#7)
-8. [Consommation énergétique : la vérité chiffrée](#8)
-9. [Avantages et inconvénients : le bilan sans concession](#9)
-10. [ONNX dans un pipeline de production (MLOps / Cloud)](#10)
-11. [Qui utilise ONNX en production, et comment](#11)
-12. [Gérer ONNX pour des millions d'utilisateurs](#12)
-13. [Bilan financier complet](#13)
-14. [Verdict final : quand choisir ONNX, quand ne pas le choisir](#14)
-15. [Glossaire](#15)
+1. [Why ONNX Was Created: The Silo Problem](#1)
+2. [How ONNX Works: The Three Pillars](#2)
+3. [The Mathematical Storage of Weights and Biases](#3)
+4. [How ONNX Handles Inference: Anatomy of the Execution Pipeline](#4)
+5. [How ONNX Handles the KV Cache](#5)
+6. [Aggressive Comparison: ONNX vs Every Competing Format](#6)
+7. [The Complete Mathematical Equation: ONNX vs Attention and Cache](#7)
+8. [Energy Consumption: The Hard Numbers](#8)
+9. [Advantages and Disadvantages: The No-Compromise Assessment](#9)
+10. [ONNX in a Production Pipeline (MLOps / Cloud)](#10)
+11. [Who Uses ONNX in Production, and How](#11)
+12. [Managing ONNX for Millions of Users](#12)
+13. [Complete Financial Assessment](#13)
+14. [Final Verdict: When to Choose ONNX, When Not To](#14)
+15. [Glossary](#15)
 
 ---
 
 <a id="1"></a>
-## 1. Pourquoi ONNX a été créé : le problème des silos
+## 1. Why ONNX Was Created: The Silo Problem
 
-Avant 2017, chaque framework d'apprentissage profond — PyTorch, TensorFlow, Caffe2, CNTK — constituait une **pile verticale fermée**, de l'API d'entraînement jusqu'au runtime d'inférence. Cette fragmentation posait trois problèmes concrets :
+Before 2017, each deep learning framework — PyTorch, TensorFlow, Caffe2, CNTK — constituted a **closed vertical stack**, from the training API down to the inference runtime. This fragmentation posed three concrete problems:
 
-1. **L'enfermement technologique (vendor lock-in logiciel)** : un modèle entraîné avec un framework ne pouvait pas être exécuté nativement par un autre. Migrer signifiait réécrire.
-2. **Le fossé recherche → production** : les chercheurs utilisaient des frameworks flexibles (PyTorch), tandis que les équipes de production avaient besoin de moteurs optimisés différents. La conversion manuelle était lente et source d'erreurs.
-3. **La duplication du travail matériel** : chaque fabricant de puce (NVIDIA, Intel, Qualcomm...) devait optimiser ses pilotes framework par framework, un travail redondant à l'échelle de toute l'industrie.
+1. **Software vendor lock-in**: a model trained with one framework could not be natively executed by another. Migration meant rewriting.
+2. **The research-to-production gap**: researchers used flexible frameworks (PyTorch), while production teams needed different optimized engines. Manual conversion was slow and error-prone.
+3. **Duplicated hardware work**: each chip manufacturer (NVIDIA, Intel, Qualcomm...) had to optimize its drivers framework by framework, a redundant effort at the scale of the entire industry.
 
-**ONNX (Open Neural Network Exchange)** a été créé en septembre 2017 par **Microsoft et Facebook (Meta)**, avec un objectif clair : établir un **format intermédiaire universel** capable de représenter n'importe quel modèle, indépendamment du framework qui l'a produit ou du moteur qui l'exécutera.
+**ONNX (Open Neural Network Exchange)** was created in September 2017 by **Microsoft and Facebook (Meta)**, with a clear goal: establish a **universal intermediate format** capable of representing any model, regardless of the framework that produced it or the engine that would execute it.
 
 ```mermaid
 flowchart TB
-    subgraph AVANT["Avant ONNX — Silos fermés"]
-        PT1["PyTorch"] --> RT1["Runtime PyTorch\n(uniquement)"]
-        TF1["TensorFlow"] --> RT2["Runtime TensorFlow\n(uniquement)"]
-        CF1["Caffe2"] --> RT3["Runtime Caffe2\n(uniquement)"]
+    subgraph AVANT["Before ONNX — Closed Silos"]
+        PT1["PyTorch"] --> RT1["PyTorch Runtime\n(only)"]
+        TF1["TensorFlow"] --> RT2["TensorFlow Runtime\n(only)"]
+        CF1["Caffe2"] --> RT3["Caffe2 Runtime\n(only)"]
     end
 ```
 
 ```mermaid
 flowchart TB
-    subgraph APRES["Après ONNX — Format pivot universel"]
-        PT2["PyTorch"] --> ONNX1["Fichier .onnx"]
+    subgraph APRES["After ONNX — Universal Pivot Format"]
+        PT2["PyTorch"] --> ONNX1[".onnx file"]
         TF2["TensorFlow"] --> ONNX1
-        JAX2["JAX / autres"] --> ONNX1
+        JAX2["JAX / others"] --> ONNX1
         ONNX1 --> R1["ONNX Runtime (CPU/GPU/NPU)"]
         ONNX1 --> R2["TensorRT (via Execution Provider)"]
         ONNX1 --> R3["OpenVINO (via Execution Provider)"]
@@ -56,495 +56,495 @@ flowchart TB
     end
 ```
 
-**ONNX n'est ni un framework d'entraînement, ni un moteur d'inférence.** C'est une **couche intermédiaire standard** — un contrat entre les deux mondes.
+**ONNX is neither a training framework nor an inference engine.** It is a **standard intermediate layer** — a contract between the two worlds.
 
 ---
 
 <a id="2"></a>
-## 2. Comment ONNX fonctionne : les trois piliers
+## 2. How ONNX Works: The Three Pillars
 
-### 2.1 Une représentation intermédiaire (IR) commune
+### 2.1 A Common Intermediate Representation (IR)
 
-ONNX décrit un modèle comme un **graphe de calcul (computational graph)** : une suite d'opérateurs mathématiques (`MatMul`, `Add`, `LayerNormalization`, `Softmax`, etc.) appliqués à des tenseurs. Ce graphe est **statique** : toutes les opérations et — dans la version classique — toutes les formes de tenseurs sont figées à l'export.
+ONNX describes a model as a **computational graph**: a sequence of mathematical operators (`MatMul`, `Add`, `LayerNormalization`, `Softmax`, etc.) applied to tensors. This graph is **static**: all operations and — in the classic version — all tensor shapes are frozen at export time.
 
-### 2.2 Un format de sérialisation par Protocol Buffers
+### 2.2 A Serialization Format via Protocol Buffers
 
-Le graphe, les poids et les métadonnées sont sérialisés en **Protobuf** (Protocol Buffers, développé par Google) : un format binaire compact, rapide à parser, avec un schéma fortement typé.
+The graph, weights, and metadata are serialized in **Protobuf** (Protocol Buffers, developed by Google): a compact binary format, fast to parse, with a strongly typed schema.
 
-### 2.3 Un écosystème d'exécution : ONNX Runtime
+### 2.3 An Execution Ecosystem: ONNX Runtime
 
-Le fichier `.onnx` seul ne fait rien. C'est **ONNX Runtime** — le moteur de référence — qui charge le graphe, l'optimise, et l'exécute sur le matériel cible via un système d'**Execution Providers** (CUDA, TensorRT, OpenVINO, ROCm, DirectML, CoreML, CPU...).
+The `.onnx` file alone does nothing. It is **ONNX Runtime** — the reference engine — that loads the graph, optimizes it, and executes it on the target hardware via a system of **Execution Providers** (CUDA, TensorRT, OpenVINO, ROCm, DirectML, CoreML, CPU...).
 
 ```mermaid
 flowchart LR
-    A["Modèle entraîné\n(PyTorch, TensorFlow...)"] -->|"torch.onnx.export()"| B["Graphe ONNX\n(.onnx, Protobuf)"]
+    A["Trained model\n(PyTorch, TensorFlow...)"] -->|"torch.onnx.export()"| B["ONNX graph\n(.onnx, Protobuf)"]
     B --> C{"ONNX Runtime"}
-    C -->|"Execution Provider CUDA"| D1["GPU NVIDIA"]
-    C -->|"Execution Provider TensorRT"| D2["GPU NVIDIA (optimisé)"]
-    C -->|"Execution Provider OpenVINO"| D3["CPU/iGPU Intel"]
-    C -->|"Execution Provider ROCm"| D4["GPU AMD"]
+    C -->|"Execution Provider CUDA"| D1["NVIDIA GPU"]
+    C -->|"Execution Provider TensorRT"| D2["NVIDIA GPU (optimized)"]
+    C -->|"Execution Provider OpenVINO"| D3["Intel CPU/iGPU"]
+    C -->|"Execution Provider ROCm"| D4["AMD GPU"]
     C -->|"Execution Provider CoreML"| D5["Apple Silicon"]
 ```
 
-Ce découpage **format / moteur / matériel** est la clé de voûte de toute la philosophie ONNX : on entraîne une fois, on exporte une fois, et on peut ensuite ré-optimiser indéfiniment sans toucher au modèle.
+This **format / engine / hardware** separation is the keystone of the entire ONNX philosophy: train once, export once, and then re-optimize indefinitely without touching the model.
 
 ---
 
 <a id="3"></a>
-## 3. Le stockage mathématique des poids et des biais
+## 3. The Mathematical Storage of Weights and Biases
 
-### 3.1 La structure `TensorProto`
+### 3.1 The `TensorProto` Structure
 
-Chaque paramètre entraîné (poids, biais) est représenté dans le graphe comme un **initialiseur (initializer)** : un message `TensorProto` contenant :
+Each trained parameter (weight, bias) is represented in the graph as an **initializer**: a `TensorProto` message containing:
 
-- le **nom** du tenseur (référencé par les nœuds du graphe qui l'utilisent),
-- son **type** (`FLOAT`, `FLOAT16`, `INT8`, `UINT8`...),
-- ses **dimensions** (`dims`, ex. `[768, 3072]` pour une matrice de projection),
-- ses **données brutes** (`raw_data`, un buffer d'octets contigu représentant le tenseur en mémoire).
+- the tensor **name** (referenced by the graph nodes that use it),
+- its **type** (`FLOAT`, `FLOAT16`, `INT8`, `UINT8`...),
+- its **dimensions** (`dims`, e.g. `[768, 3072]` for a projection matrix),
+- its **raw data** (`raw_data`, a contiguous byte buffer representing the tensor in memory).
 
-Mathématiquement, un tenseur de poids $W$ de dimensions $(m, n)$ en précision `dtype` occupe :
+Mathematically, a weight tensor $W$ of dimensions $(m, n)$ in precision `dtype` occupies:
 
 $$
-\text{Taille}(W) = m \times n \times \text{sizeof(dtype)}
+\text{Size}(W) = m \times n \times \text{sizeof(dtype)}
 $$
 
-Pour une couche linéaire de type $ y = Wx + b $, ONNX stocke $W$ (matrice $m \times n$) et $b$ (vecteur $m$) comme deux `TensorProto` distincts, référencés par le nœud `Gemm` ou `MatMul` + `Add` correspondant dans le graphe.
+For a linear layer of the form $ y = Wx + b $, ONNX stores $W$ (matrix $m \times n$) and $b$ (vector $m$) as two distinct `TensorProto`, referenced by the corresponding `Gemm` or `MatMul` + `Add` node in the graph.
 
-### 3.2 Stockage intégré vs stockage externe
+### 3.2 Inline Storage vs External Storage
 
-- **Intégré (inline)** : les données du tenseur sont écrites directement dans le fichier `.onnx` via `raw_data`. Adapté aux petits modèles.
-- **Externe (external data)** : pour les modèles volumineux (au-delà de la limite de 2 Go imposée par Protobuf), les données sont stockées dans des fichiers séparés (`.onnx.data`), le fichier `.onnx` ne conservant que le graphe et des pointeurs (offset, longueur) vers ces données externes.
+- **Inline**: tensor data is written directly into the `.onnx` file via `raw_data`. Suitable for small models.
+- **External data**: for large models (beyond the 2 GB limit imposed by Protobuf), data is stored in separate files (`.onnx.data`), with the `.onnx` file retaining only the graph and pointers (offset, length) to this external data.
 
-### 3.3 Différence fondamentale avec un "sac de tenseurs"
+### 3.3 Fundamental Difference from a "Bag of Tensors"
 
-C'est ici que se joue l'opposition structurelle avec des formats comme SafeTensors ou l'état PyTorch (`state_dict`) :
+This is where the structural opposition with formats like SafeTensors or the PyTorch state (`state_dict`) plays out:
 
-| | Contenu du fichier | Nature |
+| | File Contents | Nature |
 |---|---|---|
-| **ONNX** | Graphe de calcul **+** poids **+** métadonnées | Modèle **auto-suffisant et exécutable** |
-| **SafeTensors** | Tenseurs seuls, mappables en mémoire (mmap) | Conteneur de données — nécessite une architecture de modèle définie ailleurs (code) pour être réutilisable |
-| **PyTorch (`.pt`)** | `state_dict` sérialisé via `pickle` | Sauvegarde de checkpoint — dépend du code source de la classe du modèle |
+| **ONNX** | Computational graph **+** weights **+** metadata | **Self-sufficient and executable** model |
+| **SafeTensors** | Tensors only, memory-mappable (mmap) | Data container — requires a model architecture defined elsewhere (code) to be reusable |
+| **PyTorch (`.pt`)** | `state_dict` serialized via `pickle` | Checkpoint save — depends on the model class source code |
 
-**ONNX = le modèle entier, prêt à s'exécuter.** SafeTensors et PyTorch = **seulement les poids**, qui doivent être injectés dans une architecture déjà définie en code.
+**ONNX = the entire model, ready to execute.** SafeTensors and PyTorch = **only the weights**, which must be injected into an architecture already defined in code.
 
 ---
 
 <a id="4"></a>
-## 4. Comment ONNX gère l'inférence : anatomie du pipeline d'exécution
+## 4. How ONNX Handles Inference: Anatomy of the Execution Pipeline
 
-### 4.1 Les étapes internes d'ONNX Runtime
+### 4.1 Internal Steps of ONNX Runtime
 
 ```mermaid
 flowchart TB
-    A["Chargement du fichier .onnx"] --> B["Parsing du graphe Protobuf"]
-    B --> C["Optimisations du graphe\n(fusion d'opérateurs, élimination\nde nœuds redondants, constant folding)"]
-    C --> D["Partitionnement du graphe\npar Execution Provider"]
-    D --> E["Planification mémoire\n(allocation, réutilisation de buffers)"]
-    E --> F["Exécution des kernels\n(CUDA / MKL-DNN / oneDNN / TensorRT...)"]
-    F --> G["Résultat (logits)"]
+    A["Load .onnx file"] --> B["Parse Protobuf graph"]
+    B --> C["Graph optimizations\n(operator fusion, redundant\nnode elimination, constant folding)"]
+    C --> D["Graph partitioning\nby Execution Provider"]
+    D --> E["Memory planning\n(allocation, buffer reuse)"]
+    E --> F["Kernel execution\n(CUDA / MKL-DNN / oneDNN / TensorRT...)"]
+    F --> G["Result (logits)"]
 ```
 
-### 4.2 La fusion d'opérateurs (Kernel Fusion)
+### 4.2 Operator Fusion (Kernel Fusion)
 
-ONNX Runtime détecte des motifs récurrents dans le graphe (par exemple `LayerNorm → MatMul → BiasAdd → GeLU`) et les fusionne en un **unique noyau CUDA**, réduisant le nombre d'aller-retours vers la mémoire globale du GPU. Chaque lancement de noyau ayant un coût fixe (quelques microsecondes d'overhead), fusionner N opérations en une seule élimine (N-1) lancements.
+ONNX Runtime detects recurring patterns in the graph (e.g. `LayerNorm → MatMul → BiasAdd → GeLU`) and fuses them into a **single CUDA kernel**, reducing the number of round-trips to GPU global memory. Since each kernel launch has a fixed cost (a few microseconds of overhead), fusing N operations into one eliminates (N-1) launches.
 
-### 4.3 Le partitionnement par Execution Provider
+### 4.3 Partitioning by Execution Provider
 
-Un même graphe peut être exécuté par **plusieurs moteurs simultanément** : les opérateurs supportés par TensorRT sont délégués à TensorRT, ceux non supportés retombent sur l'Execution Provider CUDA générique, garantissant que le modèle s'exécute intégralement même si un backend spécialisé ne couvre pas 100% des opérateurs.
+A single graph can be executed by **multiple engines simultaneously**: operators supported by TensorRT are delegated to TensorRT, unsupported ones fall back to the generic CUDA Execution Provider, ensuring the model executes entirely even if a specialized backend does not cover 100% of the operators.
 
-### 4.4 Les deux phases de l'inférence autorégressive
+### 4.4 The Two Phases of Autoregressive Inference
 
-Pour un LLM, ONNX Runtime — via l'extension **ONNX Runtime GenAI** — orchestre les deux phases classiques :
+For an LLM, ONNX Runtime — via the **ONNX Runtime GenAI** extension — orchestrates the two classic phases:
 
-- **Prefill** : traite tous les tokens du prompt en un seul passage, produit les logits du premier token à générer **et** initialise le cache KV.
-- **Decode** : génère un token à la fois, en réinjectant le cache KV à chaque itération via la boucle `generate()`.
+- **Prefill**: processes all prompt tokens in a single pass, produces the logits of the first token to generate **and** initializes the KV cache.
+- **Decode**: generates one token at a time, reinjecting the KV cache at each iteration via the `generate()` loop.
 
 ---
 
 <a id="5"></a>
-## 5. Comment ONNX gère le cache KV
+## 5. How ONNX Handles the KV Cache
 
-### 5.1 Le principe : le cache comme entrée/sortie explicite du graphe
+### 5.1 The Principle: Cache as Explicit Graph Input/Output
 
-Contrairement à un moteur comme vLLM où le cache KV est une structure interne opaque gérée par le runtime, ONNX **expose le cache comme une entrée et une sortie explicites du graphe** : `past_key_values` en entrée, `present_key_values` en sortie. Cette contrainte découle directement de la nature statique du graphe ONNX — un graphe ne peut pas contenir de "mémoire cachée" implicite, tout doit être un tenseur nommé, déclaré, typé.
+Unlike an engine like vLLM where the KV cache is an opaque internal structure managed by the runtime, ONNX **exposes the cache as an explicit input and output of the graph**: `past_key_values` as input, `present_key_values` as output. This constraint stems directly from the static nature of the ONNX graph — a graph cannot contain implicit "hidden memory," everything must be a named, declared, typed tensor.
 
 ```mermaid
 flowchart LR
-    subgraph T1["Itération t"]
-        IN1["input_ids(t)"] --> G1["Graphe ONNX"]
+    subgraph T1["Iteration t"]
+        IN1["input_ids(t)"] --> G1["ONNX graph"]
         PK1["past_key_values"] --> G1
         G1 --> LOG1["logits(t)"]
         G1 --> PR1["present_key_values"]
     end
-    PR1 -->|"devient past_key_values"| T2
-    subgraph T2["Itération t+1"]
-        IN2["input_ids(t+1)"] --> G2["Graphe ONNX"]
+    PR1 -->|"becomes past_key_values"| T2
+    subgraph T2["Iteration t+1"]
+        IN2["input_ids(t+1)"] --> G2["ONNX graph"]
         PK2["past_key_values"] --> G2
         G2 --> LOG2["logits(t+1)"]
         G2 --> PR2["present_key_values"]
     end
 ```
 
-### 5.2 L'optimisation phare : le Past-Present Share Buffer
+### 5.2 The Flagship Optimization: Past-Present Share Buffer
 
-C'est l'optimisation mémoire la plus significative d'ONNX Runtime pour le cache KV, contrôlée par le paramètre `past_present_share_buffer`.
+This is the most significant memory optimization in ONNX Runtime for the KV cache, controlled by the `past_present_share_buffer` parameter.
 
-**Sans l'optimisation (`false`)** : à chaque itération, un nouveau buffer "présent" est alloué puis recopié dans le buffer "passé". Deux buffers coexistent brièvement :
-
-$$
-M_{\text{sans}} = M_{\text{past}} + M_{\text{present}} \approx 2P
-$$
-
-**Avec l'optimisation (`true`)** : les buffers "passé" et "présent" pointent vers **la même adresse mémoire physique**, en pré-allouant un buffer de taille `max_length` dès le départ :
+**Without the optimization (`false`)**: at each iteration, a new "present" buffer is allocated then copied into the "past" buffer. Two buffers briefly coexist:
 
 $$
-M_{\text{avec}} = \max(M_{\text{past}}, M_{\text{present}}) \approx P
+M_{\text{without}} = M_{\text{past}} + M_{\text{present}} \approx 2P
 $$
 
-**Gain mathématique : facteur ×2 sur la mémoire du cache**, et suppression du coût de copie ($O(P)$ évité à chaque token généré).
+**With the optimization (`true`)**: the "past" and "present" buffers point to **the same physical memory address**, by pre-allocating a buffer of size `max_length` from the start:
+
+$$
+M_{\text{with}} = \max(M_{\text{past}}, M_{\text{present}}) \approx P
+$$
+
+**Mathematical gain: 2x factor on cache memory**, and elimination of the copy cost ($O(P)$ avoided per generated token).
 
 | | `past_present_share_buffer = true` | `= false` |
 |---|---|---|
-| Taille cache "passé" | `batch × heads × max_length × head_size` | `batch × heads × past_seq_len × head_size` |
-| Taille cache "présent" | Identique (buffer partagé) | `batch × heads × (past_seq_len+1) × head_size` |
-| Exemple (Phi-4-mini, batch=1, max_length=4k) | **4 Go** | ~8 Go (4 Go passé + 4 Go présent) |
+| "Past" cache size | `batch × heads × max_length × head_size` | `batch × heads × past_seq_len × head_size` |
+| "Present" cache size | Identical (shared buffer) | `batch × heads × (past_seq_len+1) × head_size` |
+| Example (Phi-4-mini, batch=1, max_length=4k) | **4 GB** | ~8 GB (4 GB past + 4 GB present) |
 
-### 5.3 Les optimisations complémentaires
+### 5.3 Complementary Optimizations
 
-- **`TensorScatter`** (en développement dans la communauté ONNX) : viserait une mise à jour du cache **en place (in-place)**, sans même créer de nouveau tenseur "présent" à chaque étape — poussant encore plus loin la logique du buffer partagé.
-- **Continuous Decoding (Chat Mode)** : ONNX Runtime GenAI permet de conserver le cache KV **entre les tours d'une conversation multi-tours**. Un nouveau message utilisateur n'entraîne le traitement que des nouveaux tokens ; l'historique reste dans le cache. AMD exploite cette fonctionnalité sur ses processeurs Ryzen AI pour une latence quasi constante indépendamment de la longueur de la conversation.
+- **`TensorScatter`** (under development in the ONNX community): would enable **in-place** cache updates, without even creating a new "present" tensor at each step — pushing the shared buffer logic even further.
+- **Continuous Decoding (Chat Mode)**: ONNX Runtime GenAI allows retaining the KV cache **between turns of a multi-turn conversation**. A new user message only requires processing new tokens; the history remains in the cache. AMD exploits this feature on its Ryzen AI processors for near-constant latency regardless of conversation length.
 
-### 5.4 Le défi de l'export : rendre le dynamique statique
+### 5.4 The Export Challenge: Making Dynamic Static
 
-L'exportation d'un modèle Transformer avec cache vers ONNX est l'étape la plus délicate du pipeline :
+Exporting a Transformer model with cache to ONNX is the most delicate step in the pipeline:
 
-1. **Modification du modèle source** pour accepter `past_key_values` en entrée et produire `present_key_values` en sortie, en plus des logits.
-2. **Export via `torch.onnx.export`** avec des entrées factices (input_ids, attention_mask, cache initial) pour tracer le graphe.
-3. **Déclaration de dimensions dynamiques** (`dynamic_shapes` / `dynamic_axes`) pour que le graphe s'adapte aux différentes longueurs de séquence, tailles de batch, et tailles de cache — sans cela le graphe serait figé sur les dimensions des entrées factices utilisées au moment de l'export.
-4. **Aplatissement des structures** : ONNX ne peut pas accepter de tuples ou de structures de données Python complexes comme entrées ; le cache (souvent une liste de tuples par couche en PyTorch) doit être aplati en une liste de tenseurs individuels nommés.
-5. **Cas de la fenêtre glissante** : certaines implémentations (Esperanto Technologies notamment) exportent un graphe qui ne traite qu'une fenêtre récente de tokens, le cache complet étant maintenu à l'extérieur du graphe par le runtime.
+1. **Modify the source model** to accept `past_key_values` as input and produce `present_key_values` as output, in addition to logits.
+2. **Export via `torch.onnx.export`** with dummy inputs (input_ids, attention_mask, initial cache) to trace the graph.
+3. **Declare dynamic dimensions** (`dynamic_shapes` / `dynamic_axes`) so the graph adapts to different sequence lengths, batch sizes, and cache sizes — without this the graph would be frozen on the dimensions of the dummy inputs used at export time.
+4. **Flatten structures**: ONNX cannot accept Python tuples or complex data structures as inputs; the cache (often a list of tuples per layer in PyTorch) must be flattened into a list of individual named tensors.
+5. **Sliding window case**: some implementations (notably Esperanto Technologies) export a graph that only processes a recent window of tokens, with the full cache maintained outside the graph by the runtime.
 
 ---
 
 <a id="6"></a>
-## 6. Comparatif agressif : ONNX contre chaque format concurrent
+## 6. Aggressive Comparison: ONNX vs Every Competing Format
 
-### 6.1 ONNX vs PyTorch natif (Eager / TorchScript)
+### 6.1 ONNX vs Native PyTorch (Eager / TorchScript)
 
-| Critère | ONNX Runtime | PyTorch Eager |
+| Criterion | ONNX Runtime | PyTorch Eager |
 |---|---|---|
-| Type de graphe | Statique, optimisé à l'avance | Dynamique, interprété opération par opération |
-| Overhead de lancement | Faible (fusions de kernels) | Élevé — 30 à 50 % du temps total sur petits batchs (LLM) |
-| Mémoire cache KV | ~P (buffer partagé) | ~2P (double buffer natif) |
-| Portabilité | Totale (CPU/GPU/NPU, tout fournisseur) | Limitée hors écosystème Python/CUDA |
-| Flexibilité de développement | Faible (nécessite export) | Maximale (itération immédiate) |
-| Verdict | **Gagne en production** : latence -20 à -40 % mesurée sur des modèles génératifs | **Gagne en recherche** : cycle de développement plus rapide |
+| Graph type | Static, optimized in advance | Dynamic, interpreted operation by operation |
+| Launch overhead | Low (kernel fusions) | High — 30 to 50% of total time on small batches (LLM) |
+| KV cache memory | ~P (shared buffer) | ~2P (native double buffer) |
+| Portability | Total (CPU/GPU/NPU, any vendor) | Limited outside Python/CUDA ecosystem |
+| Development flexibility | Low (requires export) | Maximum (immediate iteration) |
+| Verdict | **Wins in production**: latency -20 to -40% measured on generative models | **Wins in research**: faster development cycle |
 
-**ONNX écrase PyTorch Eager sur tous les critères de production** — latence, mémoire, portabilité — au prix d'une étape d'export qui rigidifie le graphe.
+**ONNX crushes PyTorch Eager on all production criteria** — latency, memory, portability — at the cost of an export step that rigidifies the graph.
 
 ### 6.2 ONNX vs TensorRT (NVIDIA)
 
-| Critère | ONNX Runtime | TensorRT |
+| Criterion | ONNX Runtime | TensorRT |
 |---|---|---|
-| Nature | Graphe interprété/compilé partiellement | Moteur **entièrement compilé** (`.engine`) pour une architecture GPU précise |
-| Performance brute GPU NVIDIA | Très bonne | **Supérieure de 30 à 50 %** |
-| Quantification | FP16/INT8 génériques | INT8/FP4 **ultra-optimisés** via Tensor Cores |
-| Overhead de lancement | Faible | **Quasi nul** (CUDA Graphs capturent toute la boucle de décodage) |
-| Flexibilité des dimensions | Dynamique à l'exécution | **Figée à la compilation** — gaspille de la mémoire si la longueur réelle est inférieure au maximum compilé |
-| Portabilité matérielle | **Totale** | **Nulle** — exclusivement GPU NVIDIA |
-| Coût de migration | Nul | Réécriture complète nécessaire en cas de changement de fournisseur GPU |
-| Verdict | **Perd en performance pure**, mais peut utiliser TensorRT *comme backend* via son Execution Provider — le meilleur des deux mondes | **Gagne en vitesse brute**, mais impose un verrouillage total |
+| Nature | Partially interpreted/compiled graph | **Fully compiled** engine (`.engine`) for a specific GPU architecture |
+| Raw NVIDIA GPU performance | Very good | **30 to 50% superior** |
+| Quantization | Generic FP16/INT8 | **Ultra-optimized** INT8/FP4 via Tensor Cores |
+| Launch overhead | Low | **Near zero** (CUDA Graphs capture the entire decode loop) |
+| Dimension flexibility | Dynamic at runtime | **Frozen at compile time** — wastes memory if actual length is below compiled maximum |
+| Hardware portability | **Total** | **None** — exclusively NVIDIA GPUs |
+| Migration cost | None | Complete rewrite required when changing GPU vendor |
+| Verdict | **Loses on raw performance**, but can use TensorRT *as a backend* via its Execution Provider — best of both worlds | **Wins on raw speed**, but imposes total lock-in |
 
 ### 6.3 ONNX vs OpenVINO (Intel)
 
-| Critère | ONNX Runtime | OpenVINO |
+| Criterion | ONNX Runtime | OpenVINO |
 |---|---|---|
-| Optimisation matérielle | Générique, bonne sur CPU x86 | **Spécialisée** AVX-512 / VNNI pour puces Intel |
-| Gestion du cache | Past-Present Share Buffer | "Stateful Model" — état conservé entre appels, exploite la hiérarchie L1/L2/L3 du cache CPU |
-| Portabilité | Totale | Écosystème Intel principalement |
-| Intégration | OpenVINO peut être backend d'ONNX Runtime (Execution Provider) | — |
-| Verdict | ONNX peut **absorber** les gains d'OpenVINO sans perdre la portabilité, en l'utilisant comme Execution Provider plutôt que comme solution isolée |
+| Hardware optimization | Generic, good on x86 CPU | **Specialized** AVX-512 / VNNI for Intel chips |
+| Cache management | Past-Present Share Buffer | "Stateful Model" — state preserved between calls, exploits CPU cache L1/L2/L3 hierarchy |
+| Portability | Total | Intel ecosystem primarily |
+| Integration | OpenVINO can be an ONNX Runtime backend (Execution Provider) | — |
+| Verdict | ONNX can **absorb** OpenVINO's gains without losing portability, by using it as an Execution Provider rather than as a standalone solution |
 
 ### 6.4 ONNX vs GGUF (llama.cpp)
 
-| Critère | ONNX Runtime | GGUF |
+| Criterion | ONNX Runtime | GGUF |
 |---|---|---|
-| Cible principale | Cloud, edge, multi-hardware | **CPU local**, ressources limitées |
-| Chargement des poids | Chargement classique (ou external data) | **Memory-mapping (mmap)** — chargement en $O(1)$, RAM physique = données réellement lues |
-| Performance GPU | Bonne à excellente selon Execution Provider | **Faible** — conçu pour CPU |
-| Quantification | FP16/INT8 génériques | **Quantification par blocs** ultra-spécialisée (Q4_K, Q8_0...) |
-| Verdict | **Supérieur sur GPU et en environnement cloud** ; GGUF **gagne sur l'edge et le CPU pur** grâce au mmap et à sa quantification dédiée |
+| Primary target | Cloud, edge, multi-hardware | **Local CPU**, limited resources |
+| Weight loading | Classic loading (or external data) | **Memory-mapping (mmap)** — loading in $O(1)$, physical RAM = data actually read |
+| GPU performance | Good to excellent depending on Execution Provider | **Low** — designed for CPU |
+| Quantization | Generic FP16/INT8 | **Ultra-specialized block quantization** (Q4_K, Q8_0...) |
+| Verdict | **Superior on GPU and in cloud environments**; GGUF **wins on edge and pure CPU** thanks to mmap and its dedicated quantization |
 
 ### 6.5 ONNX vs SafeTensors
 
-Cette comparaison n'est **pas symétrique** : ce ne sont pas des concurrents directs.
+This comparison is **not symmetric**: they are not direct competitors.
 
-- **SafeTensors** : conteneur de tenseurs uniquement, mappable en mémoire, sécurisé (pas d'exécution de code arbitraire contrairement à `pickle`), gain de vitesse de chargement d'un facteur 10x par rapport à `pickle`. Il ne fait **aucune inférence**.
-- **ONNX** : un **plan d'exécution complet** — graphe + poids + métadonnées.
+- **SafeTensors**: tensor-only container, memory-mappable, secure (no arbitrary code execution unlike `pickle`), 10x loading speed gain over `pickle`. It does **no inference**.
+- **ONNX**: a **complete execution plan** — graph + weights + metadata.
 
-En pratique, les deux se combinent : on stocke les poids en SafeTensors pour leur sécurité et leur rapidité de chargement, on les charge en mémoire, puis on exporte le graphe vers ONNX pour l'inférence optimisée.
+In practice, the two combine: weights are stored in SafeTensors for their security and loading speed, loaded into memory, then the graph is exported to ONNX for optimized inference.
 
-### 6.6 Tableau de synthèse globale (vue d'ensemble agressive)
+### 6.6 Global Summary Table (Aggressive Overview)
 
-| Format | Portabilité | Perf. GPU NVIDIA | Perf. CPU | Perf. Edge/Mobile | Gestion cache KV | Verrouillage |
+| Format | Portability | NVIDIA GPU Perf | CPU Perf | Edge/Mobile Perf | KV Cache Management | Lock-in |
 |---|---|---|---|---|---|---|
-| **ONNX** | ★★★★★ | ★★★★ | ★★★★ | ★★★★ | ★★★★ (explicite, partagé) | Aucun |
-| **PyTorch Eager** | ★★ | ★★★ | ★★ | ★★ | ★★ (double buffer) | Écosystème Python/CUDA |
-| **TensorRT** | ★ | ★★★★★ | — | — | ★★★★★ (paginé, poolé) | Total (NVIDIA) |
-| **OpenVINO** | ★★ | — | ★★★★★ | ★★★ | ★★★★ (stateful) | Écosystème Intel |
-| **GGUF** | ★★★ | ★★ | ★★★★ | ★★★★★ | ★★★ (géré par llama.cpp) | Écosystème llama.cpp |
-| **SafeTensors** | ★★★★ (conteneur seul) | — | — | — | Aucune (pas un moteur) | Aucun |
+| **ONNX** | ★★★★★ | ★★★★ | ★★★★ | ★★★★ | ★★★★ (explicit, shared) | None |
+| **PyTorch Eager** | ★★ | ★★★ | ★★ | ★★ | ★★ (double buffer) | Python/CUDA ecosystem |
+| **TensorRT** | ★ | ★★★★★ | — | — | ★★★★★ (paged, pooled) | Total (NVIDIA) |
+| **OpenVINO** | ★★ | — | ★★★★★ | ★★★ | ★★★★ (stateful) | Intel ecosystem |
+| **GGUF** | ★★★ | ★★ | ★★★★ | ★★★★★ | ★★★ (managed by llama.cpp) | llama.cpp ecosystem |
+| **SafeTensors** | ★★★★ (container only) | — | — | — | None (not an engine) | None |
 
 ---
 
 <a id="7"></a>
-## 7. L'équation mathématique complète : ONNX face à l'attention et au cache
+## 7. The Complete Mathematical Equation: ONNX vs Attention and Cache
 
-### 7.1 Le socle commun à tous les formats
+### 7.1 The Common Foundation Across All Formats
 
-Pour une séquence de longueur $L$, l'attention multi-têtes se décompose en deux phases :
+For a sequence of length $L$, multi-head attention decomposes into two phases:
 
-- **Prefill** : coût $O(L^2)$ (produit matriciel $Q \times K^T$ sur toute la séquence en parallèle).
-- **Decode** : coût $O(L)$ par token grâce au cache KV (un seul nouveau vecteur Query comparé à l'historique stocké).
+- **Prefill**: cost $O(L^2)$ (matrix product $Q \times K^T$ over the entire sequence in parallel).
+- **Decode**: cost $O(L)$ per token thanks to the KV cache (a single new Query vector compared to the stored history).
 
-La taille du cache KV suit :
-
-$$
-\text{Taille}_{\text{cache}} = 2 \times B \times L \times H \times D_h \times \text{sizeof(dtype)}
-$$
-
-### 7.2 Application numérique : Llama-7B
-
-Pour `num_layers=32`, `head_dim=128`, `seq_len=4096`, en FP16 (2 octets), batch=1 :
+The KV cache size follows:
 
 $$
-\text{Taille brute} = 2 \times 1 \times 4096 \times 32 \times 128 \times 2 = 67\,\text{Mo}
+\text{Size}_{\text{cache}} = 2 \times B \times L \times H \times D_h \times \text{sizeof(dtype)}
 $$
 
-| Format/Moteur | Mémoire réelle nécessaire | Explication |
+### 7.2 Numerical Application: Llama-7B
+
+For `num_layers=32`, `head_dim=128`, `seq_len=4096`, in FP16 (2 bytes), batch=1:
+
+$$
+\text{Raw size} = 2 \times 1 \times 4096 \times 32 \times 128 \times 2 = 67\,\text{MB}
+$$
+
+| Format/Engine | Actual memory required | Explanation |
 |---|---|---|
-| **PyTorch Eager** | ~134 Mo (+fragmentation) | Double buffer passé/présent, allocateur CUDA non optimisé pour ce cas |
-| **ONNX Runtime** | ~67 Mo | Past-Present Share Buffer, fragmentation < 5 % |
-| **TensorRT** | ~67 Mo, contigu et prédictible | Memory Pool compilé, latence déterministe |
-| **GGUF** | ~67 Mo, mais en RAM CPU | Moins cher, mais ~10x plus lent à accéder que la VRAM |
+| **PyTorch Eager** | ~134 MB (+fragmentation) | Past/present double buffer, CUDA allocator not optimized for this case |
+| **ONNX Runtime** | ~67 MB | Past-Present Share Buffer, fragmentation < 5% |
+| **TensorRT** | ~67 MB, contiguous and predictable | Compiled Memory Pool, deterministic latency |
+| **GGUF** | ~67 MB, but in CPU RAM | Cheaper, but ~10x slower to access than VRAM |
 
-### 7.3 L'équation de synthèse
+### 7.3 The Synthesis Equation
 
 $$
-\text{Performance}_{\text{ONNX}} = \text{Performance}_{\text{Max théorique}} - \alpha(\text{Spécificité matérielle})
+\text{Performance}_{\text{ONNX}} = \text{Performance}_{\text{Theoretical max}} - \alpha(\text{Hardware specificity})
 $$
 
-Où $\alpha$ est **faible** sur CPU générique ou GPU non-NVIDIA (ONNX y est quasiment optimal), mais **plus élevé** face à un moteur compilé pour un matériel unique (TensorRT sur NVIDIA). En contrepartie, la **portabilité** d'ONNX — sa capacité à absorber de nouveaux accélérateurs sans réécriture — n'a pas d'équivalent chez les formats spécialisés.
+Where $\alpha$ is **low** on generic CPU or non-NVIDIA GPU (ONNX is nearly optimal there), but **higher** against an engine compiled for a single hardware (TensorRT on NVIDIA). In return, ONNX's **portability** — its ability to absorb new accelerators without rewriting — has no equivalent among specialized formats.
 
 ---
 
 <a id="8"></a>
-## 8. Consommation énergétique : la vérité chiffrée
+## 8. Energy Consumption: The Hard Numbers
 
-C'est un angle rarement traité avec rigueur, et les résultats sont nuancés — ONNX Runtime n'est **pas systématiquement le plus économe**, le classement dépend fortement du matériel et de la charge.
+This is an angle rarely addressed with rigor, and the results are nuanced — ONNX Runtime is **not systematically the most economical**, the ranking depends heavily on hardware and workload.
 
-### 8.1 Sur serveur CPU (architecture RISC-V, étude comparative)
+### 8.1 On CPU Server (RISC-V Architecture, Comparative Study)
 
-Sur un serveur RISC-V 64 cœurs, une étude comparative montre que TensorFlow Lite consomme le moins d'énergie (baseline), tandis qu'ONNX Runtime consomme **1,2 à 1,39 fois plus d'énergie**, et PyTorch natif **2,0 à 2,42 fois plus** que TensorFlow Lite sur les mêmes charges (ResNet, VGG-16).
+On a 64-core RISC-V server, a comparative study shows that TensorFlow Lite consumes the least energy (baseline), while ONNX Runtime consumes **1.2 to 1.39 times more energy**, and native PyTorch **2.0 to 2.42 times more** than TensorFlow Lite on the same workloads (ResNet, VGG-16).
 
-### 8.2 Sur edge GPU (NVIDIA Jetson AGX Orin)
+### 8.2 On Edge GPU (NVIDIA Jetson AGX Orin)
 
-Une comparaison de cinq moteurs (PyTorch, ONNX Runtime, TensorRT, Apache TVM, JAX) sur Jetson AGX Orin montre qu'ONNX Runtime et JAX affichent la **plus faible consommation moyenne** (sous 15 W même sur de gros réseaux — 14,17 W sur ResNet152, 13,96 W sur EfficientNet). Ce résultat traduit un **engagement GPU modeste** : ONNX Runtime sollicite moins intensément le GPU, ce qui réduit la puissance instantanée consommée, **mais au prix d'une latence plus élevée et d'un débit plus faible** que des moteurs plus agressifs comme TensorRT.
+A comparison of five engines (PyTorch, ONNX Runtime, TensorRT, Apache TVM, JAX) on Jetson AGX Orin shows that ONNX Runtime and JAX display the **lowest average consumption** (under 15 W even on large networks — 14.17 W on ResNet152, 13.96 W on EfficientNet). This result reflects a **modest GPU engagement**: ONNX Runtime solicits the GPU less intensively, which reduces instantaneous power consumed, **but at the cost of higher latency and lower throughput** than more aggressive engines like TensorRT.
 
-### 8.3 Le compromis fondamental puissance/débit
+### 8.3 The Fundamental Power/Throughput Trade-off
 
-Ce constat révèle un principe important, souvent ignoré dans les argumentaires marketing : **une puissance instantanée plus faible ne signifie pas une énergie totale par requête plus faible**, car l'énergie est le produit de la puissance par le temps :
+This observation reveals an important principle, often ignored in marketing pitches: **lower instantaneous power does not mean lower total energy per request**, because energy is the product of power by time:
 
 $$
-E = \bar{P}_{\text{actif}} \times T_{\text{inférence}}
+E = \bar{P}_{\text{active}} \times T_{\text{inference}}
 $$
 
-Si ONNX Runtime consomme moins de watts mais met plus de temps à traiter une requête, l'énergie totale consommée par requête peut in fine dépasser celle d'un moteur plus puissant mais plus rapide, comme TensorRT. Une étude sur un compilateur de graphe dédié montre par exemple qu'à configuration comparable, ONNX Runtime affiche une puissance active moyenne d'environ 12,1 W contre 11,8 W pour OpenVINO — un écart faible en watts, mais qui se traduit par un écart de **37 à 46 % d'énergie totale par inférence** une fois la durée d'exécution prise en compte, en défaveur d'ONNX Runtime dans ce scénario précis.
+If ONNX Runtime consumes fewer watts but takes longer to process a request, the total energy consumed per request can ultimately exceed that of a more powerful but faster engine, like TensorRT. A study on a dedicated graph compiler shows for example that at comparable configuration, ONNX Runtime displays an average active power of about 12.1 W versus 11.8 W for OpenVINO — a small difference in watts, but which translates into a **37 to 46% difference in total energy per inference** once execution duration is factored in, to ONNX Runtime's disadvantage in this specific scenario.
 
-### 8.4 GPU vs CPU : l'écart fondamental reste dominant
+### 8.4 GPU vs CPU: The Fundamental Gap Remains Dominant
 
-Indépendamment du format, la décision GPU vs CPU pèse bien plus lourd que le choix du runtime : sur des charges d'inférence, l'exécution CPU-only peut nécessiter jusqu'à **4,5 fois plus d'énergie totale** que l'exécution GPU pour un même travail, malgré une puissance instantanée par watt plus faible côté CPU — car le temps d'exécution CPU est disproportionnellement plus long.
+Regardless of format, the GPU vs CPU decision weighs far more than the runtime choice: on inference workloads, CPU-only execution can require up to **4.5 times more total energy** than GPU execution for the same work, despite lower instantaneous power per watt on the CPU side — because CPU execution time is disproportionately longer.
 
-### 8.5 Recommandations pratiques pour l'efficience énergétique avec ONNX
+### 8.5 Practical Recommendations for Energy Efficiency with ONNX
 
-- **Activer les Execution Providers spécialisés** (TensorRT, OpenVINO) plutôt que le provider CPU/CUDA générique : ils réduisent le temps d'exécution, ce qui réduit l'énergie totale malgré une puissance instantanée parfois supérieure.
-- **Quantifier agressivement** (FP16, INT8) : réduit à la fois la mémoire et le nombre de cycles de calcul, donc l'énergie par token.
-- **Maximiser le taux d'utilisation du cache** (past-present share buffer, prefix caching côté application) : moins de recalcul = moins d'énergie, indépendamment du moteur.
-- **Éviter les transitions fréquentes CPU ↔ accélérateur** : chaque transition de device a un coût énergétique de mouvement de données non négligeable, documenté comme un facteur significatif de surconsommation dans les architectures hétérogènes CPU+NPU.
-- **Ne pas se fier uniquement à la puissance instantanée (W)** publiée dans les benchmarks marketing : toujours ramener à l'**énergie par requête ou par token** ($E = P \times T$) pour comparer équitablement les runtimes.
+- **Enable specialized Execution Providers** (TensorRT, OpenVINO) rather than the generic CPU/CUDA provider: they reduce execution time, which reduces total energy despite sometimes higher instantaneous power.
+- **Quantize aggressively** (FP16, INT8): reduces both memory and the number of compute cycles, hence energy per token.
+- **Maximize cache utilization** (past-present share buffer, prefix caching on the application side): less recomputation = less energy, regardless of the engine.
+- **Avoid frequent CPU ↔ accelerator transitions**: each device transition has a non-negligible energy cost from data movement, documented as a significant factor in overconsumption in heterogeneous CPU+NPU architectures.
+- **Do not rely solely on instantaneous power (W)** published in marketing benchmarks: always reduce to **energy per request or per token** ($E = P \times T$) to fairly compare runtimes.
 
 ---
 
 <a id="9"></a>
-## 9. Avantages et inconvénients : le bilan sans concession
+## 9. Advantages and Disadvantages: The No-Compromise Assessment
 
-### 9.1 Avantages
+### 9.1 Advantages
 
-| Avantage | Détail |
+| Advantage | Detail |
 |---|---|
-| **Portabilité totale** | Un seul fichier `.onnx` s'exécute sur CUDA, TensorRT, ROCm, OpenVINO, DirectML, CoreML, CPU |
-| **Absence de vendor lock-in** | Changement de fournisseur cloud ou de GPU sans réécriture de pipeline |
-| **Performance solide et généraliste** | Gains mesurés de latence et de débit par rapport à PyTorch Eager sur de nombreux LLM |
-| **Gestion mémoire du cache optimisée** | Past-Present Share Buffer, réduction jusqu'à 2x de l'empreinte du cache KV |
-| **Écosystème mature** | Soutenu par Microsoft, Meta, AWS, NVIDIA, Intel, AMD ; standard ouvert (Linux Foundation) |
-| **Architecture "future-proof"** | De nouveaux accélérateurs matériels s'intègrent via de nouveaux Execution Providers, sans toucher au modèle |
-| **Interopérabilité multi-framework** | Un modèle entraîné dans n'importe quel framework peut converger vers un seul format de déploiement |
+| **Total portability** | A single `.onnx` file runs on CUDA, TensorRT, ROCm, OpenVINO, DirectML, CoreML, CPU |
+| **No vendor lock-in** | Change cloud provider or GPU without rewriting the pipeline |
+| **Solid generalist performance** | Measured latency and throughput gains over PyTorch Eager on many LLMs |
+| **Optimized cache memory management** | Past-Present Share Buffer, up to 2x reduction in KV cache footprint |
+| **Mature ecosystem** | Backed by Microsoft, Meta, AWS, NVIDIA, Intel, AMD; open standard (Linux Foundation) |
+| **Future-proof architecture** | New hardware accelerators integrate via new Execution Providers, without touching the model |
+| **Multi-framework interoperability** | A model trained in any framework can converge to a single deployment format |
 
-### 9.2 Inconvénients
+### 9.2 Disadvantages
 
-| Inconvénient | Détail |
+| Disadvantage | Detail |
 |---|---|
-| **Performance LLM pure inférieure aux moteurs spécialisés** | vLLM (PagedAttention) et TensorRT-LLM dépassent ONNX Runtime sur l'inférence LLM à très haut débit |
-| **Complexité d'export** | Modèles avec contrôle de flux dynamique complexe à exporter proprement ; gestion des dimensions dynamiques délicate |
-| **Consommation énergétique non systématiquement optimale** | Une puissance instantanée faible peut masquer une énergie totale par requête plus élevée si la latence augmente |
-| **Historique de gestion du cache sous-optimale** | Les anciennes versions d'ONNX Runtime imposaient des copies mémoire CPU↔GPU inutiles pour les modèles autorégressifs — corrigé par ONNX Runtime GenAI, mais la maturité de cette extension reste plus récente |
-| **Couche d'abstraction supplémentaire** | Ajoute un maillon de dépendance (le Runtime) entre le modèle et le matériel, avec ses propres bugs et versions à gérer |
-| **Rigidité du graphe statique** | Les dimensions dynamiques nécessitent une déclaration explicite ; certains motifs de calcul très dynamiques restent difficiles à représenter |
+| **Pure LLM performance below specialized engines** | vLLM (PagedAttention) and TensorRT-LLM outperform ONNX Runtime on very high-throughput LLM inference |
+| **Export complexity** | Models with complex dynamic control flow are hard to export cleanly; managing dynamic dimensions is delicate |
+| **Energy consumption not systematically optimal** | Low instantaneous power can mask higher total energy per request if latency increases |
+| **History of suboptimal cache management** | Older versions of ONNX Runtime imposed unnecessary CPU↔GPU memory copies for autoregressive models — fixed by ONNX Runtime GenAI, but this extension's maturity remains more recent |
+| **Additional abstraction layer** | Adds a dependency link (the Runtime) between the model and hardware, with its own bugs and versions to manage |
+| **Static graph rigidity** | Dynamic dimensions require explicit declaration; some highly dynamic computation patterns remain difficult to represent |
 
 ---
 
 <a id="10"></a>
-## 10. ONNX dans un pipeline de production (MLOps / Cloud)
+## 10. ONNX in a Production Pipeline (MLOps / Cloud)
 
-### 10.1 Position dans une architecture en couches
+### 10.1 Position in a Layered Architecture
 
 ```mermaid
 flowchart TB
-    subgraph EXPO["Plan d'exposition"]
+    subgraph EXPO["Exposure Plane"]
         GW["API Gateway\n(OpenAI-compatible)"]
     end
-    subgraph ENGINE["Plan moteur"]
-        SEL["engine-selector\n(détecte le format ONNX)"]
+    subgraph ENGINE["Engine Plane"]
+        SEL["engine-selector\n(detects ONNX format)"]
         ORT["ONNX Runtime GenAI"]
     end
-    subgraph MODEL["Plan modèle"]
-        STORE["Poids ONNX quantifiés\n(stockage objet / PVC)"]
+    subgraph MODEL["Model Plane"]
+        STORE["Quantized ONNX weights\n(object storage / PVC)"]
     end
-    subgraph OBS["Observabilité"]
-        PROM["Prometheus / Grafana\n(cache hit, latence, VRAM)"]
+    subgraph OBS["Observability"]
+        PROM["Prometheus / Grafana\n(cache hit, latency, VRAM)"]
     end
     subgraph GITOPS["GitOps"]
-        ARGO["ArgoCD\n(déploiement versionné)"]
+        ARGO["ArgoCD\n(versioned deployment)"]
     end
     GW --> SEL --> ORT --> STORE
-    ORT -.métriques.-> PROM
+    ORT -.metrics.-> PROM
     GITOPS --> ENGINE
 ```
 
-### 10.2 Le cycle de vie typique d'un modèle ONNX en production
+### 10.2 The Typical Lifecycle of an ONNX Model in Production
 
-1. **Entraînement** avec le framework de choix (PyTorch, TensorFlow).
-2. **Export** vers ONNX (`torch.onnx.export`, avec gestion explicite du cache KV et des dimensions dynamiques).
-3. **Optimisation du graphe** (fusion d'opérateurs, quantification FP16/INT8).
-4. **Sélection automatique du moteur** par un composant de routage (`engine-selector`) qui détecte le format et choisit ONNX Runtime GenAI avec un score de confiance.
-5. **Déploiement versionné** via Helm + ArgoCD, avec calcul préalable du budget VRAM nécessaire (incluant le cache KV).
-6. **Observabilité continue** : métriques de latence, taux d'erreur, utilisation mémoire et cache, exposées via ServiceMonitor / Prometheus / Grafana.
-7. **Autoscaling** piloté par la profondeur de file d'attente et la pression du cache (KEDA), au même titre que pour un moteur comme vLLM.
+1. **Training** with the framework of choice (PyTorch, TensorFlow).
+2. **Export** to ONNX (`torch.onnx.export`, with explicit KV cache and dynamic dimension management).
+3. **Graph optimization** (operator fusion, FP16/INT8 quantization).
+4. **Automatic engine selection** by a routing component (`engine-selector`) that detects the format and chooses ONNX Runtime GenAI with a confidence score.
+5. **Versioned deployment** via Helm + ArgoCD, with prior calculation of the required VRAM budget (including KV cache).
+6. **Continuous observability**: latency metrics, error rate, memory and cache utilization, exposed via ServiceMonitor / Prometheus / Grafana.
+7. **Autoscaling** driven by queue depth and cache pressure (KEDA), on the same basis as for an engine like vLLM.
 
-### 10.3 Pourquoi cette architecture "triple couche" convient particulièrement à ONNX
+### 10.3 Why This "Triple-Layer" Architecture Suits ONNX Particularly Well
 
-La séparation Exposition / Moteur / Modèle est **naturellement servie** par la philosophie ONNX : le format est interchangeable (plan modèle), le moteur est dédié et remplaçable (plan moteur), et l'API reste uniforme côté client (plan exposition). ONNX agit comme le **langage commun** qui rend cette séparation possible sans compromis technique.
+The Exposure / Engine / Model separation is **naturally served** by the ONNX philosophy: the format is interchangeable (model plane), the engine is dedicated and replaceable (engine plane), and the API remains uniform on the client side (exposure plane). ONNX acts as the **common language** that makes this separation possible without technical compromise.
 
 ---
 
 <a id="11"></a>
-## 11. Qui utilise ONNX en production, et comment
+## 11. Who Uses ONNX in Production, and How
 
-| Organisation | Usage |
+| Organization | Usage |
 |---|---|
-| **Microsoft** (Bing, Office 365, Azure Cognitive Services) | Accélération moyenne mesurée de 2,9x par rapport aux runtimes non optimisés |
-| **Ant Group (Alipay)** | Inférence de modèles de vision par ordinateur et de NLP en production |
-| **Adobe** | Déploiement de modèles à grande échelle pour des expériences personnalisées en temps réel |
-| **CERN** | Intégration dans le framework `Athena` pour la reconstruction de particules |
-| **Hugging Face** | Accélération de milliers de modèles sur son API d'inférence |
-| **AMD (Ryzen AI)** | Réutilisation du cache KV via ONNX Runtime GenAI pour les conversations multi-tours sur NPU embarqué |
+| **Microsoft** (Bing, Office 365, Azure Cognitive Services) | Average measured acceleration of 2.9x over non-optimized runtimes |
+| **Ant Group (Alipay)** | Inference of computer vision and NLP models in production |
+| **Adobe** | Large-scale model deployment for real-time personalized experiences |
+| **CERN** | Integration into the `Athena` framework for particle reconstruction |
+| **Hugging Face** | Acceleration of thousands of models on its inference API |
+| **AMD (Ryzen AI)** | KV cache reuse via ONNX Runtime GenAI for multi-turn conversations on embedded NPU |
 
-Ces usages couvrent un spectre large : cloud hyperscale (Microsoft), fintech (Ant Group), création de contenu (Adobe), recherche fondamentale (CERN), et plateformes de modèles (Hugging Face) — un signal fort de maturité transversale, indépendant d'un seul secteur.
+These uses cover a broad spectrum: hyperscale cloud (Microsoft), fintech (Ant Group), content creation (Adobe), fundamental research (CERN), and model platforms (Hugging Face) — a strong signal of transversal maturity, independent of any single sector.
 
 ---
 
 <a id="12"></a>
-## 12. Gérer ONNX pour des millions d'utilisateurs
+## 12. Managing ONNX for Millions of Users
 
-### 12.1 Les leviers spécifiques à ONNX à cette échelle
+### 12.1 ONNX-Specific Levers at This Scale
 
-- **Quantification systématique** : INT8 pour les poids, FP16 ou INT8 pour le cache KV selon le budget de précision toléré — impact direct sur le nombre de GPU nécessaires.
-- **Choix stratégique des Execution Providers** : TensorRT en backend sur les nœuds NVIDIA, OpenVINO sur les nœuds Intel — sans multiplier les formats de modèles à maintenir.
-- **Past-Present Share Buffer activé par défaut** : c'est le levier mémoire le plus direct pour maximiser la densité de requêtes concurrentes par GPU.
-- **Continuous Decoding** pour les cas d'usage conversationnels à fort volume (support client, assistants), où la réutilisation du cache entre tours réduit fortement la charge de calcul cumulée.
+- **Systematic quantization**: INT8 for weights, FP16 or INT8 for the KV cache depending on the tolerated precision budget — direct impact on the number of GPUs needed.
+- **Strategic choice of Execution Providers**: TensorRT as backend on NVIDIA nodes, OpenVINO on Intel nodes — without multiplying model formats to maintain.
+- **Past-Present Share Buffer enabled by default**: this is the most direct memory lever to maximize concurrent request density per GPU.
+- **Continuous Decoding** for high-volume conversational use cases (customer support, assistants), where cache reuse between turns strongly reduces cumulative compute load.
 
-### 12.2 Ce qu'ONNX ne résout pas nativement à cette échelle
+### 12.2 What ONNX Does Not Solve Natively at This Scale
 
-ONNX Runtime, contrairement à vLLM, ne propose pas nativement de **PagedAttention** ni d'**Automatic Prefix Caching** inter-requêtes au niveau du cluster. Pour des volumes massifs avec beaucoup de préfixes partagés (RAG, prompt système commun), il est recommandé de :
+ONNX Runtime, unlike vLLM, does not natively offer **PagedAttention** or **Automatic Prefix Caching** across requests at the cluster level. For massive volumes with many shared prefixes (RAG, common system prompt), it is recommended to:
 
-- Combiner ONNX avec une couche de cache distribuée externe si la charge de travail le justifie, ou
-- Réserver ONNX aux modèles où la **portabilité matérielle** prime sur le débit brut, et utiliser un moteur spécialisé (vLLM/TensorRT-LLM) pour les LLM conversationnels à très haut volume.
+- Combine ONNX with an external distributed cache layer if the workload justifies it, or
+- Reserve ONNX for models where **hardware portability** takes priority over raw throughput, and use a specialized engine (vLLM/TensorRT-LLM) for very high-volume conversational LLMs.
 
-### 12.3 Exemple de dimensionnement chiffré
+### 12.3 Quantified Sizing Example
 
-Pour 1 million de requêtes/jour sur un modèle 7B en FP16 :
+For 1 million requests/day on a 7B model in FP16:
 
-- **Sans optimisation ONNX** (PyTorch natif) : de l'ordre de 4 GPU A100 (40 Go) nécessaires pour absorber la charge et le cache.
-- **Avec ONNX** (quantification INT8 + Past-Present Share Buffer) : de l'ordre de 2 GPU A100 suffisent — soit une réduction de l'ordre de **50 % du parc GPU nécessaire** pour ce modèle.
+- **Without ONNX optimization** (native PyTorch): on the order of 4 A100 GPUs (40 GB) needed to absorb the load and cache.
+- **With ONNX** (INT8 quantization + Past-Present Share Buffer): on the order of 2 A100 GPUs suffice — a reduction of approximately **50% of the required GPU fleet** for this model.
 
 ---
 
 <a id="13"></a>
-## 13. Bilan financier complet
+## 13. Complete Financial Assessment
 
-| Levier | Impact mesuré |
+| Lever | Measured Impact |
 |---|---|
-| Réduction de latence vs PyTorch natif | Jusqu'à -27,6 % (mesuré sur Gemma-7B, Phi-3, Llama-3.1-8B) |
-| Augmentation du débit calculatoire | Jusqu'à +48,3 % (GFLOP/s) |
-| Réduction mémoire cache KV | Jusqu'à -50 % (Past-Present Share Buffer) |
-| Réduction de taille de modèle (quantification INT8) | Jusqu'à -74,9 % |
-| Rapport performance/prix (ARM Neoverse vs x86) | Jusqu'à 2,8x meilleur |
-| Coût de migration entre fournisseurs matériels | Nul (portabilité native) |
+| Latency reduction vs native PyTorch | Up to -27.6% (measured on Gemma-7B, Phi-3, Llama-3.1-8B) |
+| Computational throughput increase | Up to +48.3% (GFLOP/s) |
+| KV cache memory reduction | Up to -50% (Past-Present Share Buffer) |
+| Model size reduction (INT8 quantization) | Up to -74.9% |
+| Price/performance ratio (ARM Neoverse vs x86) | Up to 2.8x better |
+| Migration cost between hardware vendors | None (native portability) |
 
-**Exemple chiffré à 5 ans** : pour un modèle servant un volume important de requêtes quotidiennes, une réduction du parc GPU de 4 à 2 unités A100 (à ~3 $/heure) représente une économie de l'ordre de **50 000 $ par an**, soit environ **250 000 $ cumulés sur 5 ans**, pour ce seul modèle — sans compter l'évitement des coûts de réécriture en cas de changement de fournisseur matériel ou cloud.
+**Quantified 5-year example**: for a model serving a high volume of daily requests, reducing the GPU fleet from 4 to 2 A100 units (at ~$3/hour) represents savings on the order of **$50,000 per year**, or approximately **$250,000 cumulative over 5 years**, for this single model — not counting the avoidance of rewriting costs in case of hardware or cloud vendor change.
 
-**Le coût caché du verrouillage évité** : un pipeline entièrement optimisé pour TensorRT ou pour un cloud spécifique implique un coût de migration potentiellement prohibitif si les prix du matériel évoluent défavorablement. ONNX transforme ce risque en **option stratégique** — la capacité de renégocier ou de migrer sans coût de réécriture est elle-même une forme de valeur financière, assimilable à une prime d'assurance.
+**The hidden cost of avoided lock-in**: a pipeline entirely optimized for TensorRT or for a specific cloud implies a potentially prohibitive migration cost if hardware prices evolve unfavorably. ONNX transforms this risk into a **strategic option** — the ability to renegotiate or migrate without rewriting cost is itself a form of financial value, akin to an insurance premium.
 
 ---
 
 <a id="14"></a>
-## 14. Verdict final : quand choisir ONNX, quand ne pas le choisir
+## 14. Final Verdict: When to Choose ONNX, When Not To
 
-### Choisir ONNX quand :
+### Choose ONNX when:
 
-- L'infrastructure est **multi-cloud ou multi-matériel** (mix NVIDIA/AMD/Intel/ARM).
-- La **pérennité et l'absence de lock-in** sont des critères stratégiques prioritaires.
-- Le cas d'usage est **polyvalent** (vision, NLP classique, modèles hybrides) et pas exclusivement du LLM conversationnel à très haut débit.
-- Le déploiement doit couvrir du **cloud jusqu'à l'edge/mobile** avec un seul artefact de modèle.
-- L'organisation utilise déjà **plusieurs frameworks d'entraînement** et veut unifier son pipeline de déploiement.
+- The infrastructure is **multi-cloud or multi-hardware** (NVIDIA/AMD/Intel/ARM mix).
+- **Longevity and absence of lock-in** are strategic priority criteria.
+- The use case is **versatile** (vision, classic NLP, hybrid models) and not exclusively very high-throughput conversational LLM.
+- The deployment must cover **cloud down to edge/mobile** with a single model artifact.
+- The organization already uses **multiple training frameworks** and wants to unify its deployment pipeline.
 
-### Ne pas choisir ONNX seul quand :
+### Do not choose ONNX alone when:
 
-- Le cas d'usage est **exclusivement du LLM conversationnel à très haut débit sur GPU NVIDIA homogène** : vLLM ou TensorRT-LLM offriront un débit supérieur grâce à PagedAttention et aux optimisations bare-metal.
-- L'infrastructure est **100 % engagée et figée sur un seul fournisseur GPU** sans intention de diversifier : TensorRT seul peut alors surperformer.
-- Le déploiement cible exclusivement des **appareils CPU très contraints** (mobile bas de gamme, IoT) : GGUF avec mmap peut être plus adapté.
+- The use case is **exclusively very high-throughput conversational LLM on homogeneous NVIDIA GPU**: vLLM or TensorRT-LLM will offer superior throughput thanks to PagedAttention and bare-metal optimizations.
+- The infrastructure is **100% committed and frozen on a single GPU vendor** with no intention to diversify: TensorRT alone can then outperform.
+- The deployment targets exclusively **very constrained CPU devices** (low-end mobile, IoT): GGUF with mmap may be more suitable.
 
-### La stratégie gagnante : la complémentarité
+### The Winning Strategy: Complementarity
 
-Dans une architecture de production mature, ONNX n'est **pas un remplaçant** de vLLM ou TensorRT — c'est un **complément stratégique** qui unifie la partie du parc de modèles où la portabilité prime, tandis que des moteurs spécialisés prennent en charge les LLM conversationnels à très haut volume. C'est cette **approche hybride**, plutôt qu'un choix exclusif, qui capture le meilleur des deux mondes.
+In a mature production architecture, ONNX is **not a replacement** for vLLM or TensorRT — it is a **strategic complement** that unifies the part of the model fleet where portability matters most, while specialized engines handle very high-volume conversational LLMs. It is this **hybrid approach**, rather than an exclusive choice, that captures the best of both worlds.
 
 ---
 
 <a id="15"></a>
-## 15. Glossaire
+## 15. Glossary
 
-| Terme | Définition courte |
+| Term | Short Definition |
 |---|---|
-| **IR (Intermediate Representation)** | Représentation intermédiaire d'un modèle, indépendante du framework d'origine |
-| **Protobuf** | Format de sérialisation binaire compact utilisé par ONNX |
-| **Execution Provider** | Backend d'exécution spécifique (CUDA, TensorRT, OpenVINO...) branché à ONNX Runtime |
-| **Initializer** | Représentation ONNX d'un poids ou d'un biais entraîné (`TensorProto`) |
-| **Past-Present Share Buffer** | Optimisation mémoire partageant le buffer du cache KV entre l'état passé et présent |
-| **Kernel Fusion** | Fusion de plusieurs opérations en un seul noyau de calcul pour réduire l'overhead |
-| **External Data** | Mécanisme de stockage des poids dans un fichier séparé pour les gros modèles ONNX |
-| **Continuous Decoding** | Réutilisation du cache KV entre les tours d'une conversation multi-tours |
-| **Vendor Lock-in** | Dépendance technique et financière à un fournisseur matériel ou logiciel unique |
+| **IR (Intermediate Representation)** | Intermediate representation of a model, independent of the source framework |
+| **Protobuf** | Compact binary serialization format used by ONNX |
+| **Execution Provider** | Execution-specific backend (CUDA, TensorRT, OpenVINO...) plugged into ONNX Runtime |
+| **Initializer** | ONNX representation of a trained weight or bias (`TensorProto`) |
+| **Past-Present Share Buffer** | Memory optimization sharing the KV cache buffer between past and present state |
+| **Kernel Fusion** | Fusing multiple operations into a single compute kernel to reduce overhead |
+| **External Data** | Mechanism for storing weights in a separate file for large ONNX models |
+| **Continuous Decoding** | Reusing the KV cache between turns of a multi-turn conversation |
+| **Vendor Lock-in** | Technical and financial dependence on a single hardware or software vendor |
 
 ---
 
-*Document de référence complet sur ONNX — origines, mathématiques, gestion du cache, comparatif agressif avec les formats concurrents, consommation énergétique et déploiement en production à grande échelle.*
+*Complete reference document on ONNX — origins, mathematics, cache management, aggressive comparison with competing formats, energy consumption, and large-scale production deployment.*
