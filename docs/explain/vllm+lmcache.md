@@ -1,7 +1,6 @@
 # vLLM + LMCache — The Complete Reference Document
 ### Communication, information flow, cache sharing, behavior across all generation scenarios, and Kubernetes integration
 
-*Document consolidated from all available sources, completed and verified through technical research (official vLLM documentation, LMCache documentation, vLLM Production Stack repository) — July 2026.*
 
 ---
 
