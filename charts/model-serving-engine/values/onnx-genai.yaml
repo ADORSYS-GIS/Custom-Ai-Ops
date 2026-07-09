@@ -3,7 +3,7 @@ engine:
   onnxGenai:
     image:
       repository: ghcr.io/microsoft/onnxruntime-genai
-      tag: latest
+      tag: "0.5.0"
       pullPolicy: IfNotPresent
     args:
       - --model_path

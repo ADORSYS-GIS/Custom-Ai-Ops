@@ -55,11 +55,12 @@ spec:
       containers:
         - name: {{ .Chart.Name }}
           {{- $img := (include "model-serving-engine.engineImage" . | fromJson) }}
-          {{- $command := (include "model-serving-engine.engineCommand" . | fromJson) }}
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
           {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- else if eq $engineType "onnxGenai" }}{{- $args = .Values.engine.onnxGenai.args }}{{- end }}
+          {{- $command := list }}
+          {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- else if eq $engineType "onnxGenai" }}{{- $command = .Values.engine.onnxGenai.command }}{{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"
@@ -181,11 +182,19 @@ spec:
           {{- if eq $engineType "vllm" }}
           livenessProbe:
             {{- toYaml .Values.engine.vllm.livenessProbe | nindent 12 }}
+          {{- if .Values.engine.vllm.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.engine.vllm.readinessProbe | nindent 12 }}
+          {{- end }}
           startupProbe:
             {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
           {{- else if eq $engineType "onnxGenai" }}
           livenessProbe:
             {{- toYaml .Values.engine.onnxGenai.livenessProbe | nindent 12 }}
+          {{- if .Values.engine.onnxGenai.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.engine.onnxGenai.readinessProbe | nindent 12 }}
+          {{- end }}
           startupProbe:
             {{- toYaml .Values.engine.onnxGenai.startupProbe | nindent 12 }}
           {{- end }}

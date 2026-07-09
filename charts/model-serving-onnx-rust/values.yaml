@@ -1,12 +1,15 @@
 global:
   namespace: model-serving
+  imageRegistry: ""
+  imagePullSecrets:
+    - name: registry-credentials
 
 engine:
   type: onnxGenai
 
 image:
   repository: ghcr.io/microsoft/onnxruntime-genai
-  tag: latest
+  tag: "0.5.0"
   pullPolicy: IfNotPresent
 
 command: []
@@ -31,10 +34,12 @@ service:
 resources:
   limits:
     nvidia.com/gpu: 1
+    cpu: "4"
     memory: 16Gi
   requests:
+    nvidia.com/gpu: 1
     cpu: "4"
-    memory: 8Gi
+    memory: 16Gi
 
 livenessProbe:
   httpGet:
@@ -44,6 +49,15 @@ livenessProbe:
   periodSeconds: 15
   timeoutSeconds: 5
   failureThreshold: 6
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
 
 startupProbe:
   httpGet:
@@ -77,7 +91,8 @@ autoscaling:
   maxReplicas: 4
   targetCPUUtilizationPercentage: 80
 
-nodeSelector: {}
+nodeSelector:
+  nvidia.com/gpu.present: "true"
 
 tolerations:
   - key: nvidia.com/gpu
