@@ -161,39 +161,90 @@ spec:
             summary: "vLLM prefix cache hit rate below 20%"
             description: "Prefix cache hit rate is {{ $value | humanizePercentage }}. Review prompt structure or check if --enable-prefix-caching is active."
 
-        # --- LMCache L1 (CPU DRAM) hit rate ---
-        # See bible-kv-cache.md §4.3 — LMCache middleware metrics.
-        - alert: LMCacheL1HitRateLow
-          expr: lmcache_l1_cache_queries_total > 0 and (sum(rate(lmcache_l1_cache_hits_total[10m])) / sum(rate(lmcache_l1_cache_queries_total[10m]))) < 0.30
+        # --- LMCache retrieve hit rate (local+remote cache retrieval effectiveness) ---
+        # Per vllm+lmcache.md §14, correct metric: lmcache:retrieve_hit_rate
+        - alert: LMCacheRetrieveHitRateLow
+          expr: lmcache:num_retrieve_requests > 0 and lmcache:retrieve_hit_rate < 0.30
           for: 10m
           labels:
             severity: warning
             component: lmcache
           annotations:
-            summary: "LMCache L1 (CPU) hit rate below 30%"
-            description: "LMCache L1 hit rate is {{ $value | humanizePercentage }}. Investigate whether L2 NVMe is overloaded or LMCache prefix matching is misconfigured."
+            summary: "LMCache retrieve hit rate below 30%"
+            description: "LMCache retrieve hit rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}. Investigate whether cache entries are being evicted too aggressively or if prefix matching is misconfigured."
 
-        # --- LMCache L2 (NVMe disk) hit rate ---
-        - alert: LMCacheL2HitRateLow
-          expr: lmcache_l2_cache_queries_total > 0 and (sum(rate(lmcache_l2_cache_hits_total[10m])) / sum(rate(lmcache_l2_cache_queries_total[10m]))) < 0.20
+        # --- LMCache lookup hit rate (in-memory lookup before network retrieval) ---
+        # Per vllm+lmcache.md §14, correct metric: lmcache:lookup_hit_rate
+        - alert: LMCacheLookupHitRateLow
+          expr: lmcache:num_store_requests > 0 and lmcache:lookup_hit_rate < 0.20
           for: 15m
           labels:
             severity: warning
             component: lmcache
           annotations:
-            summary: "LMCache L2 (NVMe) hit rate below 20%"
-            description: "LMCache L2 disk hit rate is {{ $value | humanizePercentage }}. Increase disk cache size or check NVMe IOPS limits."
+            summary: "LMCache lookup hit rate below 20%"
+            description: "LMCache in-memory lookup hit rate is {{ $value | humanizePercentage }}. The local metadata index may be too small or cache invalidation too aggressive."
 
-        # --- LMCache L3 (Redis/S3 distributed) hit rate ---
-        - alert: LMCacheL3HitRateLow
-          expr: lmcache_l3_cache_queries_total > 0 and (sum(rate(lmcache_l3_cache_hits_total[15m])) / sum(rate(lmcache_l3_cache_queries_total[15m]))) < 0.10
-          for: 15m
+        # --- LMCache retrieval latency high (network/disk access too slow) ---
+        # Per vllm+lmcache.md §14, correct metric: lmcache:time_to_retrieve
+        - alert: LMCacheRetrievalTimeHigh
+          expr: lmcache:time_to_retrieve > 0.5
+          for: 5m
           labels:
             severity: warning
             component: lmcache
           annotations:
-            summary: "LMCache L3 (distributed) hit rate below 10%"
-            description: "LMCache L3 hit rate is {{ $value | humanizePercentage }}. Check Redis connectivity, S3 endpoint, or increase cache TTL."
+            summary: "LMCache retrieval time above 500ms"
+            description: "Average retrieval time is {{ $value }}s on {{ $labels.instance }}. NVMe disk IOPS may be saturated or Redis connection latency is high."
+
+        # --- LMCache local cache usage high (CPU RAM consumed by L1) ---
+        # Per vllm+lmcache.md §14, correct metric: lmcache:local_cache_usage
+        - alert: LMCacheLocalCacheUsageHigh
+          expr: lmcache:local_cache_usage > 0.85 * 1024 * 1024 * 1024
+          for: 5m
+          labels:
+            severity: warning
+            component: lmcache
+          annotations:
+            summary: "LMCache local cache (L1 CPU) usage above 85%"
+            description: "Local CPU cache usage is {{ $value | humanize1024 }} on {{ $labels.instance }}. Consider increasing cpuWorkers or reducing chunk_size."
+
+        # --- LMCache remote cache usage high (L2/L3 backend near capacity) ---
+        # Per vllm+lmcache.md §14, correct metric: lmcache:remote_cache_usage
+        - alert: LMCacheRemoteCacheUsageHigh
+          expr: lmcache:remote_cache_usage > 0.85 * 200 * 1024 * 1024 * 1024
+          for: 5m
+          labels:
+            severity: warning
+            component: lmcache
+          annotations:
+            summary: "LMCache remote cache (L2/L3) usage above 85%"
+            description: "Remote disk/Redis cache usage is {{ $value | humanize1024 }} on {{ $labels.instance }}. Increase disk maxSize or Redis capacity."
+
+        # --- SafeLMCacheConnectorV1 circuit breaker tripped ---
+        # Per vllm+lmcache.md §11.2, after maxFailures consecutive failures,
+        # vLLM falls back to native GPU cache. This is recoverable but needs investigation.
+        - alert: LMCacheSafeConnectorFallback
+          expr: increase(lmcache:connector_fallback_total[5m]) > 0
+          for: 0s
+          labels:
+            severity: critical
+            component: lmcache
+          annotations:
+            summary: "LMCache SafeConnector circuit breaker tripped — vLLM fell back to native GPU cache"
+            description: "vLLM on {{ $labels.instance }} has fallen back to native GPU cache after LMCache connector failures. LMCache is NOT serving cache. Investigate LMCache daemon health, ZMQ connectivity (port 5555), and CUDA IPC (hostIPC)."
+
+        # --- LMCache daemon unreachable (connector down) ---
+        # Detect when LMCache daemon is down and vLLM cannot establish connection
+        - alert: LMCacheConnectorDown
+          expr: up{job="lmcache-metrics"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: lmcache
+          annotations:
+            summary: "LMCache daemon unreachable on {{ $labels.instance }}"
+            description: "LMCache daemon on {{ $labels.instance }} has been unreachable for 2m. Cache operations are not functioning. Check DaemonSet pod status, lmcache server process, and ZMQ port 5555."
 
         # --- Prefill skip rate (cache hit skipped the prefill computation) ---
         # High prefill skip rate means cache is working well; low means cold starts.

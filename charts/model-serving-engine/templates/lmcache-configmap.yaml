@@ -16,7 +16,7 @@ data:
 
     [lmcache]
     # Engine-independent daemon: survives inference engine restarts.
-    chunk_size = 256
+    chunk_size = {{ .Values.lmcache.chunkSize | default 256 }}
     local_cpu = true
 
     # --- L1: CPU DRAM (always-on, fastest tier after VRAM) ---
@@ -46,6 +46,34 @@ data:
     endpoint = "{{ .Values.lmcache.s3.endpoint }}"
     bucket = "{{ .Values.lmcache.s3.bucket }}"
     region = "{{ .Values.lmcache.s3.region | default "us-east-1" }}"
+    {{- end }}
+
+    # --- Multiprocess mode (MP) — LMCache runs as an independent daemon ---
+    # vLLM connects via ZMQ (port 5555) for cache transfer and
+    # HTTP (port 8080) for health/metrics. See vllm+lmcache.md §3.2.
+    [mp]
+    host = "{{ .Values.lmcache.mp.host | default "127.0.0.1" }}"
+    port = {{ .Values.lmcache.mp.port | default 5555 }}
+    transfer_mode = "{{ .Values.lmcache.mp.transferMode | default "zmq" }}"
+
+    # --- SafeLMCacheConnectorV1 circuit breaker ---
+    # After max_failures consecutive failures, vLLM falls back to
+    # native GPU PagedAttention (no fate-sharing with LMCache daemon).
+    [circuit_breaker]
+    enabled = {{ .Values.lmcache.circuitBreaker.enabled | default true }}
+    max_failures = {{ .Values.lmcache.circuitBreaker.maxFailures | default 5 }}
+
+    # --- CacheBlend: non-prefix KV reuse for RAG workloads ---
+    # Blends cached KV with partial recomputation for semantic overlap.
+    # 3x-4.5x TTFT reduction on RAG (no need for exact prefix match).
+    # Bible §4.4.
+    {{- if .Values.lmcache.cacheBlend.enabled }}
+    [cache_blend]
+    enable = true
+    special_str = "{{ .Values.lmcache.cacheBlend.specialStr | default "< Rag_sep >" }}"
+    use_layerwise = {{ .Values.lmcache.cacheBlend.useLayerwise | default true }}
+    check_layers = {{ .Values.lmcache.cacheBlend.checkLayers | default 1 }}
+    recompute_ratios = {{ .Values.lmcache.cacheBlend.recomputeRatios | default 0.15 }}
     {{- end }}
 
     # --- Observability: enable Prometheus metrics on :8330/metrics ---

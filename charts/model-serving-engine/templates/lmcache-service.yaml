@@ -12,6 +12,17 @@ spec:
     app.kubernetes.io/name: lmcache
     app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
+    # ZMQ — cache transfer protocol for vLLM ↔ LMCache communication.
+    - name: zmq
+      port: 5555
+      targetPort: 5555
+      protocol: TCP
+    # HTTP — health checks, readiness, admin API.
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    # Prometheus metrics (/metrics).
     - name: metrics
       port: 8330
       targetPort: 8330

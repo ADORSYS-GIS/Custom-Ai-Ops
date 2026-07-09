@@ -29,6 +29,11 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- if and .Values.lmcache.enabled .Values.lmcache.hostIPC }}
+      # hostIPC: mandatory for CUDA IPC between vLLM and LMCache daemon.
+      # See docs/explain/vllm+lmcache.md §8.
+      hostIPC: true
+      {{- end }}
       initContainers:
         {{- if and .Values.model.seedImage .Values.model.seedCommand }}
         - name: model-seed
@@ -64,7 +69,27 @@ spec:
             {{- toYaml $command | nindent 12 }}
           {{- end }}
           args:
-            {{- toYaml $args | nindent 12 }}
+            {{- $filteredArgs := list }}
+            {{- range $arg := $args }}
+            {{- if and $.Values.lmcache.enabled (eq $arg "--enable-prefix-caching") }}
+            {{- /* Filter out --enable-prefix-caching when LMCache is active - LMCache manages its own prefix cache (vllm+lmcache.md §2). */ -}}
+            {{- else }}
+            {{- $filteredArgs = append $filteredArgs $arg }}
+            {{- end }}
+            {{- end }}
+            {{- toYaml $filteredArgs | nindent 12 }}
+            {{- if and .Values.lmcache.enabled (eq $engineType "vllm") }}
+            # --- LMCache integration args (vllm+lmcache.md §2) ---
+            # Disable chunked prefill (incompatible with LMCache cache coherence).
+            - --enable-chunked-prefill
+            - "false"
+            # Pass the kv_transfer_config JSON to vLLM.
+            - --kv-transfer-config
+            - {{ include "model-serving-engine.kvTransferConfig" . | quote }}
+            {{- if .Values.lmcache.kvTransferConfig.disableHybridKvCacheManager }}
+            - --disable-hybrid-kv-cache-manager
+            {{- end }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ include "model-serving-engine.enginePort" . }}
@@ -73,14 +98,44 @@ spec:
             - name: MODEL_NAME
               value: {{ .Values.model.name | quote }}
             {{- if .Values.lmcache.enabled }}
-            # LMCache integration: enables distributed KV cache sharing
-            # across pods/nodes. See docs/explain/bible-kv-cache.md §4.3.
+            # --- LMCache integration (vllm+lmcache.md §2) ---
+            # Enables distributed KV cache sharing across pods/nodes.
+            # See docs/explain/bible-kv-cache.md §4.3 for architecture overview.
             - name: LMCACHE_HOST
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
             - name: LMCACHE_ENABLED
               value: "true"
+            - name: LMCACHE_CONFIG_FILE
+              value: /etc/lmcache/lmcache.toml
+            # Chunk size must match LMCache daemon config.
+            - name: LMCACHE_CHUNK_SIZE
+              value: {{ .Values.lmcache.chunkSize | default 256 | quote }}
+            # PYTHONHASHSEED=0: deterministic hash ordering — avoids cache
+            # mismatches across vLLM workers when keys hash to different orders.
+            - name: PYTHONHASHSEED
+              value: {{ .Values.lmcache.env.PYTHONHASHSEED | default "0" | quote }}
+            # Multi-process Prometheus metric aggregation directory.
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" | quote }}
+            # KV transfer role — kv_both (unified pool) | kv_producer (prefill pool, PD disaggregation) | kv_consumer (decode pool).
+            # Bible §10.
+            - name: VLLM_KV_ROLE
+              value: {{ .Values.lmcache.kvTransferConfig.role | default "kv_both" | quote }}
+            {{- if .Values.lmcache.cacheBlend.enabled }}
+            # CacheBlend env vars (non-prefix KV reuse for RAG, Bible §4.4).
+            - name: LMCACHE_ENABLE_BLENDING
+              value: "True"
+            - name: LMCACHE_BLEND_SPECIAL_STR
+              value: {{ .Values.lmcache.cacheBlend.specialStr | default "< Rag_sep >" | quote }}
+            - name: LMCACHE_USE_LAYERWISE
+              value: {{ .Values.lmcache.cacheBlend.useLayerwise | default true | quote }}
+            - name: LMCACHE_BLEND_CHECK_LAYERS
+              value: {{ .Values.lmcache.cacheBlend.checkLayers | default 1 | quote }}
+            - name: LMCACHE_BLEND_RECOMPUTE_RATIOS
+              value: {{ .Values.lmcache.cacheBlend.recomputeRatios | default 0.15 | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.cachePersistence.enabled }}
             # SafeTensors cache persistence: restore KV cache from disk
@@ -103,6 +158,13 @@ spec:
             {{- if .Values.lmcache.enabled }}
             - name: lmcache-shm
               mountPath: /dev/shm
+            # LMCache config (read-only) — needed for vLLM to discover MP host/port.
+            - name: lmcache-config
+              mountPath: /etc/lmcache
+              readOnly: true
+            # Multi-process Prometheus metric aggregation directory (shared emptyDir).
+            - name: prometheus-multiproc
+              mountPath: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" }}
             {{- end }}
             {{- if .Values.cachePersistence.enabled }}
             - name: cache-persistence
@@ -135,6 +197,13 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 2Gi
+        # LMCache config (sourced from ConfigMap, read-only).
+        - name: lmcache-config
+          configMap:
+            name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
+        # Multi-process Prometheus metric aggregation (shared emptyDir).
+        - name: prometheus-multiproc
+          emptyDir: {}
         {{- end }}
         {{- range .Values.extraVolumes }}
         - name: {{ .name }}

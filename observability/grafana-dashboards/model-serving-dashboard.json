@@ -413,7 +413,7 @@
         }
       },
       {
-        "title": "LMCache L1 (CPU) Hit Rate (%)",
+        "title": "LMCache Retrieve Hit Rate (%)",
         "type": "timeseries",
         "gridPos": {
           "h": 8,
@@ -421,10 +421,10 @@
           "x": 0,
           "y": 44
         },
-        "description": "LMCache L1 (CPU DRAM) cache hit rate. SLM/CPU tier (bible-kv-cache.md \u00a74.3). Target > 30%.",
+        "description": "LMCache retrieve hit rate (local+remote cache retrieval effectiveness, vllm+lmcache.md \u00a714). Target > 30%.",
         "targets": [
           {
-            "expr": "sum(rate(lmcache_l1_cache_hits_total[5m])) / clamp(sum(rate(lmcache_l1_cache_queries_total[5m])), 1, +Inf) * 100",
+            "expr": "lmcache:retrieve_hit_rate * 100",
             "legendFormat": "{{instance}}"
           }
         ],
@@ -452,7 +452,7 @@
         }
       },
       {
-        "title": "LMCache L2 (NVMe) Hit Rate (%)",
+        "title": "LMCache Lookup Hit Rate (%)",
         "type": "timeseries",
         "gridPos": {
           "h": 8,
@@ -460,10 +460,10 @@
           "x": 12,
           "y": 44
         },
-        "description": "LMCache L2 (local NVMe disk) cache hit rate. Target > 20%.",
+        "description": "LMCache lookup hit rate (in-memory metadata lookup before retrieval, vllm+lmcache.md \u00a714). Target > 20%.",
         "targets": [
           {
-            "expr": "sum(rate(lmcache_l2_cache_hits_total[5m])) / clamp(sum(rate(lmcache_l2_cache_queries_total[5m])), 1, +Inf) * 100",
+            "expr": "lmcache:lookup_hit_rate * 100",
             "legendFormat": "{{instance}}"
           }
         ],
@@ -491,7 +491,7 @@
         }
       },
       {
-        "title": "LMCache L3 (Redis/S3) Hit Rate (%)",
+        "title": "LMCache Token Hit Rate (%)",
         "type": "timeseries",
         "gridPos": {
           "h": 8,
@@ -499,10 +499,10 @@
           "x": 0,
           "y": 52
         },
-        "description": "LMCache L3 (distributed Redis/S3) cache hit rate \u2014 cross-pod/persistent sharing. Target > 10%.",
+        "description": "LMCache token hit rate (num_hit_tokens / num_retrieve_requests, vllm+lmcache.md \u00a714). Target > 10%.",
         "targets": [
           {
-            "expr": "sum(rate(lmcache_l3_cache_hits_total[15m])) / clamp(sum(rate(lmcache_l3_cache_queries_total[15m])), 1, +Inf) * 100",
+            "expr": "lmcache:num_hit_tokens / clamp(lmcache:num_retrieve_requests, 1, +Inf) * 100",
             "legendFormat": "{{instance}}"
           }
         ],

@@ -128,3 +128,38 @@ Engine container port for the selected type.
 8080
 {{- end -}}
 {{- end }}
+
+{{/*
+Build the JSON string for vLLM --kv-transfer-config when LMCache is active.
+Returns a JSON string suitable for the --kv-transfer-config CLI argument.
+See docs/explain/vllm+lmcache.md for the full parameter reference.
+*/}}
+{{- define "model-serving-engine.kvTransferConfig" -}}
+{{- $cfg := .Values.lmcache.kvTransferConfig -}}
+{{- if not $cfg.connector -}}{{- $cfg = .Values.lmcache.kvTransferConfig -}}{{- end -}}
+{{- $connector := $cfg.connector | default "LMCacheMPConnector" -}}
+{{- $role := $cfg.role | default "kv_both" -}}
+{{- $modulePath := $cfg.modulePath | default "lmcache.integration.vllm" -}}
+{{- $extra := dict -}}
+{{- if $cfg.extraConfig -}}{{- $extra = $cfg.extraConfig -}}{{- end -}}
+{{- $mpHost := .Values.lmcache.mp.host | default "127.0.0.1" -}}
+{{- $mpPort := .Values.lmcache.mp.port | default 5555 -}}
+{{- $mpMode := .Values.lmcache.mp.transferMode | default "zmq" -}}
+{{- $result := dict -}}
+{{- $_ := set $result "kv_connector" $connector -}}
+{{- $_ := set $result "kv_role" $role -}}
+{{- $_ := set $result "kv_connector_module_path" $modulePath -}}
+{{- $lmcacheExtra := dict "mp" (dict "host" $mpHost "port" $mpPort "transfer_mode" $mpMode) -}}
+{{- $_ := set $result "kv_connector_extra_config" (dict "lmcache" $lmcacheExtra) -}}
+{{- if $cfg.disableHybridKvCacheManager -}}
+{{- $_ := set $result "disable_hybrid_kv_cache_manager" true -}}
+{{- end -}}
+{{- $result | toJson -}}
+{{- end }}
+
+{{/*
+Build the LMCache server command for the DaemonSet container.
+*/}}
+{{- define "model-serving-engine.lmcacheCommand" -}}
+{{- toJson (list "lmcache" "server" "--config" "/etc/lmcache/lmcache.toml") -}}
+{{- end }}

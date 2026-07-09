@@ -77,6 +77,34 @@ gpuNodeSwapoff: true
 lmcache:
   enabled: true
   cpuWorkers: 4
+  chunkSize: 256
+  mp:
+    host: "127.0.0.1"
+    port: 5555
+    transferMode: zmq
+  hostIPC: true
+  circuitBreaker:
+    enabled: true
+    maxFailures: 5
+  cacheBlend:
+    enabled: false
+    specialStr: "< Rag_sep >"
+    useLayerwise: true
+    checkLayers: 1
+    recomputeRatios: 0.15
+  kvTransferConfig:
+    connector: LMCacheMPConnector
+    role: kv_both
+    modulePath: lmcache.integration.vllm
+    disableHybridKvCacheManager: false
+  env:
+    PYTHONHASHSEED: "0"
+    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+  serviceMonitor:
+    enabled: true
+    interval: 10s
+    scrapeTimeout: 5s
+    releaseLabel: prometheus
   disk:
     enabled: true
     path: /var/lib/lmcache
