@@ -25,6 +25,11 @@ spec:
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
+      {{- if .Values.lmcache.hostIPC }}
+      # hostIPC: mandatory for CUDA IPC between LMCache daemon and vLLM pods.
+      # See docs/explain/vllm+lmcache.md §8.
+      hostIPC: true
+      {{- end }}
       serviceAccountName: {{ include "model-serving-engine.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: false
@@ -32,19 +37,62 @@ spec:
         - name: lmcache
           image: "{{ .Values.lmcache.image.repository }}:{{ .Values.lmcache.image.tag }}"
           imagePullPolicy: {{ .Values.lmcache.image.pullPolicy | default "IfNotPresent" }}
+          # Run LMCache in multiprocess (MP) server mode.
+          # The server binds ZMQ (port 5555) for cache transfers and
+          # HTTP (port 8080) for health checks and admin API.
+          command:
+            - lmcache
+            - server
+            - --config
+            - /etc/lmcache/lmcache.toml
           ports:
+            # ZMQ — cache transfer protocol between vLLM and LMCache.
+            - name: zmq
+              containerPort: 5555
+              protocol: TCP
+            # HTTP — health checks, readiness, admin API.
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            # Prometheus metrics (/metrics).
             - name: metrics
               containerPort: 8330
               protocol: TCP
           env:
             - name: LMCACHE_CONFIG
               value: /etc/lmcache/lmcache.toml
+            - name: LMCACHE_CONFIG_FILE
+              value: /etc/lmcache/lmcache.toml
             - name: MODEL_NAME
               value: {{ .Values.model.name | quote }}
+            - name: LMCACHE_CHUNK_SIZE
+              value: {{ .Values.lmcache.chunkSize | default 256 | quote }}
+            # PYTHONHASHSEED=0: deterministic hash ordering — avoids cache
+            # mismatches between vLLM workers when keys hash differently.
+            - name: PYTHONHASHSEED
+              value: {{ .Values.lmcache.env.PYTHONHASHSEED | default "0" | quote }}
+            # Multi-process Prometheus metric aggregation directory.
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" | quote }}
+            {{- if .Values.lmcache.cacheBlend.enabled }}
+            # CacheBlend env vars (non-prefix KV reuse for RAG, Bible §4.4).
+            - name: LMCACHE_ENABLE_BLENDING
+              value: "True"
+            - name: LMCACHE_BLEND_SPECIAL_STR
+              value: {{ .Values.lmcache.cacheBlend.specialStr | default "< Rag_sep >" | quote }}
+            - name: LMCACHE_USE_LAYERWISE
+              value: {{ .Values.lmcache.cacheBlend.useLayerwise | default true | quote }}
+            - name: LMCACHE_BLEND_CHECK_LAYERS
+              value: {{ .Values.lmcache.cacheBlend.checkLayers | default 1 | quote }}
+            - name: LMCACHE_BLEND_RECOMPUTE_RATIOS
+              value: {{ .Values.lmcache.cacheBlend.recomputeRatios | default 0.15 | quote }}
+            {{- end }}
           volumeMounts:
             - name: lmcache-config
               mountPath: /etc/lmcache
               readOnly: true
+            - name: prometheus-multiproc
+              mountPath: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" }}
             {{- if .Values.lmcache.disk.enabled }}
             - name: lmcache-disk
               mountPath: {{ .Values.lmcache.disk.path | default "/var/lib/lmcache" }}
@@ -61,19 +109,21 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: metrics
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /ready
-              port: metrics
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 10
       volumes:
         - name: lmcache-config
           configMap:
             name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
+        - name: prometheus-multiproc
+          emptyDir: {}
         {{- if .Values.lmcache.disk.enabled }}
         - name: lmcache-disk
           hostPath:

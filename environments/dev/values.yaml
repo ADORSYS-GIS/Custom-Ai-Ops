@@ -56,6 +56,29 @@ gpuNodeSwapoff: true
 # --- LMCache: disabled in dev (single instance, no distributed cache needed) ---
 lmcache:
   enabled: false
+  chunkSize: 256
+  mp:
+    host: "127.0.0.1"
+    port: 5555
+    transferMode: zmq
+  hostIPC: false
+  circuitBreaker:
+    enabled: false
+    maxFailures: 3
+  cacheBlend:
+    enabled: false
+  kvTransferConfig:
+    connector: LMCacheMPConnector
+    role: kv_both
+    modulePath: lmcache.integration.vllm
+  env:
+    PYTHONHASHSEED: "0"
+    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+  serviceMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 5s
+    releaseLabel: prometheus
 
 # --- SafeTensors cache persistence: disabled in dev ---
 cachePersistence:

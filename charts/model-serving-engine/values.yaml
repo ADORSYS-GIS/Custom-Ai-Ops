@@ -204,6 +204,48 @@ lmcache:
     tag: latest
     pullPolicy: IfNotPresent
   cpuWorkers: 4
+  chunkSize: 256
+  # Multiprocess mode — LMCache runs as a separate daemon (recommended for prod).
+  # vLLM connects via ZMQ (port 5555) + HTTP (port 8080 for health/metrics).
+  # See docs/explain/vllm+lmcache.md §3.2 for integration modes.
+  mp:
+    host: "127.0.0.1"
+    port: 5555
+    transferMode: zmq
+  # Enable hostIPC for CUDA IPC between vLLM and LMCache pods.
+  # Mandatory when using CUDA IPC mode (m equivalent of card-to-card communication).
+  hostIPC: true
+  # SafeLMCacheConnectorV1 circuit breaker — vLLM falls back to native GPU
+  # cache after N consecutive failures (no fate-sharing with LMCache).
+  # See docs/explain/vllm+lmcache.md §11.2.
+  circuitBreaker:
+    enabled: true
+    maxFailures: 5
+  # CacheBlend — non-prefix reuse for RAG workloads (Bible §4.4).
+  # Blends cached KV with partial recomputation for semantic overlap.
+  # 3x-4.5x TTFT reduction on RAG (no need for exact prefix match).
+  cacheBlend:
+    enabled: false
+    specialStr: "< Rag_sep >"
+    useLayerwise: true
+    checkLayers: 1
+    recomputeRatios: 0.15
+  # vLLM --kv-transfer-config fields (Bible §3.1, vllm+lmcache.md §2).
+  # connector: LMCacheMPConnector (recommended) | LMCacheConnectorV1 |
+  #            LMCacheConnectorV1Dynamic
+  # role: kv_both (unified pool) | kv_producer (prefill pool) |
+  #       kv_consumer (decode pool, for PD disaggregation, Bible §10)
+  kvTransferConfig:
+    connector: LMCacheMPConnector
+    role: kv_both
+    modulePath: lmcache.integration.vllm
+    disableHybridKvCacheManager: false
+  # Env presets required by LMCache/vLLM integration.
+  # PYTHONHASHSEED=0: deterministic hash ordering (avoids cache mismatches).
+  # PROMETHEUS_MULTIPROC_DIR: enables multi-process metric aggregation.
+  env:
+    PYTHONHASHSEED: "0"
+    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
   disk:
     enabled: false
     path: /var/lib/lmcache
@@ -225,6 +267,13 @@ lmcache:
     limits:
       cpu: "2"
       memory: 16Gi
+  # Separate ServiceMonitor for LMCache daemon metrics on port 8330.
+  # Disabled by default; enabled in envs where lmcache.enabled=true.
+  serviceMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 5s
+    releaseLabel: prometheus
 
 # --- SafeTensors cache persistence (Bible §5.1) ---
 # Persists KV cache to disk for fast restart: on pod restart, the cache

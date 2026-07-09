@@ -1,0 +1,21 @@
+{{- if and .Values.lmcache.enabled .Values.lmcache.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-lmcache
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+    release: {{ .Values.lmcache.serviceMonitor.releaseLabel | default "prometheus" }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lmcache
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.lmcache.serviceMonitor.interval | default "10s" }}
+      scrapeTimeout: {{ .Values.lmcache.serviceMonitor.scrapeTimeout | default "5s" }}
+      honorLabels: true
+{{- end }}
