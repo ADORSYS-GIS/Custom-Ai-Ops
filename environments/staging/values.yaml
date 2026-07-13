@@ -127,3 +127,14 @@ tolerations:
   - key: node-role.kubernetes.io/gpu
     operator: Exists
     effect: NoSchedule
+
+# --- llm-d: EPP routing enabled (Phase 1), no KV-Cache Indexer yet ---
+llmD:
+  enabled: true
+  inferencePoolName: "staging-llm-d"
+  eppEndpoint: "staging-llm-d-router.llm-d-system.svc.cluster.local:80"
+  emitKvEvents: false
+
+disaggregation:
+  enabled: false
+  role: unified

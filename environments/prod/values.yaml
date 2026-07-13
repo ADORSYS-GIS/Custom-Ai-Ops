@@ -143,3 +143,25 @@ topologySpreadConstraints:
     labelSelector:
       matchLabels:
         app.kubernetes.io/name: model-serving-engine
+
+# --- llm-d: full integration (EPP + KV-Cache Indexer, Phase 2) ---
+# EPP routes to the replica holding the relevant KV-cache blocks.
+# KV-Cache Indexer maintains a cluster-wide cache map for exact routing.
+llmD:
+  enabled: true
+  inferencePoolName: "prod-llm-d"
+  eppEndpoint: "prod-llm-d-router.llm-d-system.svc.cluster.local:80"
+  emitKvEvents: true
+  kvCacheIndexerEndpoint: "prod-llm-d-indexer.llm-d-system.svc.cluster.local:8090"
+
+# --- Disaggregated P/D: disabled by default (requires RDMA) ---
+# Enable when H100/H200 nodes with NVLink/RDMA are available.
+disaggregation:
+  enabled: false
+  role: unified
+  prefill:
+    gpuMemoryUtilization: "0.92"
+    maxNumSeqs: "32"
+  decode:
+    gpuMemoryUtilization: "0.85"
+    maxNumSeqs: "256"

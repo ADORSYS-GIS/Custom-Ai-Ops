@@ -10,8 +10,8 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
-![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
-![Charts](https://img.shields.io/badge/Helm%20Charts-3-blue.svg?logo=helm)
+![Tests](https://img.shields.io/badge/Tests-76%20passing-brightgreen.svg)
+![Charts](https://img.shields.io/badge/Helm%20Charts-4-blue.svg?logo=helm)
 
 ---
 
@@ -40,6 +40,11 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 
 ![Envoy AI Gateway](https://img.shields.io/badge/Envoy%20AI%20Gateway-latest-AC6191.svg?logo=envoy)
 ![OpenAI Compatible](https://img.shields.io/badge/OpenAI%20Compatible-API-41299E.svg)
+
+#### Inference Middleware
+
+![llm-d](https://img.shields.io/badge/llm--d-CNCf%20Sandbox-5673CE.svg?logo=kubernetes)
+![EPP](https://img.shields.io/badge/EPP-Cache%20Aware%20Routing-5673CE.svg)
 
 #### Observability (LGTM Stack)
 
@@ -98,6 +103,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 - [Sync Waves](#sync-waves)
 - [Model Registry](#model-registry)
 - [KV Cache Management](#kv-cache-management)
+- [llm-d Integration](#llm-d-integration)
 - [Observability](#observability)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Test Suites](#test-suites)
@@ -441,12 +447,12 @@ This decision tree is codified in the `engine-selector` Rust CLI tool — not le
 ```
 Custom-Ai-Ops/
 ├── tools/                           # Rust CLI tools (workspace)
-│   ├── engine-selector/             # Format→engine→family→cache-strategy decision tree (31 tests)
-│   ├── vram-budget-calc/           # VRAM budget calculator (16 tests)
+│   ├── engine-selector/             # Format→engine→family→cache-strategy decision tree (40 tests)
+│   ├── vram-budget-calc/           # VRAM budget calculator (25 tests)
 │   ├── model-onboarding/           # New model scaffold tool (14 tests)
-│   └── cache-roi-calc/             # KV cache ROI calculator (Bible §9 formula)
+│   └── cache-roi-calc/             # KV cache ROI + EPP routing comparison calculator
 │
-├── charts/                          # Helm charts (3 total)
+├── charts/                          # Helm charts (4 total)
 │   ├── bjw-template/               # Common base library chart
 │   │                               # (security context, probes, volumes, tolerations)
 │   ├── model-serving-engine/       # Unified vLLM engine chart
@@ -454,11 +460,15 @@ Custom-Ai-Ops/
     │   │                               #  PVC, seed-job, swapoff DaemonSet, ServiceMonitor)
     │   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
                                     #  rate limiting, payload validation, sticky routing, secrets)
+│   └── llm-d/                        # llm-d middleware (EPP router, KV-Cache Indexer, InferencePool CRD)
 │
 ├── environments/                    # Environment-specific configurations
 │   ├── dev/                         # 1 replica, local-path 30Gi, autoscaling off, PDB off
 │   ├── staging/                     # 1-2 replicas, longhorn 50Gi, autoscaling on
-│   └── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
+│   ├── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
+│   ├── dev/llm-d/                   # llm-d chart values for dev (disabled)
+│   ├── staging/llm-d/               # llm-d chart values for staging (Phase 1: EPP only)
+│   └── prod/llm-d/                  # llm-d chart values for prod (Phase 2: EPP + Indexer)
 │
 ├── apps/                            # ArgoCD ApplicationSets + bootstrap manifests
 │   ├── argocd-appset-prod.yaml     # Prod: serving + infrastructure + secrets + gateway
@@ -481,15 +491,18 @@ Custom-Ai-Ops/
 ├── observability/                   # Monitoring and alerting
 │   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
 │   ├── prometheus-anomaly-rules.yaml # 6 rule groups: latency, errors, GPU, pods, anomaly, kv-cache
+│   ├── llm-d-alert-rules.yaml        # llm-d alerts: EPP routing, KV-Cache Indexer, disaggregation, InferencePool
 │   ├── alertmanager-routes/         # Alert routing: critical→PagerDuty+Slack, warning→Slack
-│   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard
+│   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard + llm-d dashboard
 │
 ├── models/                          # Model registry and per-model documentation
-│   ├── registry.yaml                # Declarative registry (2 models)
+│   ├── registry.yaml                # Declarative registry (2 models, llm-d integration metadata)
 │   └── registry/                    # Per-model documentation directory
 │
 ├── tests/                           # Test suites
-│   ├── smoke/                       # Post-deployment smoke tests (bash: health, auth, chat, cost)
+│   ├── smoke/                       # Post-deployment smoke tests (bash: health, auth, chat, cost, llm-d routing)
+│   │   ├── smoke-test.sh            #  Standard smoke tests
+│   │   └── llm-d-smoke-test.sh      #  llm-d routing + EPP + KV-Cache Indexer tests
 │   ├── load/                        # k6 load tests (staged ramp-up, p95 < 2000ms)
 │   └── chaos/                        # LitmusChaos GPU chaos (pod-delete, network-latency, node-drain)
 │
@@ -506,11 +519,13 @@ Custom-Ai-Ops/
 │   ├── explain/                     # Deep-dive technical references
 │   │   ├── kv-cache.md              #   6-layer KV cache management architecture
 │   │   ├── bible-kv-cache.md        #   KV Cache Bible (13 sections)
-│   │   └── gpu.md                   #   In-depth GPU reference guide (332 lines)
+│   │   ├── gpu.md                   #   In-depth GPU reference guide (332 lines)
+│   │   └── llm-d.md                 #   llm-d complete reference (665 lines)
 │   ├── adr/                         # Architecture Decision Records
 │   │   ├── 0001-multi-format-architecture.md
 │   │   ├── 0002-envoy-ai-gateway.md
-│   │   └── 0003-separate-engine-charts.md
+│   │   ├── 0003-separate-engine-charts.md
+│   │   └── 0004-llm-d-integration.md #  llm-d integration (EPP, KV-Cache Indexer, P/D disaggregation)
 │   ├── runbooks/                    # Incident response procedures
 │   │   ├── gpu-node-failure.md      #   Cordon/drain, ECC/Xid/temp checks
 │   │   ├── latency-spike.md         #   Check failover, GPU throttle, scale up
@@ -519,7 +534,7 @@ Custom-Ai-Ops/
 │   ├── external-tools.md            # External platform configuration guide (12 platforms, 14 sections)
 │   └── integration-report.md        # ArgoCD + external platform integration report (13 sections)
 │
-├── .github/workflows/ci.yaml        # CI: rust-tools, helm-lint, registry-consistency, vram-validation
+├── .github/workflows/ci.yaml        # CI: rust-tools, helm-lint, registry-consistency, vram-validation, llm-d-disaggregation-validation
 │
 ├── impl.md                          # Reference architecture document
 ├── tests.md                         # Certification test suite (11 categories, 48 tests)
@@ -858,16 +873,77 @@ Template: `cache-routing-policy.yaml` (ConfigMap with Lua filter + invalidation 
 
 ---
 
+## llm-d Integration
+
+The platform integrates [llm-d](https://llm-d.ai) (CNCF Sandbox, March 2026) — Kubernetes-native distributed inference middleware that sits between the gateway and vLLM engines to provide cache-aware routing, KV-cache index, SLO-driven autoscaling, and prefill/decode disaggregation. See [`docs/explain/llm-d.md`](docs/explain/llm-d.md) for the complete reference and [`docs/adr/0004-llm-d-integration.md`](docs/adr/0004-llm-d-integration.md) for the decision record.
+
+### 5-Phase Integration
+
+| Phase | Feature | Rdma Required | Environment | Status |
+|-------|---------|---------------|-------------|--------|
+| 1 | EPP cache-aware routing (replaces consistent-hash heuristic) | No | Staging | Enabled |
+| 2 | KV-Cache Indexer (cluster-wide cache state for exact routing) | No | Prod | Enabled |
+| 3 | SLO-aware autoscaling (augments KEDA with TTFT/TPOT targets) | No | Prod | Planned |
+| 4 | Prefill/Decode disaggregation (independent scaling, NIXL transfer) | Yes | Prod | Planned |
+| 5 | Wide Expert Parallel for MoE (LeaderWorkerSet) | Yes | Prod | Future |
+
+### Components Added
+
+| Component | Chart | Purpose |
+|-----------|-------|---------|
+| Router (Envoy + EPP) | `charts/llm-d` | Sidecar Envoy proxy + Endpoint Picker decision brain |
+| KV-Cache Indexer | `charts/llm-d` | Cluster-wide near-real-time map of KV-cache blocks |
+| InferencePool CRD | `charts/llm-d` | Gateway API Inference Extension — groups replicas serving one model |
+| llm-d labels + env vars | `charts/model-serving-engine` | vLLM pods register with InferencePool, emit KV events |
+| InferencePool backendRef | `charts/ai-gateway` | HTTPRoute targets InferencePool instead of direct backendRefs |
+| EPP alerts (14 rules) | `observability/llm-d-alert-rules.yaml` | Routing latency, cache-hit rate, indexer availability, P/D health |
+| EPP dashboard (10 panels) | `observability/grafana-dashboards/llm-d-dashboard.json` | EPP metrics, indexer status, transfer latency, pool replicas |
+
+### Engine-Selector Routing Modes
+
+The `engine-selector` tool (`--llm-d` flag) returns the appropriate routing and serving mode per model family:
+
+| Family | Routing Mode | Serving Mode | Behavior |
+|--------|-------------|-------------|----------|
+| Transformer | `epp` | `unified` | EPP routes to cache-affine replica |
+| MoE | `epp-with-indexer` | `unified` | EPP + indexer for expert-weight locality |
+| SSM/Mamba | `consistent-hash` | `unified` | Legacy hash routing (no paginable KV cache) |
+| Hybrid | `epp` | `unified` or `disaggregated` | EPP for attention, contiguous for SSM layers |
+| >40B params | `epp-with-indexer` | `disaggregated` | Auto-detected from config.json size |
+
+### Disaggregated VRAM Budgets
+
+The `vram-budget-calc` tool (`--disaggregated` flag) computes separate prefill/decode budgets:
+
+| Role | GPU Utilization | KV Cache Factor | Rationale |
+|------|----------------|-----------------|-----------|
+| Prefill | 0.92 | 0.30× base | Compute-bound — minimal KV cache needed |
+| Decode | 0.85 | 1.50× base | Memory-bound — large KV cache for concurrent sequences |
+
+### Environment Configuration
+
+| Parameter | Dev | Staging | Prod |
+|-----------|-----|---------|------|
+| `llmD.enabled` | false | true | true |
+| `llmD.emitKvEvents` | false | true | true |
+| `llmD.kvCacheIndexer` | disabled | disabled | enabled |
+| `disaggregation.enabled` | false | false | false (Phase 4) |
+
+**SSM/Mamba Exclusion**: SSM models always return `consistent-hash` routing regardless of `llmD.enabled` — their fixed recurrent state is not compatible with EPP cache-aware routing.
+
+---
+
 ## CI/CD Pipeline
 
-The GitHub Actions workflow (`.github/workflows/ci.yaml`) runs 4 jobs:
+The GitHub Actions workflow (`.github/workflows/ci.yaml`) runs 5 jobs:
 
 | Job | Description | Blocking |
 |---|---|---|
 | `rust-tools` | Build + test all 4 crates, clippy (deny warnings), fmt check | Yes |
-| `helm-lint` | Lint all 3 charts + template dry-run with test values | Yes |
+| `helm-lint` | Lint all 4 charts + template dry-run + disaggregation dry-run | Yes |
 | `registry-consistency` | Validate each registry entry has chart dir, model dir, and required files | Yes |
 | `vram-budget-validation` | Build `vram-budget-calc` and run for all LIVE/STAGED models — fails if budget exceeded | Yes |
+| `llm-d-disaggregation-validation` | Validate llm-d routing/serving mode consistency in registry entries | Yes |
 
 ---
 

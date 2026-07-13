@@ -18,6 +18,15 @@ spec:
       labels:
         {{- include "model-serving-engine.selectorLabels" . | nindent 8 }}
         engine-type: {{ .Values.engine.type }}
+        {{- if .Values.llmD.enabled }}
+        llm-d.io/enabled: "true"
+        {{- if .Values.llmD.inferencePoolName }}
+        llm-d.io/inference-pool: {{ .Values.llmD.inferencePoolName | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.disaggregation.enabled }}
+        llm-d.io/disaggregation-role: {{ .Values.disaggregation.role | default "unified" | quote }}
+        {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
@@ -58,13 +67,9 @@ spec:
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
-<<<<<<< Updated upstream
-          {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- else if eq $engineType "onnxGenai" }}{{- $args = .Values.engine.onnxGenai.args }}{{- end }}
+{{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
           {{- $command := list }}
-          {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- else if eq $engineType "onnxGenai" }}{{- $command = .Values.engine.onnxGenai.command }}{{- end }}
-=======
-          {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
->>>>>>> Stashed changes
+          {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"
@@ -148,6 +153,33 @@ spec:
             - name: VLLM_KV_CACHE_PERSIST_PATH
               value: {{ .Values.cachePersistence.path | default "/cache/kv" | quote }}
             {{- end }}
+            {{- if .Values.llmD.enabled }}
+            # --- llm-d integration (docs/explain/llm-d.md) ---
+            # Registers this vLLM pod with the InferencePool and enables
+            # KV-cache event emission for the KV-Cache Indexer.
+            - name: LLM_D_ENABLED
+              value: "true"
+            - name: LLM_D_INFERENCE_POOL
+              value: {{ .Values.llmD.inferencePoolName | quote }}
+            {{- if .Values.llmD.eppEndpoint }}
+            - name: LLM_D_EPP_ENDPOINT
+              value: {{ .Values.llmD.eppEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.llmD.emitKvEvents }}
+            - name: LLM_D_KV_EVENTS
+              value: "true"
+            {{- if .Values.llmD.kvCacheIndexerEndpoint }}
+            - name: LLM_D_KV_INDEXER_ENDPOINT
+              value: {{ .Values.llmD.kvCacheIndexerEndpoint | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if and .Values.disaggregation.enabled (not .Values.lmcache.enabled) }}
+            # --- Disaggregated P/D mode (without LMCache) ---
+            # Role: prefill (kv_producer) | decode (kv_consumer) | unified (kv_both)
+            - name: VLLM_KV_ROLE
+              value: {{ .Values.disaggregation.role | default "unified" | quote }}
+            {{- end }}
+            {{- end }}
             {{- range .Values.extraEnv }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -192,18 +224,6 @@ spec:
           {{- end }}
           startupProbe:
             {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
-<<<<<<< Updated upstream
-          {{- else if eq $engineType "onnxGenai" }}
-          livenessProbe:
-            {{- toYaml .Values.engine.onnxGenai.livenessProbe | nindent 12 }}
-          {{- if .Values.engine.onnxGenai.readinessProbe }}
-          readinessProbe:
-            {{- toYaml .Values.engine.onnxGenai.readinessProbe | nindent 12 }}
-          {{- end }}
-          startupProbe:
-            {{- toYaml .Values.engine.onnxGenai.startupProbe | nindent 12 }}
-=======
->>>>>>> Stashed changes
           {{- end }}
       volumes:
         - name: tmp

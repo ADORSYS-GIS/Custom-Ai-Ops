@@ -1,0 +1,61 @@
+{{- if .Values.kvCacheIndexer.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llm-d.indexer.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+    component: indexer
+spec:
+  replicas: {{ .Values.kvCacheIndexer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "llm-d.selectorLabels" . | nindent 6 }}
+      component: indexer
+  template:
+    metadata:
+      labels:
+        {{- include "llm-d.selectorLabels" . | nindent 8 }}
+        component: indexer
+    spec:
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "llm-d.serviceAccountName" . }}
+      containers:
+        - name: indexer
+          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ .Values.kvCacheIndexer.image.repository }}:{{ .Values.kvCacheIndexer.image.tag }}"
+          imagePullPolicy: {{ .Values.kvCacheIndexer.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.kvCacheIndexer.service.targetPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          env:
+            - name: STORAGE_TYPE
+              value: {{ .Values.kvCacheIndexer.storage.type | quote }}
+            {{- if eq .Values.kvCacheIndexer.storage.type "redis" }}
+            - name: REDIS_HOST
+              value: {{ .Values.kvCacheIndexer.storage.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.kvCacheIndexer.storage.redis.port | quote }}
+            {{- end }}
+            - name: RECONCILE_INTERVAL
+              value: {{ .Values.kvCacheIndexer.reconcileInterval | quote }}
+          resources:
+            {{- toYaml .Values.kvCacheIndexer.resources | nindent 12 }}
+          readinessProbe:
+            grpc:
+              port: {{ .Values.kvCacheIndexer.service.targetPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            grpc:
+              port: {{ .Values.kvCacheIndexer.service.targetPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+{{- end }}

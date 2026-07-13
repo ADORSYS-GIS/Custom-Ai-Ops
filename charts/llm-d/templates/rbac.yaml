@@ -1,0 +1,45 @@
+{{- if and .Values.rbac.create .Values.router.enabled -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "llm-d.serviceAccountName" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "llm-d.fullname" . }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["inference.networking.x-k8s.io"]
+    resources: ["inferencepools"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["inference.networking.x-k8s.io"]
+    resources: ["inferencepools/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "llm-d.fullname" . }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "llm-d.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "llm-d.serviceAccountName" . }}
+    namespace: {{ .Values.global.namespace }}
+{{- end }}

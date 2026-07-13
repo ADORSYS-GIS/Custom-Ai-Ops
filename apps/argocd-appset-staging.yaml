@@ -87,3 +87,46 @@ spec:
             duration: 10s
             factor: 2
             maxDuration: 2m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: llm-d-staging
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: llm-d
+            wave: "0"
+  template:
+    metadata:
+      name: '{{name}}-staging'
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{wave}}'
+    spec:
+      project: model-serving
+      source:
+        repoURL: https://github.com/rustnew/custom-ai-ops.git
+        targetRevision: HEAD
+        path: charts/llm-d
+        helm:
+          valueFiles:
+            - values.yaml
+            - ../../environments/staging/llm-d/values.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: llm-d-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 2m

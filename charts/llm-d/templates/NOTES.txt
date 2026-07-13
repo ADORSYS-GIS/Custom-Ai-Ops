@@ -1,0 +1,18 @@
+llm-d chart deployed!
+
+Router (EPP): {{ include "llm-d.router.fullname" . }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.router.service.port }}
+{{- if .Values.kvCacheIndexer.enabled }}
+KV-Cache Indexer: {{ include "llm-d.indexer.fullname" . }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.kvCacheIndexer.service.port }}
+{{- end }}
+InferencePool: {{ include "llm-d.fullname" . }} in {{ .Values.global.namespace }}
+
+To use llm-d routing, update your ai-gateway HTTPRoute to point to the
+InferencePool instead of direct backendRefs:
+
+  backendRefs:
+    - name: {{ include "llm-d.fullname" . }}
+      kind: InferencePool
+      group: inference.networking.x-k8s.io
+
+EPP routing plugin: {{ .Values.router.epp.plugin }}
+Disaggregation: {{ if .Values.disaggregation.enabled }}enabled{{ else }}disabled{{ end }}

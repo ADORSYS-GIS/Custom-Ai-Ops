@@ -64,56 +64,7 @@ engine:
       periodSeconds: 10
       failureThreshold: 60
 
-<<<<<<< Updated upstream
-  onnxGenai:
-    image:
-      repository: ghcr.io/microsoft/onnxruntime-genai
-      tag: "0.5.0"
-      pullPolicy: IfNotPresent
-    command: []
-    args:
-      - --model_path
-      - /models/$(MODEL_NAME)
-      - --port
-      - "8080"
-    resources:
-      # QoS Guaranteed: requests == limits for all resources.
-      limits:
-        nvidia.com/gpu: 1
-        cpu: "4"
-        memory: 16Gi
-      requests:
-        nvidia.com/gpu: 1
-        cpu: "4"
-        memory: 16Gi
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 60
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 6
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 10
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 3
-    startupProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      failureThreshold: 90
-
 model:
-=======
-  model:
->>>>>>> Stashed changes
   name: ""
   volumeSize: 50Gi
   seedCommand: []
@@ -327,3 +278,36 @@ commonAnnotations: {}
 restartPolicy: Always
 
 terminationGracePeriodSeconds: 300
+
+# --- llm-d integration ---
+# When enabled, vLLM pods register with the llm-d InferencePool,
+# emit KV-cache events for the KV-Cache Indexer, and accept
+# cache-aware routing decisions from the EPP.
+# See docs/explain/llm-d.md for the full integration guide.
+llmD:
+  enabled: false
+  # InferencePool name that this pool registers with
+  inferencePoolName: ""
+  # EPP gRPC endpoint for cache-aware routing
+  eppEndpoint: ""
+  # Emit KV-cache events for the KV-Cache Indexer
+  emitKvEvents: false
+  # KV-Cache Indexer endpoint (if enabled)
+  kvCacheIndexerEndpoint: ""
+
+# --- Disaggregated P/D mode ---
+# Splits prefill and decode onto separate pod sets.
+# Requires llmD.enabled=true and RDMA/NVLink interconnect
+# for KV-cache transfer between prefill and decode pods.
+disaggregation:
+  enabled: false
+  # Role: unified | prefill | decode
+  role: unified
+  # Prefill-specific args (appended when role=prefill)
+  prefill:
+    gpuMemoryUtilization: "0.92"
+    maxNumSeqs: "32"
+  # Decode-specific args (appended when role=decode)
+  decode:
+    gpuMemoryUtilization: "0.85"
+    maxNumSeqs: "256"

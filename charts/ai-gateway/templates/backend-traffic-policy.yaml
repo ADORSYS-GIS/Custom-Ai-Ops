@@ -65,6 +65,12 @@ spec:
       request: {{ .Values.rateLimit.requestTimeout }}
       backendRequest: {{ .Values.rateLimit.backendRequestTimeout }}
   # --- Cache-aware load balancing (Bible §10.3, §12.3) ---
+  {{- if .Values.llmD.enabled }}
+  # llm-d EPP handles cache-aware routing — use round-robin at the
+  # gateway level.  EPP makes the real routing decision via ext-proc.
+  loadBalancer:
+    type: RoundRobin
+  {{- else }}
   # Consistent-hash routing by x-cache-affinity-key header.
   # Ensures requests sharing a common prefix (system prompt, RAG context)
   # are routed to the same backend pod, maximizing KV cache hit rate.
@@ -75,4 +81,5 @@ spec:
     consistentHash:
       type: Header
       headerName: x-cache-affinity-key
+  {{- end }}
 {{- end }}

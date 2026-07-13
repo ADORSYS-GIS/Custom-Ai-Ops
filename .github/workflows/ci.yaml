@@ -51,11 +51,55 @@ jobs:
         run: helm lint charts/model-serving-engine
       - name: Lint ai-gateway
         run: helm lint charts/ai-gateway
+      - name: Lint llm-d
+        run: helm lint charts/llm-d
       - name: Template dry-run all charts
         run: |
-          for chart in charts/model-serving-vllm charts/ai-gateway; do
+          for chart in charts/model-serving-vllm charts/ai-gateway charts/llm-d; do
             helm template test-release "$chart" --set model.name=test-model > /dev/null
           done
+      - name: Template dry-run llm-d with disaggregation
+        run: |
+          helm template test-release charts/llm-d \
+            --set router.enabled=true \
+            --set kvCacheIndexer.enabled=true \
+            --set disaggregation.enabled=true > /dev/null
+
+  llm-d-disaggregation-validation:
+    name: llm-d Disaggregation Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build engine-selector
+        run: cargo build --release -p engine-selector
+      - name: Validate disaggregation decisions for registry models
+        run: |
+          python3 -c "
+          import yaml, subprocess, json, sys
+          reg = yaml.safe_load(open('models/registry.yaml'))
+          failures = 0
+          for m in reg.get('models', []):
+              llm_d = m.get('llmD', {})
+              if not llm_d.get('enabled', False):
+                  continue
+              routing = llm_d.get('routingMode', 'consistent-hash')
+              serving = llm_d.get('servingMode', 'unified')
+              disaggregated = llm_d.get('disaggregated', False)
+              if disaggregated and serving != 'disaggregated':
+                  print(f'FAIL: {m[\"name\"]} — disaggregated=true but servingMode={serving}', file=sys.stderr)
+                  failures += 1
+              if routing == 'epp-with-indexer' and not llm_d.get('emitKvEvents', False):
+                  print(f'FAIL: {m[\"name\"]} — routingMode=epp-with-indexer requires emitKvEvents=true', file=sys.stderr)
+                  failures += 1
+              if disaggregated and m.get('gpu') not in ('H100', 'H200', 'B200'):
+                  print(f'FAIL: {m[\"name\"]} — disaggregation requires H100/H200/B200 GPU, got {m.get(\"gpu\")}', file=sys.stderr)
+                  failures += 1
+              print(f'OK: {m[\"name\"]} — routing={routing}, serving={serving}, disaggregated={disaggregated}')
+          if failures:
+              sys.exit(1)
+          print('llm-d disaggregation validation passed')
+          "
 
   registry-consistency:
     name: Registry Consistency Check

@@ -96,3 +96,14 @@ tolerations:
   - key: nvidia.com/gpu
     operator: Exists
     effect: NoSchedule
+
+# --- llm-d: disabled in dev (single replica, no EPP needed) ---
+llmD:
+  enabled: false
+  inferencePoolName: ""
+  eppEndpoint: ""
+  emitKvEvents: false
+
+disaggregation:
+  enabled: false
+  role: unified

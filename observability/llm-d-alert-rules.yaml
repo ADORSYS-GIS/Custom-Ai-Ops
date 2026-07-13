@@ -1,0 +1,177 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: llm-d-alert-rules
+  namespace: monitoring
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+    - name: llm-d.epp-routing
+      rules:
+        - alert: EPPRoutingLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(epp_routing_duration_seconds_bucket[5m])) by (le)) > 0.05
+          for: 3m
+          labels:
+            severity: warning
+            component: llm-d-epp
+          annotations:
+            summary: "EPP routing latency exceeds 50ms"
+            description: "95th percentile EPP routing latency is {{ $value }}s. Endpoint Picker decision time is too high — check EPP pod CPU/memory and scoring plugin performance."
+
+        - alert: EPPRoutingLatencyCritical
+          expr: histogram_quantile(0.99, sum(rate(epp_routing_duration_seconds_bucket[5m])) by (le)) > 0.1
+          for: 2m
+          labels:
+            severity: critical
+            component: llm-d-epp
+          annotations:
+            summary: "EPP routing latency exceeds 100ms (critical)"
+            description: "99th percentile EPP routing latency is {{ $value }}s. User requests are being significantly delayed by the Endpoint Picker. Investigate EPP plugin chain and scoring weights."
+
+        - alert: EPPCacheHitRateLow
+          expr: sum(rate(epp_cache_hits_total[10m])) / sum(rate(epp_routing_decisions_total[10m])) < 0.30
+          for: 10m
+          labels:
+            severity: warning
+            component: llm-d-epp
+          annotations:
+            summary: "EPP cache-aware routing hit rate below 30%"
+            description: "EPP cache hit rate is {{ $value | humanizePercentage }}. Low cache-aware routing gains — check if KV-cache events are being emitted and consumed correctly by the EPP."
+
+        - alert: EPPCacheHitRateDegradation
+          expr: deriv(sum(rate(epp_cache_hits_total[30m])) / sum(rate(epp_routing_decisions_total[30m]))[15m]) < -0.05
+          for: 15m
+          labels:
+            severity: warning
+            component: llm-d-epp
+          annotations:
+            summary: "EPP cache hit rate degrading"
+            description: "EPP cache hit rate is declining at {{ $value }}/min. This may indicate KV-cache evictions, pod restarts losing cache, or stale indexer data."
+
+        - alert: EPPRoutingErrors
+          expr: sum(rate(epp_routing_errors_total[5m])) > 0.05
+          for: 3m
+          labels:
+            severity: warning
+            component: llm-d-epp
+          annotations:
+            summary: "EPP routing errors above 0.05/s"
+            description: "EPP is encountering {{ $value }} routing errors/s. Check EPP logs for plugin failures or unhealthy inference pools."
+
+        - alert: EPPPodUnavailable
+          expr: kube_pod_container_status_ready{namespace="llm-d-system",container="epp"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            component: llm-d-epp
+          annotations:
+            summary: "EPP pod not ready"
+            description: "EPP pod {{ $labels.pod }} has been not ready for 3m. Routing decisions are degraded — check EPP container logs and crash reasons."
+
+    - name: llm-d.kv-cache-indexer
+      rules:
+        - alert: KVCacheIndexerUnavailable
+          expr: up{job="llm-d-kv-cache-indexer"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: llm-d-indexer
+          annotations:
+            summary: "KV-Cache Indexer unreachable"
+            description: "KV-Cache Indexer on {{ $labels.instance }} has been unreachable for 2m. EPP routing decisions will fall back to heuristic — cache-aware routing quality is degraded."
+
+        - alert: KVCacheIndexerLag
+          expr: llm_d_kv_indexer_event_lag_seconds > 30
+          for: 5m
+          labels:
+            severity: warning
+            component: llm-d-indexer
+          annotations:
+            summary: "KV-Cache Indexer event lag exceeds 30s"
+            description: "KV-Cache Indexer is {{ $value }}s behind real-time. Routing decisions may use stale cache state — old cache blocks may be routed to deleted pods."
+
+        - alert: KVCacheIndexerHighMemory
+          expr: container_memory_working_set_bytes{namespace="llm-d-system",container="kv-cache-indexer"} / container_spec_memory_limit_bytes{namespace="llm-d-system",container="kv-cache-indexer"} > 0.85
+          for: 5m
+          labels:
+            severity: warning
+            component: llm-d-indexer
+          annotations:
+            summary: "KV-Cache Indexer memory usage above 85%"
+            description: "KV-Cache Indexer memory is at {{ $value | humanizePercentage }}. The indexer cache may be too large for the number of tracked blocks — consider increasing indexer replicas or reducing block granularity."
+
+        - alert: KVCacheIndexerEventsDropped
+          expr: increase(llm_d_kv_indexer_events_dropped_total[5m]) > 0
+          for: 0s
+          labels:
+            severity: warning
+            component: llm-d-indexer
+          annotations:
+            summary: "KV-Cache Indexer dropping events"
+            description: "{{ $value }} KV-cache events were dropped in the last 5m. The indexer may be overwhelmed — increase indexer resources or reduce the number of vLLM replicas emitting events."
+
+    - name: llm-d.disaggregation
+      rules:
+        - alert: KVTransferFailureRate
+          expr: sum(rate(llm_d_kv_transfer_errors_total[5m])) / sum(rate(llm_d_kv_transfer_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            component: llm-d-disaggregation
+          annotations:
+            summary: "P/D KV-transfer failure rate above 5%"
+            description: "Prefill-to-decode KV-cache transfer is failing {{ $value | humanizePercentage }} of the time. Check NIXL/RDMA connectivity and inter-pod network."
+
+        - alert: KVTransferLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(llm_d_kv_transfer_duration_seconds_bucket[5m])) by (le)) > 1.0
+          for: 5m
+          labels:
+            severity: warning
+            component: llm-d-disaggregation
+          annotations:
+            summary: "P/D KV-transfer latency exceeds 1s"
+            description: "95th percentile KV-cache transfer latency is {{ $value }}s. Inter-pod transfer may be bottlenecked — verify RDMA/NVLink is active and NIXL transport is not falling back to TCP."
+
+        - alert: PrefillPodsDown
+          expr: kube_deployment_status_replicas_available{namespace=~"model-serving-.*",deployment=~".*prefill.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: llm-d-disaggregation
+          annotations:
+            summary: "No prefill pods available"
+            description: "All prefill pods are down in {{ $labels.namespace }}. Decode pods will starve — TTFT will spike. Check prefill Deployment status immediately."
+
+        - alert: DecodePodsDown
+          expr: kube_deployment_status_replicas_available{namespace=~"model-serving-.*",deployment=~".*decode.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: llm-d-disaggregation
+          annotations:
+            summary: "No decode pods available"
+            description: "All decode pods are down in {{ $labels.namespace }}. No tokens can be generated. Check decode Deployment status immediately."
+
+    - name: llm-d.inference-pool
+      rules:
+        - alert: InferencePoolNoReplicas
+          expr: llm_d_inference_pool_replicas_ready == 0
+          for: 3m
+          labels:
+            severity: critical
+            component: llm-d-inferencepool
+          annotations:
+            summary: "InferencePool has no ready replicas"
+            description: "InferencePool {{ $labels.pool_name }} has zero ready replicas. Requests will fail — check associated vLLM pods and StatefulSet status."
+
+        - alert: InferencePoolReplicaMismatch
+          expr: llm_d_inference_pool_replicas_desired - llm_d_inference_pool_replicas_ready > 2
+          for: 10m
+          labels:
+            severity: warning
+            component: llm-d-inferencepool
+          annotations:
+            summary: "InferencePool replica mismatch"
+            description: "InferencePool {{ $labels.pool_name }} desires {{ $labels.desired }} replicas but only {{ $labels.ready }} are ready for 10m. Pods may be failing health checks or scheduling."

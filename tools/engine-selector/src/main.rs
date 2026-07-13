@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
-use engine_selector::{cache_strategy_for, detect_family, detect_format, parse_format_override, select_engine, EngineSelection};
+use engine_selector::{
+    cache_strategy_for, detect_family, detect_format, detect_serving_mode, parse_format_override,
+    routing_mode_for, select_engine, EngineSelection,
+};
 
 #[derive(Parser)]
 #[command(
@@ -23,6 +26,13 @@ struct Cli {
 
     #[arg(
         long,
+        help = "Enable llm-d integration (EPP routing, KV-Cache Indexer)",
+        default_value_t = false
+    )]
+    llm_d: bool,
+
+    #[arg(
+        long,
         help = "Output selection as JSON for pipeline integration",
         default_value_t = false
     )]
@@ -40,6 +50,8 @@ fn main() -> Result<()> {
     let (engine, confidence, chart, rationale) = select_engine(fmt);
     let family = detect_family(&cli.model)?;
     let cache_strategy = cache_strategy_for(family);
+    let routing_mode = routing_mode_for(family, cli.llm_d);
+    let serving_mode = detect_serving_mode(&cli.model, family)?;
 
     let selection = EngineSelection {
         format: format!("{:?}", fmt).to_lowercase(),
@@ -51,6 +63,8 @@ fn main() -> Result<()> {
         rationale,
         family: format!("{:?}", family).to_lowercase(),
         cache_strategy: cache_strategy.to_string(),
+        routing_mode: format!("{:?}", routing_mode).to_lowercase(),
+        serving_mode: format!("{:?}", serving_mode).to_lowercase(),
     };
 
     if cli.json {
@@ -62,6 +76,8 @@ fn main() -> Result<()> {
         println!("Helm chart     : {}", selection.chart);
         println!("Confidence     : {:.0}%", selection.confidence * 100.0);
         println!("Cache strategy : {}", selection.cache_strategy);
+        println!("Routing mode   : {}", selection.routing_mode);
+        println!("Serving mode   : {}", selection.serving_mode);
         println!("Rationale      : {}", selection.rationale);
     }
 

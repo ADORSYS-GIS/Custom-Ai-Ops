@@ -1,0 +1,20 @@
+{{- if .Values.kvCacheIndexer.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llm-d.indexer.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+    component: indexer
+spec:
+  type: {{ .Values.kvCacheIndexer.service.type }}
+  ports:
+    - name: grpc
+      port: {{ .Values.kvCacheIndexer.service.port }}
+      targetPort: {{ .Values.kvCacheIndexer.service.targetPort }}
+      protocol: TCP
+  selector:
+    {{- include "llm-d.selectorLabels" . | nindent 4 }}
+    component: indexer
+{{- end }}

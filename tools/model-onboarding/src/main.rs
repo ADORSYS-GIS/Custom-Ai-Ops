@@ -41,7 +41,11 @@ struct RegistryEntry {
     long_about = None
 )]
 struct Cli {
-    #[arg(short, long, help = "Model name (kebab-case, e.g. mistral-7b-instruct)")]
+    #[arg(
+        short,
+        long,
+        help = "Model name (kebab-case, e.g. mistral-7b-instruct)"
+    )]
     name: String,
 
     #[arg(short, long, help = "Model format (safetensors, awq, gptq)")]
@@ -119,10 +123,12 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let notes = cli.notes.unwrap_or_else(|| format!(
-        "Model onboarded via model-onboarding tool, {} format on {} pool",
-        cli.format, cli.gpu_pool
-    ));
+    let notes = cli.notes.unwrap_or_else(|| {
+        format!(
+            "Model onboarded via model-onboarding tool, {} format on {} pool",
+            cli.format, cli.gpu_pool
+        )
+    });
 
     let registry_entry = RegistryEntry {
         name: cli.name.clone(),
@@ -133,7 +139,10 @@ fn main() -> Result<()> {
         vram_budget_gb: cli.vram,
         gpu_pool: cli.gpu_pool.clone(),
         context_length: cli.context_length,
-        quantisation: cli.quantisation.clone().unwrap_or_else(|| "unknown".to_string()),
+        quantisation: cli
+            .quantisation
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string()),
         gateway_backend: gateway_backend.clone(),
         notes,
     };
@@ -254,7 +263,13 @@ fn main() -> Result<()> {
     println!("  - {}/eval-report.md", model_dir);
     println!();
     println!("To complete onboarding:");
-    println!("  1. Run: vram-budget-calc -V {} --model-size {} --quant {} --gpu \"{}\"", cli.vram, cli.model_size, cli.quantisation.as_deref().unwrap_or("fp16"), cli.gpu.as_deref().unwrap_or("unspecified"));
+    println!(
+        "  1. Run: vram-budget-calc -V {} --model-size {} --quant {} --gpu \"{}\"",
+        cli.vram,
+        cli.model_size,
+        cli.quantisation.as_deref().unwrap_or("fp16"),
+        cli.gpu.as_deref().unwrap_or("unspecified")
+    );
     println!("  2. Add entry to models/registry.yaml:");
     println!("{}", serde_json::to_string_pretty(&registry_entry)?);
     println!("  3. Add gateway backend in charts/ai-gateway/values.yaml");
@@ -267,9 +282,7 @@ fn main() -> Result<()> {
 }
 
 fn chrono_like_date() -> String {
-    let output = std::process::Command::new("date")
-        .arg("+%Y-%m-%d")
-        .output();
+    let output = std::process::Command::new("date").arg("+%Y-%m-%d").output();
     match output {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "YYYY-MM-DD".to_string(),
@@ -282,8 +295,14 @@ mod tests {
 
     #[test]
     fn test_parse_format_safetensors() {
-        assert_eq!(parse_format("safetensors").unwrap(), ModelFormat::Safetensors);
-        assert_eq!(parse_format("SAFETENSORS").unwrap(), ModelFormat::Safetensors);
+        assert_eq!(
+            parse_format("safetensors").unwrap(),
+            ModelFormat::Safetensors
+        );
+        assert_eq!(
+            parse_format("SAFETENSORS").unwrap(),
+            ModelFormat::Safetensors
+        );
     }
 
     #[test]
@@ -311,7 +330,10 @@ mod tests {
 
     #[test]
     fn test_format_to_chart_safetensors() {
-        assert_eq!(format_to_chart(ModelFormat::Safetensors), "model-serving-engine");
+        assert_eq!(
+            format_to_chart(ModelFormat::Safetensors),
+            "model-serving-engine"
+        );
     }
 
     #[test]
