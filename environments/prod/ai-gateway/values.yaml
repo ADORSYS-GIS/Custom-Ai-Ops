@@ -1,0 +1,7 @@
+# Production ai-gateway overrides
+# llm-d Phase 2: EPP + KV-Cache Indexer
+# HTTPRoute targets InferencePool, EPP handles precise cache-aware routing
+llmD:
+  enabled: true
+  inferencePoolName: "llm-d-production"
+  inferencePoolNamespace: "llm-d-system"

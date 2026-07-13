@@ -33,6 +33,7 @@ spec:
         - name: {{ $.Values.llmD.inferencePoolName }}
           kind: InferencePool
           group: inference.networking.x-k8s.io
+          namespace: {{ $.Values.llmD.inferencePoolNamespace }}
       {{- else }}
       # Sticky routing by prefix hash: requests with the same prompt prefix
       # are routed to the same backend pod to maximize KV cache hit rate.

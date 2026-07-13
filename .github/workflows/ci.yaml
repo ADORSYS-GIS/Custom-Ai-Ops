@@ -55,15 +55,32 @@ jobs:
         run: helm lint charts/llm-d
       - name: Template dry-run all charts
         run: |
-          for chart in charts/model-serving-vllm charts/ai-gateway charts/llm-d; do
+          # Charts that accept --set model.name=test-model
+          for chart in charts/model-serving-vllm; do
             helm template test-release "$chart" --set model.name=test-model > /dev/null
           done
+          # Charts that don't use model.name
+          helm template test-release charts/ai-gateway > /dev/null
+          helm template test-release charts/llm-d > /dev/null
+          # model-serving-engine with environment-specific values
+          helm template test-release charts/model-serving-engine \
+            -f environments/dev/values.yaml > /dev/null
+          helm template test-release charts/model-serving-engine \
+            -f environments/staging/values.yaml > /dev/null
+          helm template test-release charts/model-serving-engine \
+            -f environments/prod/values.yaml > /dev/null
       - name: Template dry-run llm-d with disaggregation
         run: |
           helm template test-release charts/llm-d \
             --set router.enabled=true \
             --set kvCacheIndexer.enabled=true \
             --set disaggregation.enabled=true > /dev/null
+      - name: Template dry-run ai-gateway with llm-d enabled
+        run: |
+          helm template test-release charts/ai-gateway \
+            --set llmD.enabled=true \
+            --set llmD.inferencePoolName=test-pool \
+            --set llmD.inferencePoolNamespace=llm-d-system > /dev/null
 
   llm-d-disaggregation-validation:
     name: llm-d Disaggregation Validation

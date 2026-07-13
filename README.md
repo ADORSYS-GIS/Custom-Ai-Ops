@@ -11,7 +11,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
 ![Tests](https://img.shields.io/badge/Tests-76%20passing-brightgreen.svg)
-![Charts](https://img.shields.io/badge/Helm%20Charts-4-blue.svg?logo=helm)
+![Charts](https://img.shields.io/badge/Helm%20Charts-5-blue.svg?logo=helm)
 
 ---
 
@@ -468,7 +468,10 @@ Custom-Ai-Ops/
 │   ├── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
 │   ├── dev/llm-d/                   # llm-d chart values for dev (disabled)
 │   ├── staging/llm-d/               # llm-d chart values for staging (Phase 1: EPP only)
-│   └── prod/llm-d/                  # llm-d chart values for prod (Phase 2: EPP + Indexer)
+│   ├── prod/llm-d/                  # llm-d chart values for prod (Phase 2: EPP + Indexer)
+│   ├── dev/ai-gateway/              # ai-gateway values for dev (llm-d disabled)
+│   ├── staging/ai-gateway/          # ai-gateway values for staging (llm-d enabled, InferencePool)
+│   └── prod/ai-gateway/             # ai-gateway values for prod (llm-d enabled, InferencePool)
 │
 ├── apps/                            # ArgoCD ApplicationSets + bootstrap manifests
 │   ├── argocd-appset-prod.yaml     # Prod: serving + infrastructure + secrets + gateway
@@ -940,7 +943,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yaml`) runs 5 jobs:
 | Job | Description | Blocking |
 |---|---|---|
 | `rust-tools` | Build + test all 4 crates, clippy (deny warnings), fmt check | Yes |
-| `helm-lint` | Lint all 4 charts + template dry-run + disaggregation dry-run | Yes |
+| `helm-lint` | Lint all 5 charts + template dry-run + disaggregation dry-run | Yes |
 | `registry-consistency` | Validate each registry entry has chart dir, model dir, and required files | Yes |
 | `vram-budget-validation` | Build `vram-budget-calc` and run for all LIVE/STAGED models — fails if budget exceeded | Yes |
 | `llm-d-disaggregation-validation` | Validate llm-d routing/serving mode consistency in registry entries | Yes |

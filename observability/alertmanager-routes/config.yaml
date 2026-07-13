@@ -27,6 +27,11 @@ route:
       receiver: "serving-receiver"
       group_by: ["alertname", "namespace", "engine_type"]
 
+    - match_re:
+        component: llm-d-.*
+      receiver: "llm-d-receiver"
+      group_by: ["alertname", "component", "namespace"]
+
 receivers:
   - name: default-receiver
     webhook_configs:
@@ -62,6 +67,13 @@ receivers:
       - api_url: "${SLACK_WEBHOOK_URL}"
         channel: "#ml-ops"
         title: "[SERVING] {{ .GroupLabels.alertname }}"
+        text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+
+  - name: llm-d-receiver
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_URL}"
+        channel: "#ml-ops"
+        title: "[llm-d] {{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
 
 inhibit_rules:

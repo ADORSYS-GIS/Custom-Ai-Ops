@@ -167,6 +167,7 @@ spec:
         helm:
           valueFiles:
             - values.yaml
+            - ../../environments/prod/ai-gateway/values.yaml
       destination:
         server: https://kubernetes.default.svc
         namespace: envoy-gateway-system

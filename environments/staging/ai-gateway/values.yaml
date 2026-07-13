@@ -1,0 +1,7 @@
+# Staging ai-gateway overrides
+# llm-d Phase 1: EPP cache-aware routing enabled
+# HTTPRoute targets InferencePool instead of direct backendRefs
+llmD:
+  enabled: true
+  inferencePoolName: "llm-d-staging"
+  inferencePoolNamespace: "llm-d-system"
