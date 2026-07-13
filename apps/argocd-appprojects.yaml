@@ -13,7 +13,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-10"
 spec:
-  description: "Model serving workloads — vLLM, ONNX Runtime GenAI, AI Gateway"
+  description: "Model serving workloads — vLLM, AI Gateway"
   sourceRepos:
     - https://github.com/rustnew/custom-ai-ops.git
   destinations:

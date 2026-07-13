@@ -6,7 +6,6 @@ use std::fs;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ModelFormat {
-    Onnx,
     Safetensors,
     Awq,
     Gptq,
@@ -17,7 +16,6 @@ enum ModelFormat {
 #[allow(dead_code)]
 enum Engine {
     Vllm,
-    OnnxRuntimeGenai,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,7 +44,7 @@ struct Cli {
     #[arg(short, long, help = "Model name (kebab-case, e.g. mistral-7b-instruct)")]
     name: String,
 
-    #[arg(short, long, help = "Model format (onnx, safetensors, awq, gptq)")]
+    #[arg(short, long, help = "Model format (safetensors, awq, gptq)")]
     format: String,
 
     #[arg(short, long, help = "Total GPU VRAM in GB", value_name = "GB")]
@@ -80,26 +78,23 @@ struct Cli {
 
 fn format_to_chart(fmt: ModelFormat) -> &'static str {
     match fmt {
-        ModelFormat::Onnx => "model-serving-onnx-rust",
-        ModelFormat::Safetensors | ModelFormat::Awq | ModelFormat::Gptq => "model-serving-vllm",
+        ModelFormat::Safetensors | ModelFormat::Awq | ModelFormat::Gptq => "model-serving-engine",
     }
 }
 
 fn format_to_engine(fmt: ModelFormat) -> &'static str {
     match fmt {
-        ModelFormat::Onnx => "onnxGenai",
         ModelFormat::Safetensors | ModelFormat::Awq | ModelFormat::Gptq => "vllm",
     }
 }
 
 fn parse_format(s: &str) -> Result<ModelFormat> {
     match s.to_lowercase().as_str() {
-        "onnx" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
         "awq" => Ok(ModelFormat::Awq),
         "gptq" => Ok(ModelFormat::Gptq),
         _ => Err(anyhow!(
-            "unknown format: {} — supported: onnx, safetensors, awq, gptq",
+            "unknown format: {} — supported: safetensors, awq, gptq",
             s
         )),
     }
@@ -286,12 +281,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_format_onnx() {
-        assert_eq!(parse_format("onnx").unwrap(), ModelFormat::Onnx);
-        assert_eq!(parse_format("ONNX").unwrap(), ModelFormat::Onnx);
-    }
-
-    #[test]
     fn test_parse_format_safetensors() {
         assert_eq!(parse_format("safetensors").unwrap(), ModelFormat::Safetensors);
         assert_eq!(parse_format("SAFETENSORS").unwrap(), ModelFormat::Safetensors);
@@ -313,6 +302,7 @@ mod tests {
     fn test_parse_format_invalid() {
         assert!(parse_format("invalid").is_err());
         assert!(parse_format("").is_err());
+        assert!(parse_format("onnx").is_err());
         assert!(parse_format("gguf").is_err());
         assert!(parse_format("tensorrt").is_err());
         assert!(parse_format("pytorch").is_err());
@@ -320,28 +310,18 @@ mod tests {
     }
 
     #[test]
-    fn test_format_to_chart_onnx() {
-        assert_eq!(format_to_chart(ModelFormat::Onnx), "model-serving-onnx-rust");
-    }
-
-    #[test]
     fn test_format_to_chart_safetensors() {
-        assert_eq!(format_to_chart(ModelFormat::Safetensors), "model-serving-vllm");
+        assert_eq!(format_to_chart(ModelFormat::Safetensors), "model-serving-engine");
     }
 
     #[test]
     fn test_format_to_chart_awq() {
-        assert_eq!(format_to_chart(ModelFormat::Awq), "model-serving-vllm");
+        assert_eq!(format_to_chart(ModelFormat::Awq), "model-serving-engine");
     }
 
     #[test]
     fn test_format_to_chart_gptq() {
-        assert_eq!(format_to_chart(ModelFormat::Gptq), "model-serving-vllm");
-    }
-
-    #[test]
-    fn test_format_to_engine_onnx() {
-        assert_eq!(format_to_engine(ModelFormat::Onnx), "onnxGenai");
+        assert_eq!(format_to_chart(ModelFormat::Gptq), "model-serving-engine");
     }
 
     #[test]

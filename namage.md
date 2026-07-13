@@ -20,7 +20,7 @@ Master the complete lifecycle of a model in production: from packaging to servin
 - **p99 vs p50 latency**: the average masks worst cases; a model can have excellent p50 and catastrophic p99 due to GC, batching, or GPU contention.
 - **Non-determinism**: non-deterministic CUDA kernels, different floating-point reduction order by batch, making debugging difficult.
 - **Memory leaks**: GPU memory fragmentation (especially with variable batch sizes), KV cache leaks for LLMs.
-- **Inconsistent versioning**: divergence between trained model, converted model (ONNX), and actually served model.
+- **Inconsistent versioning**: divergence between trained model and actually served model.
 - **Training-serving skew**: different feature preprocessing pipeline between offline and online.
 - **Silent failures**: model responds but with degraded values (NaN, constant outputs) without crash, so without automatic alert.
 - **Over-provisioning or under-sizing**: either GPU cost waste or starvation at traffic peak.

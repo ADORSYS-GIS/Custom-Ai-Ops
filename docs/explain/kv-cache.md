@@ -333,32 +333,18 @@ SafeTensors is a safe serialization format for tensors. It does not actively man
 
 This mechanism can reduce *Time-To-First-Token* by up to a factor of 136x on certain models (measured on Gemma 3 12B), and is becoming a persistence standard in frameworks like vLLM or MLX.
 
-### 6.2 ONNX — The Universal Format Faces a Dynamic Cache
-
-ONNX represents the model as a **static** graph, whereas the KV cache is **dynamic** by nature (its size changes at each token). This is the central difficulty of ONNX export for LLMs:
-
-- One must export **two distinct graphs**: one for prefill (without cache input) and one for decode (with `past_key_values` as input, producing `present_key_values` as output).
-- The `past_present_share_buffer` option of ONNX Runtime allows "past" and "present" buffers to point to the same memory block, avoiding unnecessary copies; without it, the cache is reallocated and copied at each step.
-- ONNX Runtime GenAI exposes a high-level `generate()` API that manages this cycle automatically.
-
-### 6.3 GGUF — Optimization for Local Inference
-
-The format of choice for llama.cpp and Ollama, GGUF **fully delegates** cache management to the inference engine — the format only stores quantized weights (Q4_K_M, Q8_0, etc.). The KV cache size is independent of weight quantization: for a 7B model with 4k tokens of context, approximately 2 GB of additional cache is needed, allocated in CPU RAM or VRAM depending on configuration.
-
-### 6.4 TensorRT Engine — Pushed Hardware Optimization
+### 6.2 TensorRT Engine — Pushed Hardware Optimization
 
 The `.engine` format of TensorRT-LLM, compiled for a specific NVIDIA GPU architecture, embeds advanced cache features: paged cache, FP8 cache quantization, cache reuse between requests sharing a prefix, and offloading to host RAM in case of VRAM saturation.
 
-### 6.5 Summary
+### 6.3 Summary
 
 | Format | Primary role | KV cache management |
 |---|---|---|
 | **SafeTensors** | Safe serialization | **Persistence** container for cache on disk |
-| **ONNX** | Interoperability | Managed by the engine, requires dual-graph export |
-| **GGUF** | Local inference (CPU) | Fully delegated to the engine (llama.cpp) |
 | **TensorRT Engine** | NVIDIA GPU optimization | Native paging, quantization, and sharing |
 
-In practice, a project often combines multiple formats: SafeTensors to persist the cache, ONNX for model interoperability, and vLLM or TensorRT-LLM for high-performance inference.
+In practice, a project often combines multiple formats: SafeTensors to persist the cache, and vLLM or TensorRT-LLM for high-performance inference.
 
 ---
 
@@ -383,7 +369,7 @@ In practice, a project often combines multiple formats: SafeTensors to persist t
 | **WombatKV** | Cache on object storage (S3) | Extreme persistence and sharing, content-addressable |
 | **llm-d KV-Cache Manager** | Cache-aware routing | Global cluster view, maximized hit rate |
 | **PiKV** | KV cache for MoE architectures | Expert sharding, adaptive eviction, 2.3-3.1x throughput |
-| **EdgeSync-LLM** | KV fragment cache for edge (mobile) | Engine-agnostic (llama.cpp, MLC-LLM) |
+| **EdgeSync-LLM** | KV fragment cache for edge (mobile) | Engine-agnostic (MLC-LLM) |
 | **InfiniGen / H2O** | Token offloading and eviction | Academic reference in memory management |
 | **Mooncake** | High-performance third-party cache engine | Ultra-fast RDMA transfers |
 

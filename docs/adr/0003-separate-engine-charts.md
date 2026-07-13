@@ -1,21 +1,19 @@
-# ADR-0003: Separate engine-specific Helm charts
+# ADR-0003: Unified engine Helm chart
 
 ## Status: Accepted
 
 ## Context
 
-A single monolithic chart with conditionals for each engine becomes unmaintainable as the number of engines grows.
+Previously, separate Helm charts were maintained per engine type (e.g. `model-serving-vllm`, `model-serving-onnx-rust`). With the consolidation to vLLM as the sole inference engine, maintaining multiple engine-specific charts is no longer justified.
 
 ## Decision
 
-Create separate Helm charts per engine type:
-- `model-serving-vllm` — Safetensors/AWQ/GPTQ models
-- `model-serving-onnx-rust` — ONNX models
+Consolidate into a single Helm chart, `model-serving-engine`, which serves all vLLM-compatible formats (Safetensors, AWQ, GPTQ). The deprecated `model-serving-vllm` and deleted `model-serving-onnx-rust` charts are replaced by `model-serving-engine`.
 
 All charts depend on `bjw-template` library chart for common StatefulSet/PVC/probe patterns.
 
 ## Consequences
 
-- Each chart focuses on a single engine's configuration.
-- shared patterns are maintained once in `bjw-template`.
-- The unified `model-serving-engine` chart remains for quick prototyping with `engine.type` switching.
+- A single chart focuses on vLLM's configuration.
+- Shared patterns are maintained once in `bjw-template`.
+- Adding a new vLLM-compatible format only requires updating the engine-selector decision tree and `model-serving-engine` values.

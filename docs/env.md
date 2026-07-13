@@ -621,17 +621,16 @@ Litmus chaos experiment environment variables. These are experiment configuratio
 <a id="15-runtime-env"></a>
 ## 15. Runtime Environment Variables (Pods)
 
-These environment variables are injected into the vLLM/ONNX container at runtime by the Helm chart.
+These environment variables are injected into the vLLM container at runtime by the Helm chart.
 
 ### 15.1 ConfigMap (`charts/model-serving-engine/templates/configmap.yaml`)
 
 | Variable | Value | Description |
 |---|---|---|
-| `ENGINE_TYPE` | `vllm` or `onnxGenai` | Which inference engine to use |
+| `ENGINE_TYPE` | `vllm` | Which inference engine to use |
 | `MODEL_NAME` | From `model.name` | Model name (e.g., `mistral-7b`) |
-| `VLLM_HOST` | `0.0.0.0` | Bind address (vLLM only) |
-| `VLLM_PORT` | `8000` | Listen port (vLLM only) |
-| `ONNX_GENAI_PORT` | `8080` | Listen port (ONNX only) |
+| `VLLM_HOST` | `0.0.0.0` | Bind address |
+| `VLLM_PORT` | `8000` | Listen port |
 
 ### 15.2 StatefulSet (`charts/model-serving-engine/templates/statefulset.yaml`)
 

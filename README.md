@@ -11,7 +11,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
 ![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
-![Charts](https://img.shields.io/badge/Helm%20Charts-5-blue.svg?logo=helm)
+![Charts](https://img.shields.io/badge/Helm%20Charts-3-blue.svg?logo=helm)
 
 ---
 
@@ -29,7 +29,6 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 #### Inference Engines
 
 ![vLLM](https://img.shields.io/badge/vLLM-0.6.3-blue.svg)
-![ONNX Runtime GenAI](https://img.shields.io/badge/ONNX%20Runtime%20GenAI-latest-purple.svg)
 
 #### GPU & Hardware
 
@@ -125,14 +124,12 @@ graph TB
         GW --- GW_RESIL
     end
 
-    subgraph Engine["ENGINE PLANE (Runtime per Format)"]
+    subgraph Engine["ENGINE PLANE (vLLM Only)"]
         VLLM["vLLM<br/>port 8000"]
-        ONNX["ONNX RT GenAI<br/>port 8080"]
     end
 
     subgraph Model["MODEL PLANE (Interchangeable Weights)"]
         SAFE["Safetensors<br/>BF16/FP16"]
-        ONNXW["ONNX<br/>INT4/INT8"]
         AWQ["AWQ/GPTQ"]
     end
 
@@ -162,7 +159,7 @@ graph TB
 ```mermaid
 graph TB
     GIT["Git Repository<br/>charts/ environments/ models/ apps/<br/>tools/ observability/ tests/ docs/"]
-    CI["GitHub Actions CI<br/>Rust build+test · Helm lint (5)<br/>Registry check · VRAM validation"]
+    CI["GitHub Actions CI<br/>Rust build+test · Helm lint (3)<br/>Registry check · VRAM validation"]
     ARGOCD["ArgoCD Control (Control Cluster)<br/>ApplicationSets: model-serving, ai-gateway,<br/>infrastructure (GPU/LH/Prom), secrets (ESO)<br/>Custom Lua Health: StatefulSet, InferenceService"]
 
     GIT -->|push| CI
@@ -198,7 +195,6 @@ sequenceDiagram
     participant GW as "Envoy AI Gateway"
     participant CB as "Circuit Breaker (Prioritized)"
     participant V as "vLLM port 8000"
-    participant O as "ONNX RT GenAI port 8080"
     participant S as "models PVC (RWX via Longhorn)"
 
     C->>GW: POST /v1/chat/completions<br/>Authorization: Bearer key
@@ -207,15 +203,9 @@ sequenceDiagram
     CB->>CB: Health Check GET /health (10s interval)
     CB->>CB: Failover if latency gt 2000ms, priority 1 (SaaS fallback)
 
-    alt Safetensors model
-        CB->>V: route to vLLM
-        V->>S: load weights
-        V-->>GW: SSE stream
-    else ONNX model
-        CB->>O: route to ONNX RT GenAI
-        O->>S: load weights
-        O-->>GW: SSE stream
-    end
+    CB->>V: route to vLLM
+    V->>S: load weights
+    V-->>GW: SSE stream
 
     GW-->>C: SSE stream choices
 ```
@@ -229,7 +219,7 @@ graph LR
     DEV["Developer"]
     GH["GitHub<br/>(webhook)"]
     CI_RUST["rust-tools<br/>build+test<br/>clippy -D · fmt"]
-    CI_HELM["helm-lint (5)<br/>lint --strict<br/>template"]
+    CI_HELM["helm-lint (3)<br/>lint --strict<br/>template"]
     CI_REG["registry<br/>consistency"]
     CI_VRAM["vram-budget<br/>validation"]
     ARGOCD["ArgoCD<br/>Self-Heal: ON · Prune: ON<br/>ServerSideApply"]
@@ -358,7 +348,7 @@ graph TB
 
 ```mermaid
 graph LR
-    S1["1. Identify Format<br/>Safetensors? ONNX?<br/>AWQ/GPTQ?"]
+    S1["1. Identify Format<br/>Safetensors? AWQ/GPTQ?"]
     S2["2. engine-selector<br/>Detects format to engine<br/>to chart to confidence"]
     S3["3. vram-budget-calc<br/>VRAM = Total×0.90<br/>− model size − 1GB − KV cache<br/>FP8 check · BLOCK if &lt; 0"]
     S4["4. model-onboarding<br/>Scaffolds models/&lt;name&gt;/<br/>model.md · budget.md · eval-report.md"]
@@ -427,23 +417,20 @@ graph TB
 
 ```mermaid
 graph TD
-    Start["Model format?"] --> ONNX{"ONNX?"}
-ONNX -->|"Yes"| ONNXRT["ONNX Runtime GenAI<br/>confidence: 0.95<br/>chart: model-serving-engine (onnxGenai)"]
-    ONNX -->|"No"| ST{"Safetensors / BF16?"}
-    ST -->|"Yes"| VLLM1["vLLM<br/>confidence: 0.96<br/>chart: model-serving-engine (vllm)"]
+    Start["Model format?"] --> ST{"Safetensors / BF16?"}
+    ST -->|"Yes"| VLLM1["vLLM<br/>confidence: 0.96<br/>chart: model-serving-engine"]
     ST -->|"No"| AWQ{"AWQ quantized?"}
-    AWQ -->|"Yes"| VLLM2["vLLM<br/>confidence: 0.94<br/>chart: model-serving-engine (vllm)"]
+    AWQ -->|"Yes"| VLLM2["vLLM<br/>confidence: 0.94<br/>chart: model-serving-engine"]
     AWQ -->|"No"| GPTQ{"GPTQ quantized?"}
-    GPTQ -->|"Yes"| VLLM3["vLLM<br/>confidence: 0.93<br/>chart: model-serving-engine (vllm)"]
-    GPTQ -->|"No"| UNSUPPORTED["Unsupported format<br/>(convert to Safetensors/ONNX/AWQ/GPTQ)"]
+    GPTQ -->|"Yes"| VLLM3["vLLM<br/>confidence: 0.93<br/>chart: model-serving-engine"]
+    GPTQ -->|"No"| UNSUPPORTED["Unsupported format<br/>(convert to Safetensors/AWQ/GPTQ)"]
 ```
 
 | Format | Engine | Confidence | Helm Chart | Port |
 |---|---|---|---|---|
-| ONNX | ONNX Runtime GenAI | 0.95 | model-serving-engine (onnxGenai) | 8080 |
-| Safetensors | vLLM | 0.96 | model-serving-engine (vllm) | 8000 |
-| AWQ | vLLM | 0.94 | model-serving-engine (vllm) | 8000 |
-| GPTQ | vLLM | 0.93 | model-serving-engine (vllm) | 8000 |
+| Safetensors | vLLM | 0.96 | model-serving-engine | 8000 |
+| AWQ | vLLM | 0.94 | model-serving-engine | 8000 |
+| GPTQ | vLLM | 0.93 | model-serving-engine | 8000 |
 
 This decision tree is codified in the `engine-selector` Rust CLI tool — not left to ad hoc human decisions.
 
@@ -459,15 +446,13 @@ Custom-Ai-Ops/
 │   ├── model-onboarding/           # New model scaffold tool (14 tests)
 │   └── cache-roi-calc/             # KV cache ROI calculator (Bible §9 formula)
 │
-├── charts/                          # Helm charts (5 total)
+├── charts/                          # Helm charts (3 total)
 │   ├── bjw-template/               # Common base library chart
 │   │                               # (security context, probes, volumes, tolerations)
-│   ├── model-serving-engine/       # Unified engine chart (vllm/onnxGenai)
+│   ├── model-serving-engine/       # Unified vLLM engine chart
     │   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
     │   │                               #  PVC, seed-job, swapoff DaemonSet, ServiceMonitor)
-    │   ├── model-serving-vllm/         # Safetensors/vLLM chart (appVersion 0.6.3) [DEPRECATED]
-│   ├── model-serving-onnx-rust/   # ONNX Runtime GenAI chart
-│   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
+    │   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
                                     #  rate limiting, payload validation, sticky routing, secrets)
 │
 ├── environments/                    # Environment-specific configurations
@@ -500,7 +485,7 @@ Custom-Ai-Ops/
 │   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard
 │
 ├── models/                          # Model registry and per-model documentation
-│   ├── registry.yaml                # Declarative registry (3 models)
+│   ├── registry.yaml                # Declarative registry (2 models)
 │   └── registry/                    # Per-model documentation directory
 │
 ├── tests/                           # Test suites
@@ -581,13 +566,13 @@ cargo test --bin cache-roi-calc     # 0 tests (CLI tool, no unit tests)
 ./target/release/engine-selector --model /path/to/model --json
 
 # Override format detection
-./target/release/engine-selector --model /path/to/model --format onnx
+./target/release/engine-selector --model /path/to/model --format awq
 
 # Calculate VRAM budget
 ./target/release/vram-budget-calc \
   --total-vram 8 \
   --model-size 4.7 \
-  --quant q4_km \
+  --quant awq \
   --gpu "RTX A2000" \
   --batch 1 \
   --context 8192 \
@@ -610,8 +595,6 @@ cargo test --bin cache-roi-calc     # 0 tests (CLI tool, no unit tests)
 # Lint all charts
 helm lint charts/bjw-template
 helm lint charts/model-serving-engine
-helm lint charts/model-serving-vllm
-helm lint charts/model-serving-onnx-rust
 helm lint charts/ai-gateway
 
 # Template dry-run
@@ -666,7 +649,6 @@ The declarative registry (`models/registry.yaml`) tracks all models with their f
 | Model | Format | Engine | Status | VRAM | GPU | Quant | Context |
 |---|---|---|---|---|---|---|---|
 | mistral-7b-instruct | Safetensors | vLLM | STAGED | 40 GB | A100 | bf16 | 32768 |
-| phi-3-mini-instruct | ONNX | ONNX GenAI | LIVE | 4 GB | L4 | int4 | 4096 |
 | llama-3-70b-instruct | Safetensors | vLLM | STANDBY | 80 GB | H100 | fp16 | 8192 |
 
 When a model is onboarded via `model-onboarding`, it gets a dedicated directory with:
@@ -883,7 +865,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yaml`) runs 4 jobs:
 | Job | Description | Blocking |
 |---|---|---|
 | `rust-tools` | Build + test all 4 crates, clippy (deny warnings), fmt check | Yes |
-| `helm-lint` | Lint all 5 charts + template dry-run with test values | Yes |
+| `helm-lint` | Lint all 3 charts + template dry-run with test values | Yes |
 | `registry-consistency` | Validate each registry entry has chart dir, model dir, and required files | Yes |
 | `vram-budget-validation` | Build `vram-budget-calc` and run for all LIVE/STAGED models — fails if budget exceeded | Yes |
 
@@ -945,7 +927,7 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 
 | ADR | Decision |
 |---|---|
-| [0001](docs/adr/0001-multi-format-architecture.md) | Multi-format architecture (not ONNX-only) |
+| [0001](docs/adr/0001-multi-format-architecture.md) | Multi-format architecture (vLLM-only) |
 | [0002](docs/adr/0002-envoy-ai-gateway.md) | Envoy AI Gateway federation |
 | [0003](docs/adr/0003-separate-engine-charts.md) | Separate engine charts per format |
 
@@ -982,7 +964,6 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **Orchestration** | Kubernetes (Talos / k3s) | 1.28+ | Container orchestration |
 | **GitOps** | ArgoCD | 2.8+ | Git-based continuous delivery |
 | **Safetensors/AWQ/GPTQ engine** | vLLM | 0.6.3 | PagedAttention, continuous batching |
-| **ONNX engine** | ONNX Runtime GenAI | latest | ONNX model inference |
 | **GPU scheduling** | NVIDIA GPU Operator | 24.9+ | Driver, DCGM, device plugin |
 | **GPU scheduling** | Kueue | 0.6+ | Quotas, queues, priority |
 | **GPU scheduling** | Volcano | 1.9+ | Gang scheduling |
@@ -1074,7 +1055,7 @@ The gateway supports automatic failover to SaaS providers when self-hosted laten
 | Job | Trigger | Purpose |
 |---|---|---|
 | `rust-tools` | Push/PR | `cargo test` on engine-selector, vram-budget-calc, model-onboarding, cache-roi-calc |
-| `helm-lint` | Push/PR | `helm lint` + `helm template` on all 5 charts |
+| `helm-lint` | Push/PR | `helm lint` + `helm template` on all 3 charts |
 | `registry-consistency` | Push/PR | Validates model registry entries match chart values |
 | `vram-budget-validation` | Push/PR | Blocks deployment if VRAM budget < 0 |
 

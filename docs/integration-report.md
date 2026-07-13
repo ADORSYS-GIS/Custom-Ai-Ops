@@ -30,11 +30,11 @@
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| Helm charts (5) | `charts/` | model-serving-engine (active), ai-gateway, model-serving-vllm (deprecated), model-serving-onnx-rust, bjw-template |
+| Helm charts (4) | `charts/` | model-serving-engine (active, vLLM-only), ai-gateway, model-serving-vllm (deprecated), bjw-template |
 | Environment values | `environments/{dev,staging,prod}/values.yaml` | QoS Guaranteed, KEDA, swapoff, ServiceMonitor, nodeSelector |
 | ArgoCD ApplicationSets | `apps/argocd-appset-{dev,staging,prod}.yaml` | 3 envs, sync waves -3→2, selfHeal+prune, ServerSideApply |
 | ArgoCD health checks | `apps/argocd-health-checks.yaml` | Lua: StatefulSet + InferenceService |
-| CI pipeline | `.github/workflows/ci.yaml` | Rust build+test, helm lint (5), registry consistency, VRAM validation |
+| CI pipeline | `.github/workflows/ci.yaml` | Rust build+test, helm lint (4), registry consistency, VRAM validation |
 | Observability rules | `observability/prometheus-anomaly-rules.yaml` | 6 groups incl. KV cache alerts |
 | Grafana dashboards | `observability/grafana-dashboards/` | 12 panels incl. KV cache |
 | Alertmanager routes | `observability/alertmanager-routes/config.yaml` | critical→PagerDuty+Slack, warning→Slack, gpu→#gpu-ops |
@@ -205,7 +205,7 @@ metadata:
   name: model-serving
   namespace: argocd
 spec:
-  description: Model serving workloads (vLLM, ONNX, gateway)
+  description: Model serving workloads (vLLM, gateway)
   sourceRepos:
     - git@github.com:rustnew/custom-ai-ops.git
   destinations:
@@ -460,7 +460,7 @@ The bootstrap sequence for a fresh cluster:
 
 | Registry | Use Case | Auth Method |
 |----------|----------|-------------|
-| Docker Hub | Public vLLM/ONNX images | Anonymous pull (rate-limited) |
+| Docker Hub | Public vLLM images | Anonymous pull (rate-limited) |
 | GitHub Container Registry (GHCR) | Private custom images | PAT or GitHub App |
 | Harbor | Self-hosted, vulnerability scanning | Robot account |
 | ECR / GCR / ACR | Cloud-native | IAM role / Workload Identity |
@@ -497,7 +497,7 @@ The `imagePullSecrets` field is already present in `charts/model-serving-engine/
 
 ### 4.3 ArgoCD Image Updater
 
-For automatic image tag updates (when a new vLLM or ONNX image is pushed):
+For automatic image tag updates (when a new vLLM image is pushed):
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -507,12 +507,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: >
-      vllm=vllm/vllm-openai:~v0.6,
-      onnx=ghcr.io/microsoft/onnxruntime-genai:~0.4
+      vllm=vllm/vllm-openai:~v0.6
     argocd-image-updater.argoproj.io/write-back-method: git
     argocd-image-updater.argoproj.io/git-branch: main
     argocd-image-updater.argoproj.io/vllm.update-strategy: semver
-    argocd-image-updater.argoproj.io/onnx.update-strategy: semver
 ```
 
 Image Updater writes new tags back to the Helm `values.yaml` in Git, triggering an ArgoCD sync. This creates a full audit trail.
@@ -846,7 +844,7 @@ The pipeline in `.github/workflows/ci.yaml` has 4 jobs:
 | Job | Trigger | Purpose |
 |-----|---------|---------|
 | `rust-tools` | push/PR to main | Build + test 3 Rust tools, clippy, fmt |
-| `helm-lint` | push/PR to main | Lint + template all 5 Helm charts |
+| `helm-lint` | push/PR to main | Lint + template all 4 Helm charts |
 | `registry-consistency` | push/PR to main | Validate models/registry.yaml ↔ charts/ ↔ models/ |
 | `vram-budget-validation` | push/PR to main | Run vram-budget-calc on all LIVE/STAGED models |
 
@@ -857,7 +855,7 @@ Developer ──git push──> GitHub
   │
   ├──> GitHub Actions CI (4 jobs)
   │      ├── rust-tools (build+test)
-  │      ├── helm-lint (5 charts)
+  │      ├── helm-lint (4 charts)
   │      ├── registry-consistency
   │      └── vram-budget-validation
   │
@@ -1128,7 +1126,6 @@ flowchart TB
         end
         subgraph Serving["Model Serving (wave 0)"]
             VLLM["vLLM Pods<br/>QoS Guaranteed"]
-            ONNX["ONNX RT GenAI Pods"]
         end
         subgraph Gateway["Gateway (wave 1)"]
             EG["Envoy AI Gateway<br/>rate limit + circuit breaker"]
@@ -1150,7 +1147,6 @@ flowchart TB
     ESO -->|sync secrets| VAULT
     ESO -->|creates K8s Secrets| Worker
     VLLM -->|scrape /metrics| PROM
-    ONNX -->|scrape /metrics| PROM
     PROM -->|alerts| PD
     PROM -->|alerts| SLACK
     EG -->|failover| SAAS
@@ -1306,7 +1302,6 @@ flowchart TB
 | -1 | Prometheus + Alertmanager | monitoring | addons/ | Helm |
 | -1 | Grafana | monitoring | addons/ | Helm |
 | 0 | vLLM StatefulSet | model-serving-* | model-serving-engine | Helm |
-| 0 | ONNX StatefulSet | model-serving-* | model-serving-engine | Helm |
 | 0 | KEDA ScaledObject | model-serving-* | model-serving-engine | Helm |
 | 0 | PDB | model-serving-* | model-serving-engine | Helm |
 | 1 | HTTPRoute | envoy-gateway-system | ai-gateway | Helm |

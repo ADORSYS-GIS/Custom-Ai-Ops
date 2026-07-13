@@ -127,7 +127,7 @@ The file `.github/workflows/ci.yaml` defines 4 jobs:
 | Job | Trigger | Action |
 |-----|---------|--------|
 | `rust-tools` | Push/PR | `cargo build` + `cargo test` on all 4 tools + clippy + fmt |
-| `helm-lint` | Push/PR | `helm lint` on all 5 charts + `helm template` dry-run |
+| `helm-lint` | Push/PR | `helm lint` on all 4 charts + `helm template` dry-run |
 | `registry-consistency` | Push/PR | Validates `models/registry.yaml` references real chart/model dirs |
 | `vram-budget-validation` | Push/PR | Runs `vram-budget-calc` to block deploys that exceed VRAM |
 
@@ -665,7 +665,7 @@ kubectl logs -n envoy-gateway-system deploy/envoy-gateway | grep "failover"
 
 ## 6. Container Registries
 
-**Role**: Pull private images from GHCR (GitHub Container Registry) and Docker Hub. Used for vLLM, ONNX Runtime GenAI, and LMCache images.
+**Role**: Pull private images from GHCR (GitHub Container Registry) and Docker Hub. Used for vLLM and LMCache images.
 
 ### 6.1 Prerequisites
 

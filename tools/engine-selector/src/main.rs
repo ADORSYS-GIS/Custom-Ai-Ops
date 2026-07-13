@@ -44,9 +44,7 @@ fn main() -> Result<()> {
     let selection = EngineSelection {
         format: format!("{:?}", fmt).to_lowercase(),
         engine: match engine {
-            engine_selector::Engine::OnnxRuntimeGenai => "onnx-runtime-genai".to_string(),
             engine_selector::Engine::Vllm => "vllm".to_string(),
-            engine_selector::Engine::LlamaCpp => "llama-cpp".to_string(),
         },
         chart,
         confidence,

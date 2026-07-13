@@ -272,7 +272,7 @@ Mooncake is the serving platform developed by Moonshot AI for Kimi. Its philosop
 | **WombatKV** | Cache on object storage (S3) | Extreme persistence, content-addressable cache, survives restarts |
 | **llm-d KV-Cache Manager** | Cache-aware routing | Real-time view of cache location on a vLLM cluster for intelligent routing |
 | **PiKV** | Cache for Mixture-of-Experts (MoE) architectures | Distributed cache in parallel, compression adapted to MoE routing |
-| **EdgeSync-LLM** | Edge inference (Android) | Engine-agnostic (llama.cpp, MLC-LLM), lightweight fragment cache |
+| **EdgeSync-LLM** | Edge inference (Android) | Engine-agnostic (MLC-LLM), lightweight fragment cache |
 | **InfiniGen / H2O** | Academic research on eviction | Tensor offloading, token eviction by importance score |
 | **Redis / Valkey** | Generic storage backend | Used as L2/L3 layer by LMCache and others, low latency (5-15 ms) |
 | **Memcached** | Generic storage backend | Simpler alternative to Redis for general-purpose caching |
@@ -308,19 +308,7 @@ SafeTensors does not actively manage the cache; it serves as a **safe serializat
 
 Measured impact: TTFT reduction up to a factor of **136x** for a Gemma 3 12B model when restoring a persisted cache.
 
-### 5.2 ONNX — The Static Graph Challenge
-
-ONNX represents the model as a **static** operations graph, whereas the KV cache is **dynamic** (its size changes at each token). Solutions employed:
-
-- **Dual export**: one graph for *prefill* (without cache), one graph for *decode* (with `past_key_values` as input and `present_key_values` as output).
-- **`past_present_share_buffer`**: an ONNX Runtime optimization that makes "past" and "present" buffers point to the same memory block, avoiding unnecessary copies.
-- **High-level API**: ONNX Runtime GenAI (`generate()`) manages the cache internally automatically.
-
-### 5.3 GGUF — Optimization for Local Inference
-
-The format of choice for llama.cpp and Ollama. The cache is managed **entirely by the engine**, independently of the weight format (which handles its own quantization: Q4_K_M, Q8_0, etc.). For a 7B model with a 4K-token context, the KV cache requires approximately 2 GB additional, allocated in CPU or GPU depending on configuration.
-
-### 5.4 TensorRT-LLM / TensorRT Engine — Pushed Hardware Optimization
+### 5.2 TensorRT-LLM / TensorRT Engine — Pushed Hardware Optimization
 
 The input format is a compiled `.engine` file, optimized for a specific GPU architecture. Native advanced cache features:
 - **Paged KV Cache** (fixed-size blocks, dynamic allocation)
@@ -329,16 +317,14 @@ The input format is a compiled `.engine` file, optimized for a specific GPU arch
 - **Offloading** to host memory in case of GPU saturation
 - Fine control via `free_gpu_memory_fraction`
 
-### 5.5 Summary
+### 5.3 Summary
 
 | Format | Role | KV cache management |
 |---|---|---|
 | SafeTensors | Safe tensor persistence | Cache save/restore container on disk |
-| ONNX | Interoperability | Requires dual export + explicit buffer management |
-| GGUF | Local inference (CPU) | Fully delegated to the engine (llama.cpp) |
 | TensorRT Engine | NVIDIA GPU performance | Native paging, quantization, and sharing, very advanced |
 
-In practice, a mature project combines these formats: **SafeTensors** to persist the cache, **ONNX** for cross-platform interoperability, **TensorRT-LLM** or **vLLM** for high-performance production inference.
+In practice, a mature project combines these formats: **SafeTensors** to persist the cache, **TensorRT-LLM** or **vLLM** for high-performance production inference.
 
 ---
 

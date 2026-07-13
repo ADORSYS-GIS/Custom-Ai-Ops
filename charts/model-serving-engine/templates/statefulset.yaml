@@ -58,9 +58,13 @@ spec:
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
+<<<<<<< Updated upstream
           {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- else if eq $engineType "onnxGenai" }}{{- $args = .Values.engine.onnxGenai.args }}{{- end }}
           {{- $command := list }}
           {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- else if eq $engineType "onnxGenai" }}{{- $command = .Values.engine.onnxGenai.command }}{{- end }}
+=======
+          {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
+>>>>>>> Stashed changes
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"
@@ -188,6 +192,7 @@ spec:
           {{- end }}
           startupProbe:
             {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
+<<<<<<< Updated upstream
           {{- else if eq $engineType "onnxGenai" }}
           livenessProbe:
             {{- toYaml .Values.engine.onnxGenai.livenessProbe | nindent 12 }}
@@ -197,6 +202,8 @@ spec:
           {{- end }}
           startupProbe:
             {{- toYaml .Values.engine.onnxGenai.startupProbe | nindent 12 }}
+=======
+>>>>>>> Stashed changes
           {{- end }}
       volumes:
         - name: tmp

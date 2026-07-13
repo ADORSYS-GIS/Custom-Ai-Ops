@@ -64,6 +64,7 @@ engine:
       periodSeconds: 10
       failureThreshold: 60
 
+<<<<<<< Updated upstream
   onnxGenai:
     image:
       repository: ghcr.io/microsoft/onnxruntime-genai
@@ -110,6 +111,9 @@ engine:
       failureThreshold: 90
 
 model:
+=======
+  model:
+>>>>>>> Stashed changes
   name: ""
   volumeSize: 50Gi
   seedCommand: []

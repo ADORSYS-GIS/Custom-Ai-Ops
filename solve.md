@@ -43,7 +43,6 @@ Each step resolves a specific class of problems. Skipping any breaks the chain o
 ## Step 3 — Model Optimization and Compilation
 
 **Tools by model family**:
-- **ONNX Runtime**: intermediate portable format, useful for decoupling training framework from inference runtime.
 - **vLLM** or **TGI (Text Generation Inference)**: specialized LLM runtime with PagedAttention and continuous batching.
 - **OpenVINO**: for CPU/Intel deployment.
 
@@ -141,11 +140,10 @@ Each step resolves a specific class of problems. Skipping any breaks the chain o
 
 **Tools by family** (summary from previous document, applied concretely here):
 - LLM: vLLM, TGI
-- Vision/classical: ONNX Runtime GenAI — portable format support, dynamic batching
 
 **Role**: actually execute inference with optimal batching, caching, and GPU management.
 
-**Why ONNX Runtime GenAI in particular**: it natively exposes Prometheus metrics, supports model ensemble (multi-model pipelines), and handles multi-versioning (multiple model versions served simultaneously) — directly useful for ArgoCD/KServe managed canary.
+**Why vLLM in particular**: it natively exposes Prometheus metrics, supports model ensemble (multi-model pipelines), and handles multi-versioning (multiple model versions served simultaneously) — directly useful for ArgoCD/KServe managed canary.
 
 ---
 
@@ -213,7 +211,7 @@ Each step resolves a specific class of problems. Skipping any breaks the chain o
 | Git (config repo) | Unique source of truth | No audit, no reliable rollback |
 | **ArgoCD** | **GitOps synchronization and central visibility** | **Undetected drift between Git and actual cluster, no centralized view** |
 | Kueue/Volcano | GPU-aware scheduling | Pods in Pending, poor GPU placement |
-| vLLM/ONNX Runtime GenAI | Optimized inference execution | Underutilized GPU, low throughput |
+| vLLM | Optimized inference execution | Underutilized GPU, low throughput |
 | Istio/Linkerd | Canary routing and mTLS | Risky deployments without traffic control |
 | KEDA/HPA | Dynamic adaptation to load | Over-provisioning costs or under-capacity at peak |
 | Prometheus/Grafana/DCGM | Observability | Incidents detected too late or not at all |

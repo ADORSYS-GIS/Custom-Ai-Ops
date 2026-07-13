@@ -1,8 +1,8 @@
-# Ultimate Reference Architecture — Cloud-Scale Multi-Format Model Serving Platform
+# Ultimate Reference Architecture — Cloud-Scale vLLM Model Serving Platform
 
 ## Objective
 
-Define the most robust, modular, and durable project structure for deploying ML models (all formats) on the cloud, capable of serving millions of users with auto-repair, load forecasting, and multi-year durability (years, not months). This document synthesizes and extends the existing pattern (StatefulSet bjw-template + ArgoCD + Envoy AI Gateway + sync waves) into a generalized, multi-engine, multi-format system.
+Define the most robust, modular, and durable project structure for deploying ML models on the cloud, capable of serving millions of users with auto-repair, load forecasting, and multi-year durability (years, not months). This document synthesizes and extends the existing pattern (StatefulSet bjw-template + ArgoCD + Envoy AI Gateway + sync waves) into a generalized, vLLM-based system.
 
 ---
 
@@ -10,32 +10,28 @@ Define the most robust, modular, and durable project structure for deploying ML 
 
 The system must **never rigidly couple the model format to the serving engine**. The correct architecture strictly separates three planes:
 
-1. **Model Plane** (the weights + their format) — interchangeable.
-2. **Engine Plane** (the runtime that executes that format) — interchangeable per format.
+1. **Model Plane** (the weights + their format) — interchangeable (safetensors, AWQ, GPTQ).
+2. **Engine Plane** (the runtime that executes that format) — vLLM only, consistent across all formats.
 3. **Exposure Plane** (the OpenAI-compatible API exposed at the gateway) — always identical, regardless of the engine underneath.
 
-This separation is what makes the system modular: you add a new model without touching the gateway, you change engines without touching the client.
+This separation is what makes the system modular: you add a new model without touching the gateway, you upgrade engines without touching the client.
 
 ---
 
 ## 1. Complete Panorama of Model Formats and Their Engines
 
-Do not limit yourself to ONNX. Here is the complete mapping to anticipate in the architecture.
+Here is the complete mapping of supported formats and their engine.
 
 | Format | Typical Use Case | Recommended Open-Source Engine | Why This Engine |
 |---|---|---|---|
 | **Safetensors / BF16-FP16** | Full or half-precision LLMs, large datacenter GPUs | **vLLM** | PagedAttention, continuous batching, highest throughput on server GPUs (A100/H100) |
-| **ONNX (INT4 AWQ, INT8, FP16)** | Converted models, cross-platform portability, native Rust/C++ integration | **ONNX Runtime GenAI** | Lightweight custom server (Rust FFI pattern), cross-platform |
 | **AWQ/GPTQ safetensors** | Quantization, compatible with server GPUs | **vLLM** (native AWQ/GPTQ support) | Avoids re-conversion; vLLM reads these formats directly |
 
 ### Decision Rule (Engine Selection Tree)
 
 ```
-Is the model in ONNX format?
-├── Yes → ONNX Runtime GenAI (lightweight custom server)
-└── No
-    └── Is the model in safetensors/BF16/AWQ/GPTQ?
-        └── Yes → vLLM
+Is the model in safetensors/BF16/AWQ/GPTQ?
+└── Yes → vLLM
 ```
 
 This rule must be **codified in an internal tool** (see section 4.3) rather than left to ad hoc human decision for each new model.
@@ -47,9 +43,7 @@ This rule must be **codified in an internal tool** (see section 4.3) rather than
 ```
 ai-platform/
 ├── charts/
-│   ├── model-serving-vllm/            # generic safetensors/AWQ/GPTQ template
-│   ├── model-serving-onnx-rust/       # generic ONNX template (custom Rust server)
-│   ├── model-serving-engine/          # unified engine chart (vllm/onnxGenai)
+│   ├── model-serving-engine/          # unified vLLM engine chart
 │   ├── bjw-template/                  # common base StatefulSet/PVC/Ingress (Helm dependency)
 │   ├── ai-gateway/                    # Envoy AI Gateway + backends + models + pricing
 │   └── apps/                          # App-of-Apps ArgoCD (ApplicationSet per environment)
@@ -61,7 +55,7 @@ ai-platform/
 ├── models/
 │   ├── registry.yaml                  # declarative registry: name, format, engine, VRAM budget, status
 │   └── <model-name>/
-│       ├── model.md                   # model datasheet (individual sheet, like docs/models/onnx.md)
+│       ├── model.md                   # model datasheet (individual model sheet)
 │       ├── budget.md                  # proven VRAM/CPU budget before deployment
 │       └── eval-report.md             # quality validation results before promotion
 ├── docs/
@@ -112,8 +106,8 @@ Reuse and generalize the already-validated principle:
 |---|---|---|
 | `gpu-h100-pool` | NVIDIA H100 | High-performance LLMs, vLLM |
 | `gpu-a100-pool` | NVIDIA A100 | Standard LLMs, vLLM |
-| `gpu-l4-pool` | NVIDIA L4 | Lightweight inference, ONNX, cost-optimized |
-| `gpu-edge-pool` | Modest GPUs (e.g., A2000, like your home setup) | ONNX small models, PoC |
+| `gpu-l4-pool` | NVIDIA L4 | Lightweight inference, cost-optimized |
+| `gpu-edge-pool` | Modest GPUs (e.g., A2000, like your home setup) | Small models, PoC |
 | `cpu-pool` | CPU only | Preprocessing, gateway, auxiliary services |
 
 Each pool has its own taints/tolerations and `nodeSelector`, ensuring Kueue/Volcano places each workload on hardware matching its cost/performance ratio.
@@ -136,7 +130,7 @@ All these tools are CNCF projects or maintained by hardware vendors themselves �
 
 ### 4.1 Unified Interface Contract
 
-Regardless of the engine (vLLM, ONNX Runtime GenAI), each serving service MUST expose:
+Regardless of the format, each vLLM serving service MUST expose:
 
 - `POST /v1/chat/completions` (OpenAI-compatible) — so the gateway never sees a difference
 - `GET /health` (503 during loading, 200 when ready)
@@ -166,7 +160,7 @@ models:
         priority: 0
 ```
 
-**Why this is the most important decision in the system**: from the end client's perspective, a vLLM safetensors model, an ONNX Runtime GenAI model, and an external SaaS provider (OpenAI, Anthropic) are strictly identical. This allows migrating a model from one engine to another, or switching to a SaaS provider in case of failure, with no client-side change — this is the foundation of long-term robustness.
+**Why this is the most important decision in the system**: from the end client's perspective, a self-hosted vLLM model and an external SaaS provider (OpenAI, Anthropic) are strictly identical. This allows migrating a model from one engine version to another, or switching to a SaaS provider in case of failure, with no client-side change — this is the foundation of long-term robustness.
 
 ### 4.3 Internal Tool `engine-selector`
 
@@ -289,8 +283,8 @@ This is exactly the LGTM stack already present in your architecture (Mimir/Loki/
 
 Systematically prefer:
 - **CNCF graduated** projects (Kubernetes, Prometheus, Envoy, Helm, etc.) over recent tools not governed by a neutral foundation.
-- Model formats **with an established conversion ecosystem** (safetensors, ONNX, AWQ, GPTQ) over proprietary formats from a single vendor.
-- Engines **actively maintained by multiple independent contributors** (vLLM, ONNX Runtime GenAI) over single-maintainer projects.
+- Model formats **with an established conversion ecosystem** (safetensors, AWQ, GPTQ) over proprietary formats from a single vendor.
+- Engines **actively maintained by multiple independent contributors** (vLLM) over single-maintainer projects.
 
 ### 7.2 Living Documentation as a Safeguard
 
@@ -320,7 +314,6 @@ Reuse and systematize the pattern already in place:
 | Orchestration | Kubernetes (Talos for nodes, or k3s for lightweight clusters) | — |
 | GitOps | ArgoCD | Flux (if different multi-tenant pull preference) |
 | Safetensors/AWQ/GPTQ engine | vLLM | TGI |
-| Simple ONNX engine | ONNX Runtime GenAI (custom Rust server) | — |
 | GPU scheduling | Kueue + Volcano + NVIDIA GPU Operator | — |
 | Autoscaling | KEDA + HPA custom metrics | — |
 | Node provisioning | Karpenter | Cluster Autoscaler |
@@ -337,7 +330,7 @@ Reuse and systematize the pattern already in place:
 
 ## 9. Final Model Onboarding Checklist (Generalized, Multi-Format)
 
-1. Identify the model's native format (safetensors, ONNX, AWQ, GPTQ).
+1. Identify the model's native format (safetensors, AWQ, GPTQ).
 2. Run `engine-selector` → gets the recommended engine and generated chart.
 3. Run `vram-budget-calc` → validates that the memory budget is positive on the target GPU pool; reject if negative or if hardware incompatibility (e.g., FP8 on Ampere).
 4. Fill in the model datasheet (`models/<model>/model.md`) with budget, status, context.

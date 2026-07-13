@@ -6,8 +6,8 @@
 |------|----------|----------|
 | `gpu-h100-pool` | NVIDIA H100 | vLLM high-performance |
 | `gpu-a100-pool` | NVIDIA A100 | vLLM standard LLM |
-| `gpu-l4-pool` | NVIDIA L4 | ONNX lightweight inference |
-| `gpu-edge-pool` | GPU modest (RTX A2000) | ONNX small models, PoC |
+| `gpu-l4-pool` | NVIDIA L4 | vLLM lightweight inference |
+| `gpu-edge-pool` | GPU modest (RTX A2000) | vLLM small models, PoC |
 | `cpu-pool` | CPU only | Preprocessing, gateway, auxiliary services |
 
 ## Node Isolation

@@ -2,7 +2,7 @@ models:
   - name: mistral-7b-instruct
     format: safetensors
     engine: vllm
-    chart: model-serving-vllm
+    chart: model-serving-engine
     status: STAGED
     vramBudgetGB: 40.0
     gpuPool: gpu-a100-pool
@@ -15,26 +15,10 @@ models:
     gatewayBackend: mistral-7b-local
     notes: "Staged for A100 (40 GB) deployment, awaiting quota"
 
-  - name: phi-3-mini-instruct
-    format: onnx
-    engine: onnxGenai
-    chart: model-serving-onnx-rust
-    status: LIVE
-    vramBudgetGB: 4.0
-    gpuPool: gpu-l4-pool
-    gpu: "L4"
-    modelSizeGB: 2.2
-    contextLength: 4096
-    layers: 32
-    heads: 32
-    quantisation: int4
-    gatewayBackend: phi3-mini-local
-    notes: "Lightweight model for L4 GPU pool"
-
   - name: llama-3-70b-instruct
     format: safetensors
     engine: vllm
-    chart: model-serving-vllm
+    chart: model-serving-engine
     status: STANDBY
     vramBudgetGB: 80.0
     gpuPool: gpu-h100-pool

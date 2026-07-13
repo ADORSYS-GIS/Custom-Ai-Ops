@@ -2,22 +2,24 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use std::path::Path;
 
+/// Supported model formats — all served by vLLM.
+/// Safetensors is the native format; AWQ and GPTQ are quantisation
+/// variants that vLLM loads natively without conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ModelFormat {
-    Onnx,
     Safetensors,
     Awq,
     Gptq,
-    Gguf,
 }
 
+/// The only supported inference engine in this platform.
+/// vLLM provides PagedAttention, continuous batching, prefix caching,
+/// and native AWQ/GPTQ quantisation support.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Engine {
     Vllm,
-    OnnxRuntimeGenai,
-    LlamaCpp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -58,9 +60,7 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
         .unwrap_or_default();
 
     if is_dir {
-        let has_onnx = walk_extensions(p, &["onnx", "onnx_data"]);
         let has_safetensors = walk_extensions(p, &["safetensors"]);
-        let has_gguf = walk_extensions(p, &["gguf"]);
         let has_awq = walk_extensions(p, &["safetensors"]) && has_awq_config(p);
         let has_gptq = has_gptq_config(p);
 
@@ -70,25 +70,17 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
         if has_gptq {
             return Ok(ModelFormat::Gptq);
         }
-        if has_gguf {
-            return Ok(ModelFormat::Gguf);
-        }
-        if has_onnx {
-            return Ok(ModelFormat::Onnx);
-        }
         if has_safetensors {
             return Ok(ModelFormat::Safetensors);
         }
         return Err(anyhow!(
-            "cannot detect model format in directory: {} — supported formats: ONNX, Safetensors, AWQ, GPTQ, GGUF",
+            "cannot detect model format in directory: {} — supported formats: Safetensors, AWQ, GPTQ",
             path
         ));
     }
 
     match extension.as_str() {
-        "onnx" | "onnx_data" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
-        "gguf" => Ok(ModelFormat::Gguf),
         "bin" => {
             if filename.contains("awq") {
                 Ok(ModelFormat::Awq)
@@ -96,12 +88,12 @@ pub fn detect_format(path: &str) -> Result<ModelFormat> {
                 Ok(ModelFormat::Gptq)
             } else {
                 Err(anyhow!(
-                    "ambiguous .bin file — provide --format explicitly (supported: onnx, safetensors, awq, gptq, gguf)"
+                    "ambiguous .bin file — provide --format explicitly (supported: safetensors, awq, gptq)"
                 ))
             }
         }
         _ => Err(anyhow!(
-            "unsupported model extension '{}' — supported formats: onnx, safetensors, awq, gptq, gguf. Provide --format explicitly",
+            "unsupported model extension '{}' — supported formats: safetensors, awq, gptq. Provide --format explicitly",
             extension
         )),
     }
@@ -155,13 +147,11 @@ fn has_gptq_config(dir: &Path) -> bool {
 
 pub fn parse_format_override(s: &str) -> Result<ModelFormat> {
     match s.to_lowercase().as_str() {
-        "onnx" => Ok(ModelFormat::Onnx),
         "safetensors" => Ok(ModelFormat::Safetensors),
         "awq" => Ok(ModelFormat::Awq),
         "gptq" => Ok(ModelFormat::Gptq),
-        "gguf" => Ok(ModelFormat::Gguf),
         _ => Err(anyhow!(
-            "unknown format override: {} — supported: onnx, safetensors, awq, gptq, gguf",
+            "unknown format override: {} — supported: safetensors, awq, gptq",
             s
         )),
     }
@@ -169,35 +159,23 @@ pub fn parse_format_override(s: &str) -> Result<ModelFormat> {
 
 pub fn select_engine(fmt: ModelFormat) -> (Engine, f64, String, String) {
     match fmt {
-        ModelFormat::Onnx => (
-            Engine::OnnxRuntimeGenai,
-            0.95,
-            "model-serving-onnx-rust".to_string(),
-            "ONNX Runtime GenAI provides native ONNX execution with Rust FFI integration".to_string(),
-        ),
         ModelFormat::Safetensors => (
             Engine::Vllm,
             0.96,
-            "model-serving-vllm".to_string(),
+            "model-serving-engine".to_string(),
             "vLLM offers PagedAttention and continuous batching for maximum throughput on safetensors".to_string(),
         ),
         ModelFormat::Awq => (
             Engine::Vllm,
             0.94,
-            "model-serving-vllm".to_string(),
+            "model-serving-engine".to_string(),
             "vLLM has native AWQ support, avoiding re-conversion from quantised format".to_string(),
         ),
         ModelFormat::Gptq => (
             Engine::Vllm,
             0.93,
-            "model-serving-vllm".to_string(),
-            "vLLM supports GPTQ natively without format conversion".to_string(),
-        ),
-        ModelFormat::Gguf => (
-            Engine::LlamaCpp,
-            0.88,
             "model-serving-engine".to_string(),
-            "llama.cpp is the reference engine for GGUF format — see bible-kv-cache.md §5.3".to_string(),
+            "vLLM supports GPTQ natively without format conversion".to_string(),
         ),
     }
 }
@@ -265,11 +243,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_format_override_onnx() {
-        assert_eq!(parse_format_override("onnx").unwrap(), ModelFormat::Onnx);
-    }
-
-    #[test]
     fn test_parse_format_override_safetensors() {
         assert_eq!(parse_format_override("safetensors").unwrap(), ModelFormat::Safetensors);
     }
@@ -285,30 +258,19 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_format_override_gguf() {
-        assert_eq!(parse_format_override("gguf").unwrap(), ModelFormat::Gguf);
-    }
-
-    #[test]
     fn test_parse_format_override_unknown() {
         assert!(parse_format_override("unknown").is_err());
+        assert!(parse_format_override("onnx").is_err());
+        assert!(parse_format_override("gguf").is_err());
         assert!(parse_format_override("tensorrt").is_err());
         assert!(parse_format_override("pytorch").is_err());
-    }
-
-    #[test]
-    fn test_select_engine_onnx() {
-        let (engine, confidence, chart, _) = select_engine(ModelFormat::Onnx);
-        assert_eq!(engine, Engine::OnnxRuntimeGenai);
-        assert_eq!(chart, "model-serving-onnx-rust");
-        assert!(confidence > 0.9);
     }
 
     #[test]
     fn test_select_engine_safetensors() {
         let (engine, confidence, chart, _) = select_engine(ModelFormat::Safetensors);
         assert_eq!(engine, Engine::Vllm);
-        assert_eq!(chart, "model-serving-vllm");
+        assert_eq!(chart, "model-serving-engine");
         assert!(confidence > 0.9);
     }
 
@@ -316,7 +278,7 @@ mod tests {
     fn test_select_engine_awq() {
         let (engine, confidence, chart, _) = select_engine(ModelFormat::Awq);
         assert_eq!(engine, Engine::Vllm);
-        assert_eq!(chart, "model-serving-vllm");
+        assert_eq!(chart, "model-serving-engine");
         assert!(confidence > 0.9);
     }
 
@@ -324,16 +286,8 @@ mod tests {
     fn test_select_engine_gptq() {
         let (engine, confidence, chart, _) = select_engine(ModelFormat::Gptq);
         assert_eq!(engine, Engine::Vllm);
-        assert_eq!(chart, "model-serving-vllm");
-        assert!(confidence > 0.9);
-    }
-
-    #[test]
-    fn test_select_engine_gguf() {
-        let (engine, confidence, chart, _) = select_engine(ModelFormat::Gguf);
-        assert_eq!(engine, Engine::LlamaCpp);
         assert_eq!(chart, "model-serving-engine");
-        assert!(confidence > 0.8);
+        assert!(confidence > 0.9);
     }
 
     #[test]
@@ -397,34 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_format_gguf_file() {
-        let dir = create_temp_dir();
-        let gguf_path = dir.path().join("model.gguf");
-        fs::write(&gguf_path, "fake gguf data").unwrap();
-        let result = detect_format(gguf_path.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Gguf);
-    }
-
-    #[test]
-    fn test_detect_format_gguf_dir() {
-        let dir = create_temp_dir();
-        let gguf_path = dir.path().join("model.gguf");
-        fs::write(&gguf_path, "fake").unwrap();
-        let model_dir = dir.path().to_path_buf();
-        let result = detect_format(model_dir.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Gguf);
-    }
-
-    #[test]
-    fn test_detect_format_onnx_file() {
-        let dir = create_temp_dir();
-        let onnx_path = dir.path().join("model.onnx");
-        fs::write(&onnx_path, "fake onnx data").unwrap();
-        let result = detect_format(onnx_path.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Onnx);
-    }
-
-    #[test]
     fn test_detect_format_safetensors_file() {
         let dir = create_temp_dir();
         let safetensors_path = dir.path().join("model.safetensors");
@@ -434,13 +360,13 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_format_onnx_dir() {
+    fn test_detect_format_safetensors_dir() {
         let dir = create_temp_dir();
-        let subdir = dir.path().join("model.onnx");
-        fs::write(&subdir, "fake").unwrap();
+        let safetensors_path = dir.path().join("model.safetensors");
+        fs::write(&safetensors_path, "fake").unwrap();
         let model_dir = dir.path().to_path_buf();
         let result = detect_format(model_dir.to_str().unwrap()).unwrap();
-        assert_eq!(result, ModelFormat::Onnx);
+        assert_eq!(result, ModelFormat::Safetensors);
     }
 
     #[test]
@@ -465,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_detect_format_nonexistent_path() {
-        assert!(detect_format("/nonexistent/path/model.onnx").is_err());
+        assert!(detect_format("/nonexistent/path/model.safetensors").is_err());
     }
 
     #[test]
@@ -498,11 +424,9 @@ mod tests {
     #[test]
     fn test_all_format_to_chart_mappings() {
         let formats = vec![
-            (ModelFormat::Onnx, Engine::OnnxRuntimeGenai, "model-serving-onnx-rust"),
-            (ModelFormat::Safetensors, Engine::Vllm, "model-serving-vllm"),
-            (ModelFormat::Awq, Engine::Vllm, "model-serving-vllm"),
-            (ModelFormat::Gptq, Engine::Vllm, "model-serving-vllm"),
-            (ModelFormat::Gguf, Engine::LlamaCpp, "model-serving-engine"),
+            (ModelFormat::Safetensors, Engine::Vllm, "model-serving-engine"),
+            (ModelFormat::Awq, Engine::Vllm, "model-serving-engine"),
+            (ModelFormat::Gptq, Engine::Vllm, "model-serving-engine"),
         ];
         for (fmt, expected_engine, expected_chart) in formats {
             let (engine, _, chart, _) = select_engine(fmt);
