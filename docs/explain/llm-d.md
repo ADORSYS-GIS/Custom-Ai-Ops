@@ -1,253 +1,253 @@
-# llm-d — La Référence Complète
+# llm-d — The Complete Reference
 
-### Inférence distribuée native Kubernetes pour les grands modèles de langage — Théorie, communication interne et mise en œuvre en production
+### Kubernetes-native distributed inference for large language models — Theory, internal communication, and production deployment
 
-> Document de synthèse exhaustif : pourquoi llm-d existe, comment il est architecturé, comment ses composants communiquent réellement entre eux (Kubernetes, ZMQ, HTTP, NIXL/RDMA), comment il s'intègre avec vLLM et LMCache, et comment le déployer concrètement.
-
----
-
-## Table des matières
-
-1. [Résumé exécutif](#1-résumé-exécutif)
-2. [Pourquoi llm-d existe — l'espace du problème](#2-pourquoi-llm-d-existe--lespace-du-problème)
-3. [Identité du projet, gouvernance et timeline](#3-identité-du-projet-gouvernance-et-timeline)
-4. [Vue d'ensemble de l'architecture](#4-vue-densemble-de-larchitecture)
-5. [Le Router llm-d : Proxy + Endpoint Picker (EPP)](#5-le-router-llm-d--proxy--endpoint-picker-epp)
-6. [Le KV-Cache Indexer — anatomie interne](#6-le-kv-cache-indexer--anatomie-interne)
-7. [Comment llm-d communique réellement : les deux plans](#7-comment-llm-d-communique-réellement--les-deux-plans)
-8. [Comment llm-d "parle" à vLLM et LMCache — le plan de contrôle](#8-comment-llm-d-parle-à-vllm-et-lmcache--le-plan-de-contrôle)
-9. [Le cache KV en trois phases — de la mémoire locale à la ressource routable](#9-le-cache-kv-en-trois-phases--de-la-mémoire-locale-à-la-ressource-routable)
-10. [Désagrégation Prefill/Decode (P/D)](#10-désagrégation-prefilldecode-pd)
-11. [Wide Expert Parallelism (pour les modèles MoE)](#11-wide-expert-parallelism-pour-les-modèles-moe)
-12. [Autoscaling piloté par les SLO](#12-autoscaling-piloté-par-les-slo)
-13. [Intégration avec vLLM](#13-intégration-avec-vllm)
-14. [Intégration avec LMCache](#14-intégration-avec-lmcache)
-15. [Support multi-moteurs : SGLang et TensorRT-LLM](#15-support-multi-moteurs--sglang-et-tensorrt-llm)
-16. [Le chemin de données complet, de bout en bout](#16-le-chemin-de-données-complet-de-bout-en-bout)
-17. [Relation avec Kubernetes, KServe, Gateway API et LeaderWorkerSet](#17-relation-avec-kubernetes-kserve-gateway-api-et-leaderworkerset)
-18. [Mise en œuvre concrète : prérequis et préparation du cluster](#18-mise-en-œuvre-concrète--prérequis-et-préparation-du-cluster)
-19. [Mise en œuvre concrète : déployer les "Well-Lit Paths"](#19-mise-en-œuvre-concrète--déployer-les-well-lit-paths)
-20. [Mise en œuvre concrète : configurer le service désagrégé avec LMCache + NIXL](#20-mise-en-œuvre-concrète--configurer-le-service-désagrégé-avec-lmcache--nixl)
-21. [Observabilité : métriques et tableaux de bord](#21-observabilité--métriques-et-tableaux-de-bord)
-22. [Considérations opérationnelles, limites et risques](#22-considérations-opérationnelles-limites-et-risques)
-23. [Framework de décision : quand adopter llm-d](#23-framework-de-décision--quand-adopter-llm-d)
-24. [Glossaire](#24-glossaire)
-25. [Sources primaires](#25-sources-primaires)
+> Exhaustive synthesis document: why llm-d exists, how it is architected, how its components actually communicate (Kubernetes, ZMQ, HTTP, NIXL/RDMA), how it integrates with vLLM and LMCache, and how to deploy it concretely.
 
 ---
 
-## 1. Résumé exécutif
+## Table of Contents
 
-**llm-d** est une pile d'inférence distribuée, native Kubernetes et orientée haute performance, pour servir des grands modèles de langage (LLM) en production.
+1. [Executive Summary](#1-executive-summary)
+2. [Why llm-d Exists — The Problem Space](#2-why-llm-d-exists--the-problem-space)
+3. [Project Identity, Governance, and Timeline](#3-project-identity-governance-and-timeline)
+4. [Architecture Overview](#4-architecture-overview)
+5. [The llm-d Router: Proxy + Endpoint Picker (EPP)](#5-the-llm-d-router--proxy--endpoint-picker-epp)
+6. [The KV-Cache Indexer — Internal Anatomy](#6-the-kv-cache-indexer--internal-anatomy)
+7. [How llm-d Actually Communicates: The Two Planes](#7-how-llm-d-actually-communicates--the-two-planes)
+8. [How llm-d "Talks" to vLLM and LMCache — The Control Plane](#8-how-llm-d-talks-to-vllm-and-lmcache--the-control-plane)
+9. [The KV Cache in Three Phases — From Local Memory to a Routable Resource](#9-the-kv-cache-in-three-phases--from-local-memory-to-a-routable-resource)
+10. [Prefill/Decode Disaggregation (P/D)](#10-prefilldecode-disaggregation-pd)
+11. [Wide Expert Parallelism (for MoE Models)](#11-wide-expert-parallelism-for-moe-models)
+12. [SLO-Driven Autoscaling](#12-slo-driven-autoscaling)
+13. [Integration with vLLM](#13-integration-with-vllm)
+14. [Integration with LMCache](#14-integration-with-lmcache)
+15. [Multi-Engine Support: SGLang and TensorRT-LLM](#15-multi-engine-support--sglang-and-tensorrt-llm)
+16. [The Complete End-to-End Data Path](#16-the-complete-end-to-end-data-path)
+17. [Relationship with Kubernetes, KServe, Gateway API, and LeaderWorkerSet](#17-relationship-with-kubernetes-kserve-gateway-api-and-leaderworkerset)
+18. [Concrete Implementation: Prerequisites and Cluster Preparation](#18-concrete-implementation--prerequisites-and-cluster-preparation)
+19. [Concrete Implementation: Deploying the "Well-Lit Paths"](#19-concrete-implementation--deploying-the-well-lit-paths)
+20. [Concrete Implementation: Configuring the Disaggregated Service with LMCache + NIXL](#20-concrete-implementation--configuring-the-disaggregated-service-with-lmcache--nixl)
+21. [Observability: Metrics and Dashboards](#21-observability--metrics-and-dashboards)
+22. [Operational Considerations, Limitations, and Risks](#22-operational-considerations-limitations-and-risks)
+23. [Decision Framework: When to Adopt llm-d](#23-decision-framework--when-to-adopt-llm-d)
+24. [Glossary](#24-glossary)
+25. [Primary Sources](#25-primary-sources)
 
-Deux choses importantes à clarifier d'emblée :
+---
 
-- llm-d **n'est pas** un moteur de serving de modèles — il ne remplace ni vLLM ni SGLang.
-- llm-d **n'est pas** une plateforme MLOps complète — il ne remplace pas KServe.
+## 1. Executive Summary
 
-llm-d est une **couche d'orchestration middleware** qui se place entre un plan de contrôle Kubernetes-natif (KServe, ou une simple Gateway) et un ou plusieurs moteurs de serving (principalement vLLM), et qui fait de ces moteurs un système distribué unique, conscient du cache et piloté par les SLO.
+**llm-d** is a Kubernetes-native, high-performance distributed inference stack for serving large language models (LLMs) in production.
 
-### Les quatre piliers de capacités
+Two important clarifications up front:
 
-| Pilier | Ce qu'il apporte |
+- llm-d **is not** a model serving engine — it does not replace vLLM or SGLang.
+- llm-d **is not** a complete MLOps platform — it does not replace KServe.
+
+llm-d is a **middleware orchestration layer** that sits between a Kubernetes-native control plane (KServe, or a simple Gateway) and one or more serving engines (primarily vLLM), and turns those engines into a single, cache-aware, SLO-driven distributed system.
+
+### The Four Capability Pillars
+
+| Pillar | What It Provides |
 |---|---|
-| **Routage intelligent** | Achemine chaque requête vers la réplique la plus susceptible d'avoir déjà les blocs de KV-cache pertinents, au lieu d'un round-robin ou d'un sticky-routing aveugle. |
-| **Serving désagrégé** | Sépare la phase de *prefill* (compute-bound) de la phase de *decode* (memory-bandwidth-bound) sur des pods indépendamment scalables. |
-| **Gestion du KV-cache** | Maintient un index quasi temps réel de la localisation des blocs de cache, et peut hiérarchiser le stockage du cache entre HBM GPU, RAM CPU, et stockage local/distant. |
-| **Excellence opérationnelle** | Autoscaling piloté par les SLO, contrôle de flux pour l'équité multi-tenant, et traitement par batch compatible OpenAI. |
+| **Intelligent routing** | Routes each request to the replica most likely to already hold the relevant KV-cache blocks, instead of blind round-robin or sticky routing. |
+| **Disaggregated serving** | Separates the *prefill* phase (compute-bound) from the *decode* phase (memory-bandwidth-bound) onto independently scalable pods. |
+| **KV-cache management** | Maintains a near-real-time index of cache block locations, and can tier cache storage across GPU HBM, CPU RAM, and local/remote storage. |
+| **Operational excellence** | SLO-driven autoscaling, multi-tenant flow control, and OpenAI-compatible batch processing. |
 
-llm-d a été lancé par **Red Hat** en mai 2025, avec comme contributeurs fondateurs **Google Cloud, IBM Research, CoreWeave et NVIDIA**, puis rejoint par **AMD, Cisco, Hugging Face, Intel, Lambda et Mistral AI**, ainsi que des soutiens académiques (UC Berkeley, University of Chicago). En **mars 2026**, lors de KubeCon Europe (Amsterdam), le projet a été donné à la **Cloud Native Computing Foundation (CNCF)** en tant que projet **Sandbox** — le stade de maturité le plus précoce des trois niveaux CNCF (Sandbox → Incubating → Graduated).
+llm-d was launched by **Red Hat** in May 2025, with founding contributors **Google Cloud, IBM Research, CoreWeave, and NVIDIA**, later joined by **AMD, Cisco, Hugging Face, Intel, Lambda, and Mistral AI**, along with academic backing (UC Berkeley, University of Chicago). In **March 2026**, at KubeCon Europe (Amsterdam), the project was donated to the **Cloud Native Computing Foundation (CNCF)** as a **Sandbox** project — the earliest of the three CNCF maturity levels (Sandbox → Incubating → Graduated).
 
 ```mermaid
 mindmap
   root((llm-d))
-    Routage intelligent
+    Intelligent routing
       EPP Endpoint Picker
       Prefix-cache scoring
       Session affinity
-    Serving désagrégé
+    Disaggregated serving
       Prefill workers
       Decode workers
       NIXL / RDMA
-    Gestion du KV-cache
+    KV-cache management
       KV-Cache Indexer
       Tiering HBM/DRAM/SSD
       LMCache
-    Excellence opérationnelle
-      Autoscaling SLO-aware
+    Operational excellence
+      SLO-aware autoscaling
       Flow control
-      Batch API OpenAI-compatible
+      OpenAI-compatible batch API
 ```
 
 ---
 
-## 2. Pourquoi llm-d existe — l'espace du problème
+## 2. Why llm-d Exists — The Problem Space
 
-Les requêtes d'inférence LLM sont fondamentalement différentes des requêtes HTTP classiques sans état, et les patterns génériques de répartition de charge les gèrent mal.
+LLM inference requests are fundamentally different from stateless HTTP requests, and generic load-balancing patterns handle them poorly.
 
-### 2.1 Les requêtes LLM ont un état caché
+### 2.1 LLM Requests Carry Hidden State
 
-Chaque requête transporte un état invisible : le **KV-cache** (les tenseurs clé/valeur produits par les couches d'attention en traitant le prompt). Si une requête suivante réutilise une partie d'un prompt déjà vu (un system prompt, un long contexte RAG, une conversation multi-tours) et qu'elle est routée vers une réplique qui possède déjà les blocs de cache correspondants, le moteur peut **sauter entièrement le recalcul**. Si elle est routée vers une réplique "froide", les mêmes tokens doivent être retraités depuis zéro.
+Every request carries invisible state: the **KV-cache** (the key/value tensors produced by attention layers while processing the prompt). If a subsequent request reuses part of a previously seen prompt (a system prompt, a long RAG context, a multi-turn conversation) and it is routed to a replica that already holds the corresponding cache blocks, the engine can **skip the recalculation entirely**. If it is routed to a "cold" replica, the same tokens must be reprocessed from scratch.
 
-### 2.2 Les requêtes sont coûteuses et très variables
+### 2.2 Requests Are Expensive and Highly Variable
 
-Une seule requête peut occuper un GPU pendant plusieurs secondes et consommer des milliers de tokens. Le ratio tokens d'entrée / tokens de sortie varie énormément : un tour de chat court et une requête RAG de 8K tokens imposent des charges radicalement différentes à l'accélérateur.
+A single request can occupy a GPU for several seconds and consume thousands of tokens. The input-token to output-token ratio varies enormously: a short chat turn and an 8K-token RAG query impose radically different loads on the accelerator.
 
-### 2.3 Prefill et decode ont des profils de performance opposés
+### 2.3 Prefill and Decode Have Opposite Performance Profiles
 
-- **Prefill** (traitement du prompt) : *compute-bound* — sature les FLOPs du GPU.
-- **Decode** (génération token par token) : *memory-bandwidth-bound* — limité par la vitesse de transfert entre HBM et cœurs de calcul.
+- **Prefill** (processing the prompt): *compute-bound* — saturates the GPU's FLOPs.
+- **Decode** (generating tokens one by one): *memory-bandwidth-bound* — limited by the transfer speed between HBM and compute cores.
 
-Faire tourner les deux phases sur le même GPU signifie qu'aucune des deux n'est utilisée de façon optimale, et qu'un long prefill pour un utilisateur peut bloquer la latence de decode de tous les autres utilisateurs concurrents sur ce pod.
+Running both phases on the same GPU means neither is used optimally, and a long prefill for one user can block the decode latency of all other concurrent users on that pod.
 
-### 2.4 Round-robin et sticky routing sont aveugles au cache
+### 2.4 Round-Robin and Sticky Routing Are Cache-Blind
 
-Le load balancing des Services Kubernetes et le routage sticky-session L7 classique n'ont aucune notion de localité du KV-cache, de profondeur de file par réplique, ou de coût par requête. Ils ne peuvent pas répondre à la question qui compte le plus pour l'efficacité de l'inférence : *"quelle réplique a déjà le cache pertinent ?"*
+Kubernetes Service load balancing and classic L7 sticky-session routing have no notion of KV-cache locality, per-replica queue depth, or per-request cost. They cannot answer the question that matters most for inference efficiency: *"which replica already has the relevant cache?"*
 
-### 2.5 La réponse de llm-d
+### 2.5 llm-d's Answer
 
-L'objectif affiché de llm-d est de fournir un **"well-lit path"** — un plan éprouvé, benchmarké et reproductible — pour que n'importe quelle organisation puisse adopter les optimisations d'inférence distribuée de pointe (routage conscient du cache, désagrégation, parallélisme expert large) sur son infrastructure Kubernetes existante, à travers les accélérateurs NVIDIA, AMD, Intel et TPU, sans avoir à inventer cette infrastructure elle-même.
+llm-d's stated goal is to provide a **"well-lit path"** — a proven, benchmarked, reproducible plan — so that any organization can adopt cutting-edge distributed inference optimizations (cache-aware routing, disaggregation, wide expert parallelism) on their existing Kubernetes infrastructure, across NVIDIA, AMD, Intel, and TPU accelerators, without having to invent that infrastructure themselves.
 
 ```mermaid
 flowchart TB
-    P1["Requêtes avec état caché<br/>(KV-cache)"] --> Prob[Le problème]
-    P2["Requêtes coûteuses<br/>et hétérogènes"] --> Prob
+    P1["Requests with hidden state<br/>(KV-cache)"] --> Prob[The Problem]
+    P2["Expensive, heterogeneous<br/>requests"] --> Prob
     P3["Prefill compute-bound<br/>vs Decode memory-bound"] --> Prob
-    P4["Routage classique<br/>aveugle au cache"] --> Prob
-    Prob --> Sol["llm-d : routage conscient du cache<br/>+ désagrégation + autoscaling SLO"]
+    P4["Classical routing<br/>cache-blind"] --> Prob
+    Prob --> Sol["llm-d: cache-aware routing<br/>+ disaggregation + SLO autoscaling"]
 ```
 
 ---
 
-## 3. Identité du projet, gouvernance et timeline
+## 3. Project Identity, Governance, and Timeline
 
-| Fait | Détail |
+| Fact | Detail |
 |---|---|
-| Organisation fondatrice | Red Hat (annonce initiale, Red Hat Summit, mai 2025) |
-| Contributeurs fondateurs | Red Hat, Google Cloud, IBM Research, CoreWeave, NVIDIA |
-| Partenaires arrivés ensuite | AMD, Cisco, Hugging Face, Intel, Lambda, Mistral AI |
-| Soutiens académiques | UC Berkeley, University of Chicago |
-| Statut CNCF | Sandbox, accepté en mars 2026 à KubeCon Europe (Amsterdam) |
-| Licence | Apache 2.0 |
-| Dépôts | `github.com/llm-d/llm-d` (core), plus dépôts séparés : `llm-d-router`, `llm-d-inference-scheduler`, `llm-d-kv-cache-manager`, `llm-d-benchmark`, `llm-d-deployer`, etc. |
-| Projets CNCF adjacents | KServe, Gateway API Inference Extension (GAIE), Volcano (via son sous-projet Kthena), KAITO |
+| Founding organization | Red Hat (initial announcement, Red Hat Summit, May 2025) |
+| Founding contributors | Red Hat, Google Cloud, IBM Research, CoreWeave, NVIDIA |
+| Later partners | AMD, Cisco, Hugging Face, Intel, Lambda, Mistral AI |
+| Academic backers | UC Berkeley, University of Chicago |
+| CNCF status | Sandbox, accepted March 2026 at KubeCon Europe (Amsterdam) |
+| License | Apache 2.0 |
+| Repositories | `github.com/llm-d/llm-d` (core), plus separate repos: `llm-d-router`, `llm-d-inference-scheduler`, `llm-d-kv-cache-manager`, `llm-d-benchmark`, `llm-d-deployer`, etc. |
+| Adjacent CNCF projects | KServe, Gateway API Inference Extension (GAIE), Volcano (via its Kthena subproject), KAITO |
 
-**Nuance importante pour la planification** : CNCF Sandbox est le plus précoce des trois niveaux de maturité CNCF (Sandbox → Incubating → Graduated). Cela signale une légitimité et une gouvernance neutre vis-à-vis des vendeurs, mais **ne garantit explicitement pas** de stabilité de production. La documentation du projet recommande systématiquement de valider les performances et la correction en staging avant de déployer llm-d en production, et il faut s'attendre à des changements d'API cassants entre releases tant qu'il reste en Sandbox.
+**Important planning nuance**: CNCF Sandbox is the earliest of the three CNCF maturity levels (Sandbox → Incubating → Graduated). This signals legitimacy and vendor-neutral governance, but **explicitly does not guarantee** production stability. The project's documentation consistently recommends validating performance and correctness in staging before deploying llm-d to production, and breaking API changes between releases should be expected while it remains in Sandbox.
 
-**Note de terminologie** : le composant appelé "Inference Scheduler" dans la proposition fondatrice s'appelle aujourd'hui le **llm-d Router**, composé d'un **Proxy** et d'un **Endpoint Picker (EPP)**.
+**Terminology note**: The component called "Inference Scheduler" in the founding proposal is now called the **llm-d Router**, composed of a **Proxy** and an **Endpoint Picker (EPP)**.
 
 ```mermaid
 timeline
-    title Chronologie de llm-d
-    Mai 2025 : Lancement par Red Hat (Red Hat Summit)
-             : Contributeurs fondateurs Google Cloud, IBM Research, CoreWeave, NVIDIA
-    2025-2026 : Extension à AMD, Cisco, Hugging Face, Intel, Lambda, Mistral AI
-    Release 0.3 : Routage à latence prédite, benchmarks Wide EP
-    Mars 2026 : Donation à la CNCF en tant que projet Sandbox (KubeCon Europe, Amsterdam)
+    title llm-d Timeline
+    May 2025 : Launch by Red Hat (Red Hat Summit)
+             : Founding contributors Google Cloud, IBM Research, CoreWeave, NVIDIA
+    2025-2026 : Extension to AMD, Cisco, Hugging Face, Intel, Lambda, Mistral AI
+    Release 0.3 : Predicted-latency routing, Wide EP benchmarks
+    March 2026 : Donation to CNCF as Sandbox project (KubeCon Europe, Amsterdam)
 ```
 
 ---
 
-## 4. Vue d'ensemble de l'architecture
+## 4. Architecture Overview
 
-Au plus haut niveau, llm-d transforme un cluster Kubernetes en une fabrique d'inférence coordonnée avec trois briques architecturales :
+At the highest level, llm-d transforms a Kubernetes cluster into a coordinated inference factory with three architectural building blocks:
 
-1. **Le Router** (Proxy + Endpoint Picker) — le point d'entrée intelligent.
-2. **L'InferencePool** — une Custom Resource Kubernetes représentant un groupe logique et découvrable de pods de serving de modèles servant le même modèle.
-3. **Les Model Servers** — les moteurs d'inférence réels (principalement vLLM, aussi SGLang), qui exposent les métriques et les événements de KV-cache dont dépend le Router.
+1. **The Router** (Proxy + Endpoint Picker) — the intelligent entry point.
+2. **The InferencePool** — a Kubernetes Custom Resource representing a logical, discoverable group of model-serving pods serving the same model.
+3. **The Model Servers** — the actual inference engines (primarily vLLM, also SGLang), which expose the metrics and KV-cache events the Router depends on.
 
 ```mermaid
 flowchart TB
-    Client([Requête client]) --> GW[Gateway<br/>Envoy / Istio / GKE Gateway]
-    GW -->|callback ext-proc| EPP[Endpoint Picker EPP<br/>cerveau de scheduling]
-    EPP -->|interroge| Indexer[KV-Cache Indexer<br/>carte globale des blocs de cache]
-    EPP -->|lit les métriques| Pool[InferencePool CRD<br/>découvre les réplicas]
+    Client([Client request]) --> GW[Gateway<br/>Envoy / Istio / GKE Gateway]
+    GW -->|ext-proc callback| EPP[Endpoint Picker EPP<br/>scheduling brain]
+    EPP -->|queries| Indexer[KV-Cache Indexer<br/>global cache block map]
+    EPP -->|reads metrics| Pool[InferencePool CRD<br/>discovers replicas]
 
-    subgraph Pool_Members["Réplicas de serveur de modèle"]
+    subgraph Pool_Members["Model server replicas"]
         V1[Pod vLLM A<br/>+ LMCache]
         V2[Pod vLLM B<br/>+ LMCache]
         V3[Pod vLLM C<br/>+ LMCache]
     end
 
     Pool --> Pool_Members
-    Indexer -.événements KV / métriques.-> Pool_Members
-    EPP -->|sélectionne le meilleur pod| GW
-    GW -->|forwarde la requête| V1
-    V1 -->|flux de tokens| GW
+    Indexer -.KV events / metrics.-> Pool_Members
+    EPP -->|selects best pod| GW
+    GW -->|forwards request| V1
+    V1 -->|token stream| GW
     GW --> Client
 ```
 
-Le système est conçu pour une **adoption incrémentale** : une équipe peut commencer par déployer uniquement le Router avec routage conscient du cache sur son pool vLLM existant (aucun prérequis réseau au-delà d'un réseau de cluster normal), et ne superposer que plus tard la désagrégation prefill/decode (qui exige un interconnect haute performance) et le parallélisme expert large.
+The system is designed for **incremental adoption**: a team can start by deploying only the Router with cache-aware routing on their existing vLLM pool (no network prerequisite beyond normal cluster networking), and only later layer on prefill/decode disaggregation (which requires a high-performance interconnect) and wide expert parallelism.
 
 ---
 
-## 5. Le Router llm-d : Proxy + Endpoint Picker (EPP)
+## 5. The llm-d Router: Proxy + Endpoint Picker (EPP)
 
-### 5.1 Rôle du Proxy
+### 5.1 Role of the Proxy
 
-Le **Proxy** est le composant du plan de données (généralement Envoy, ou une passerelle basée sur Envoy comme Istio ou la GKE Inference Gateway). Il termine les connexions client et, pour chaque requête d'inférence, appelle l'Endpoint Picker via le protocole *external processing* (ext-proc) d'Envoy avant de décider où transférer la requête.
+The **Proxy** is the data-plane component (typically Envoy, or an Envoy-based gateway like Istio or the GKE Inference Gateway). It terminates client connections and, for each inference request, calls the Endpoint Picker via Envoy's *external processing* (ext-proc) protocol before deciding where to forward the request.
 
-### 5.2 Rôle de l'Endpoint Picker (EPP)
+### 5.2 Role of the Endpoint Picker (EPP)
 
-L'EPP est le véritable "cerveau" de décision. Il implémente le **Endpoint Picker Protocol**, qui fait partie de la **Gateway API Inference Extension (GAIE)**, un effort du SIG-Network de Kubernetes dont llm-d est une implémentation de référence principale. L'EPP évalue l'état courant de l'InferencePool et exécute un pipeline de scheduling en quatre étapes, entièrement pluggable :
+The EPP is the actual decision-making "brain." It implements the **Endpoint Picker Protocol**, which is part of the **Gateway API Inference Extension (GAIE)**, a Kubernetes SIG-Network effort for which llm-d is a primary reference implementation. The EPP evaluates the current state of the InferencePool and runs a fully pluggable four-step scheduling pipeline:
 
 ```mermaid
 flowchart LR
-    A["1. Discover<br/>Énumère les pods de l'InferencePool,<br/>collecte profondeur de file,<br/>modèle chargé, contenu du KV-cache<br/>via Prometheus + KV-Events"] --> B["2. Filter<br/>Élimine les pods surchargés,<br/>manquant de mémoire,<br/>mauvaise variante de modèle"]
-    B --> C["3. Score<br/>Exécute des scorers en parallèle :<br/>score de hit prefix-cache,<br/>score d'affinité de session,<br/>score de charge"]
-    C --> D["4. Select<br/>le max-score-picker choisit<br/>le pod avec le meilleur score"]
+    A["1. Discover<br/>Enumerate InferencePool pods,<br/>collect queue depth,<br/>loaded model, KV-cache contents<br/>via Prometheus + KV-Events"] --> B["2. Filter<br/>Eliminate overloaded pods,<br/>out of memory,<br/>wrong model variant"]
+    B --> C["3. Score<br/>Run scorers in parallel:<br/>prefix-cache hit score,<br/>session affinity score,<br/>load score"]
+    C --> D["4. Select<br/>max-score-picker chooses<br/>the pod with the best score"]
 ```
 
-### 5.3 Anatomie interne du Scheduler et des plugins
+### 5.3 Internal Anatomy of the Scheduler and Plugins
 
-Le **Scheduler** est un composant hautement modulaire au sein de l'EPP, basé sur une architecture à plugins. Le cycle complet de scheduling est le suivant :
+The **Scheduler** is a highly modular component within the EPP, built on a plugin architecture. The complete scheduling cycle is as follows:
 
-- **ProfilePicker** : sélectionne quels profils de scheduling exécuter (par exemple `decode-profile`, `prefill-profile`).
-- **Filters** : réduisent la liste des endpoints candidats.
-- **Scorers** : notent chaque endpoint candidat restant.
-- **Picker** : sélectionne le meilleur endpoint selon les scores.
+- **ProfilePicker**: selects which scheduling profiles to run (e.g., `decode-profile`, `prefill-profile`).
+- **Filters**: narrow down the list of candidate endpoints.
+- **Scorers**: score each remaining candidate endpoint.
+- **Picker**: selects the best endpoint based on the scores.
 
 ```mermaid
 flowchart TD
-    Req[Requête d'inférence] --> S[Scheduler.Schedule]
-    subgraph Cycle["Cycle de Scheduling"]
+    Req[Inference request] --> S[Scheduler.Schedule]
+    subgraph Cycle["Scheduling Cycle"]
         S --> Pick[ProfileHandler.Pick]
-        Pick -->|Pour chaque Profile| Loop
-        subgraph Exec["Exécution du Profile"]
+        Pick -->|For each Profile| Loop
+        subgraph Exec["Profile Execution"]
             Loop --> Filters[Filters]
             Filters --> Scorers[Scorers]
             Scorers --> Picker[Picker]
             Picker --> Result[ProfileResult]
         end
-        Result -->|Collecte| Pick
-        Pick -->|Terminé| PRs[ProfileHandler.ProcessResults]
+        Result -->|Collect| Pick
+        Pick -->|Done| PRs[ProfileHandler.ProcessResults]
     end
-    PRs --> Target["Endpoint(s) sélectionné(s)"]
+    PRs --> Target["Selected endpoint(s)"]
 ```
 
-Cette architecture par profils est ce qui permet à un même EPP de gérer aussi bien le routage simple (un seul profil) que la désagrégation P/D (deux profils, `decode` puis conditionnellement `prefill`, voir Section 10).
+This profile-based architecture is what allows a single EPP to handle both simple routing (one profile) and P/D disaggregation (two profiles, `decode` then conditionally `prefill`, see Section 10).
 
-### 5.4 Signaux de scheduling clés
+### 5.4 Key Scheduling Signals
 
-Selon la configuration, l'EPP peut combiner les signaux suivants :
+Depending on configuration, the EPP can combine the following signals:
 
-- **Localité du prefix-cache** — ce pod détient-il déjà les blocs de KV-cache pour le préfixe de ce prompt ?
-- **Utilisation du KV-cache** — quelle marge de cache reste-t-il à chaque pod candidat ?
-- **Profondeur de file / requêtes en vol** — à quel point chaque pod est-il actuellement engorgé ?
-- **Rôle prefill vs. decode** — dans les déploiements désagrégés, des filtres comme `prefill-filter` / `decode-filter` restreignent les candidats au bon pool.
-- **Affinité de session** — utile pour les conversations multi-tours même sans indexation complète du prefix-cache.
-- **Latence prédite** (expérimental depuis la release 0.3) — un scorer basé sur la prédiction de latence, qui a montré jusqu'à 3x d'amélioration de la latence P90 pour les charges à long prefill dans les benchmarks propres de llm-d.
+- **Prefix-cache locality** — does this pod already hold the KV-cache blocks for this prompt's prefix?
+- **KV-cache utilization** — how much cache headroom remains at each candidate pod?
+- **Queue depth / in-flight requests** — how backed up is each pod right now?
+- **Prefill vs. decode role** — in disaggregated deployments, filters like `prefill-filter` / `decode-filter` restrict candidates to the correct pool.
+- **Session affinity** — useful for multi-turn conversations even without full prefix-cache indexing.
+- **Predicted latency** (experimental since release 0.3) — a latency-prediction-based scorer that has shown up to 3x improvement in P90 latency for long-prefill workloads in llm-d's own benchmarks.
 
-### 5.5 Routage précis vs. heuristique du prefix-cache
+### 5.5 Precise vs. Heuristic Prefix-Cache Routing
 
-llm-d supporte deux niveaux de conscience du cache :
+llm-d supports two levels of cache awareness:
 
-- **Routage heuristique** : approxime la localité du cache (par exemple via un hachage cohérent du préfixe du prompt et l'historique de routage récent) sans interroger l'état réel du cache. Moins coûteux, fidélité plus faible.
-- **Routage précis** : interroge le KV-Cache Indexer pour une vue quasi temps réel de quels blocs sont sur quel pod, permettant des décisions exactes maximisant les hits de cache. Fidélité plus haute, plus d'infrastructure à faire tourner.
+- **Heuristic routing**: approximates cache locality (e.g., via consistent hashing of the prompt prefix and recent routing history) without querying actual cache state. Lower cost, lower fidelity.
+- **Precise routing**: queries the KV-Cache Indexer for a near-real-time view of which blocks are on which pod, enabling exact decisions that maximize cache hits. Higher fidelity, more infrastructure to operate.
 
-### 5.6 InferencePool et CRD associées
+### 5.6 InferencePool and Associated CRDs
 
-L'**InferencePool** est une custom resource de la Gateway API Inference Extension qui regroupe les réplicas servant un même modèle et les relie à un EPP :
+The **InferencePool** is a Gateway API Inference Extension custom resource that groups replicas serving the same model and connects them to an EPP:
 
 ```yaml
 apiVersion: inference.networking.x-k8s.io/v1alpha2
@@ -264,358 +264,358 @@ spec:
       name: llm-d-epp
 ```
 
-Deux ressources compagnes affinent le comportement de l'EPP :
+Two companion resources refine the EPP's behavior:
 
-- **InferenceObjective** — configure les objectifs de scheduling pour une classe de requêtes (niveau de priorité, cible de performance).
-- **InferenceModelRewrite** — permet l'aliasing/réécriture du nom de modèle au niveau du routage.
+- **InferenceObjective** — configures scheduling objectives for a class of requests (priority level, performance target).
+- **InferenceModelRewrite** — enables model name aliasing/rewriting at the routing layer.
 
 ---
 
-## 6. Le KV-Cache Indexer — anatomie interne
+## 6. The KV-Cache Indexer — Internal Anatomy
 
-### 6.1 Pourquoi le cache est le levier le plus puissant
+### 6.1 Why Cache Is the Most Powerful Lever
 
-Un hit de cache permet au moteur de sauter entièrement le recalcul de l'attention sur le préfixe partagé. Un miss signifie un recalcul complet. C'est pourquoi le routage conscient du cache est constamment cité par le projet et ses adoptants comme **la capacité la plus mature et à plus fort effet de levier** de llm-d — elle ne nécessite aucun matériel réseau spécial et délivre la majorité des gains de latence et de débit atteignables.
+A cache hit lets the engine skip the entire recalculation of attention over the shared prefix. A miss means a full recalculation. This is why cache-aware routing is consistently cited by the project and its adopters as **the most mature and highest-leverage capability** of llm-d — it requires no special network hardware and delivers the majority of the achievable latency and throughput gains.
 
-### 6.2 Modules internes de l'Indexeur
+### 6.2 Internal Modules of the Indexer
 
-L'**Index** est une bibliothèque Go qui maintient une vue globalement cohérente de la résidence des blocs de cache à travers le cluster. Il est composé de plusieurs modules :
+The **Index** is a Go library that maintains a globally consistent view of cache block residency across the cluster. It is composed of several modules:
 
-| Module | Objectif |
+| Module | Purpose |
 |---|---|
-| `kvcache.Indexer` | Orchestrateur global |
-| `kvblock.TokenProcessor` | Conversion des tokens en clés de blocs (hachage) |
-| `kvblock.Scorer` | Calcul du score de hit de cache par pod |
-| `kvblock.Index` | Structure d'index des blocs |
-| `kvevents.Pool` | Consommation des événements ZMQ émis par les pods |
+| `kvcache.Indexer` | Global orchestrator |
+| `kvblock.TokenProcessor` | Converts tokens to block keys (hashing) |
+| `kvblock.Scorer` | Computes per-pod cache hit scores |
+| `kvblock.Index` | Block index data structure |
+| `kvevents.Pool` | Consumes ZMQ events emitted by pods |
 
 ```mermaid
 flowchart TB
-    subgraph Indexer["KV-Cache Indexer (bibliothèque Go)"]
-        TP[kvblock.TokenProcessor<br/>tokens → clés de blocs]
-        POOL[kvevents.Pool<br/>consommateur ZMQ]
-        IDX[kvblock.Index<br/>structure d'index]
-        SC[kvblock.Scorer<br/>score par pod]
-        ORCH[kvcache.Indexer<br/>orchestrateur]
+    subgraph Indexer["KV-Cache Indexer (Go library)"]
+        TP[kvblock.TokenProcessor<br/>tokens → block keys]
+        POOL[kvevents.Pool<br/>ZMQ subscriber]
+        IDX[kvblock.Index<br/>index structure]
+        SC[kvblock.Scorer<br/>per-pod score]
+        ORCH[kvcache.Indexer<br/>orchestrator]
     end
     POOL --> IDX
     TP --> SC
     IDX --> SC
     SC --> ORCH
-    ORCH -->|réponse au scoring| EPP[EPP]
+    ORCH -->|scoring response| EPP[EPP]
 ```
 
-### 6.3 Types d'événements KV
+### 6.3 KV Event Types
 
-Les serveurs de modèles publient trois types d'événements vers l'Indexeur :
+Model servers publish three types of events to the Indexer:
 
-| Événement | Description |
+| Event | Description |
 |---|---|
-| `BlockStored` | Un bloc de cache est créé sur un tier de stockage spécifique |
-| `BlockRemoved` | Un bloc est évincé d'un tier |
-| `AllBlocksCleared` | Le cache entier du pod est vidé (reset complet) |
+| `BlockStored` | A cache block is created on a specific storage tier |
+| `BlockRemoved` | A block is evicted from a tier |
+| `AllBlocksCleared` | The pod's entire cache is cleared (full reset) |
 
-### 6.4 Modes de livraison des événements
+### 6.4 Event Delivery Modes
 
-1. **Centralisé** : chaque pod se connecte à un unique endpoint hébergé par l'EPP.
-2. **Découverte de pods** : chaque pod bind son propre socket ZMQ ; l'EPP découvre les pods via l'API Kubernetes et s'abonne à chacun indépendamment (mode le plus courant en production, voir Section 7).
+1. **Centralized**: each pod connects to a single endpoint hosted by the EPP.
+2. **Pod discovery**: each pod binds its own ZMQ socket; the EPP discovers pods via the Kubernetes API and subscribes to each independently (the most common mode in production, see Section 7).
 
-### 6.5 Offloading hiérarchique / multi-tier
+### 6.5 Hierarchical / Multi-Tier Offloading
 
-La HBM du GPU est rare et coûteuse. llm-d (largement via LMCache, voir Section 14) supporte une hiérarchie de cache à plusieurs niveaux :
+GPU HBM is scarce and expensive. llm-d (largely via LMCache, see Section 14) supports a multi-level cache hierarchy:
 
 ```mermaid
 flowchart TB
-    HBM["GPU HBM (chaud)<br/>le plus rapide, le plus limité"] --> DRAM["CPU DRAM (tiède)<br/>plus grand, encore rapide"]
-    DRAM --> SSD["SSD/NVMe local (froid)<br/>bien plus grand, latence plus élevée"]
-    SSD --> REMOTE["Stockage distant/partagé<br/>ex. Redis, FS distribué<br/>(le plus froid, le plus grand)"]
+    HBM["GPU HBM (hot)<br/>fastest, most limited"] --> DRAM["CPU DRAM (warm)<br/>larger, still fast"]
+    DRAM --> SSD["Local SSD/NVMe (cold)<br/>much larger, higher latency"]
+    SSD --> REMOTE["Remote/shared storage<br/>e.g., Redis, distributed FS<br/>(coldest, largest)"]
 ```
 
-Les blocs sont automatiquement promus et rétrogradés entre les tiers selon la récence et la fréquence d'accès. Des scorers comme `precise-prefix-cache-scorer` sont conscients du tier, donc le routeur peut préférer un pod avec un bloc résidant en HBM chaude plutôt qu'un pod qui devrait rapatrier le même bloc depuis la RAM CPU ou le disque.
+Blocks are automatically promoted and demoted between tiers based on recency and access frequency. Scorers like `precise-prefix-cache-scorer` are tier-aware, so the router can prefer a pod with a block residing in hot HBM over a pod that would need to fetch the same block from CPU RAM or disk.
 
-### 6.6 Effet sur les deux métriques de serving dominantes
+### 6.6 Impact on the Two Dominant Serving Metrics
 
-- **TTFT (Time-To-First-Token)** : directement réduit par les hits de cache, puisque l'étape de prefill lourde en calcul pour la portion cachée est sautée.
-- **Débit (tokens/s)** : amélioré car les cycles GPU ne sont pas gaspillés à recalculer des préfixes identiques à travers une charge de prompt partagé ou multi-tours.
+- **TTFT (Time-To-First-Token)**: directly reduced by cache hits, since the compute-heavy prefill step for the cached portion is skipped.
+- **Throughput (tokens/s)**: improved because GPU cycles are not wasted recalculating identical prefixes across shared-prompt or multi-turn workloads.
 
 ---
 
-## 7. Comment llm-d communique réellement : les deux plans
+## 7. How llm-d Actually Communicates: The Two Planes
 
-Pour bien comprendre comment llm-d fonctionne au quotidien, il faut voir son architecture comme **deux plans de communication bien distincts**, chacun avec des rôles, des protocoles et des exigences de performance très différents.
+To truly understand how llm-d operates day to day, you need to see its architecture as **two distinct communication planes**, each with very different roles, protocols, and performance requirements.
 
-| Canal de communication | Direction | Protocole | Objectif |
+| Communication Channel | Direction | Protocol | Purpose |
 |---|---|---|---|
-| **Flux d'événements (Write Path)** | vLLM → llm-d | **ZMQ** (PUB/SUB) | Publier les changements d'état du KV-cache (ajouts, suppressions) |
-| **API de scoring (Read Path)** | Routeur llm-d → Indexeur | **HTTP** (REST) | Interroger l'index pour savoir quel pod a le plus de cache pour un prompt donné |
+| **Event stream (Write Path)** | vLLM → llm-d | **ZMQ** (PUB/SUB) | Publish KV-cache state changes (additions, removals) |
+| **Scoring API (Read Path)** | llm-d Router → Indexer | **HTTP** (REST) | Query the index to find which pod has the most cache for a given prompt |
 
 ```mermaid
 flowchart LR
     subgraph WritePath["Write Path — ZMQ PUB/SUB"]
-        V1[Pod vLLM] -->|publie KVEvent<br/>msgpack| Sub[kvevents.Pool<br/>abonné]
+        V1[Pod vLLM] -->|publishes KVEvent<br/>msgpack| Sub[kvevents.Pool<br/>subscriber]
     end
     subgraph ReadPath["Read Path — HTTP REST"]
-        EPP2[EPP] -->|requête de score| IDX2[KV-Cache Indexer]
-        IDX2 -->|score par pod| EPP2
+        EPP2[EPP] -->|score request| IDX2[KV-Cache Indexer]
+        IDX2 -->|per-pod score| EPP2
     end
 ```
 
-### 7.1 Le cerveau de l'orchestration : la communication par ZMQ
+### 7.1 The Orchestration Brain: ZMQ Communication
 
-**ZMQ (ZeroMQ)** est la pièce maîtresse pour la communication non-bloquante et à haute vitesse entre les serveurs de modèles (vLLM) et le plan de contrôle de llm-d. Il ne s'agit pas de transporter les données des modèles elles-mêmes, mais les **métadonnées** cruciales sur l'état du cache.
+**ZMQ (ZeroMQ)** is the centerpiece for non-blocking, high-speed communication between model servers (vLLM) and the llm-d control plane. It does not transport the model data itself, but rather the crucial **metadata** about cache state.
 
-- **Architecture Pub/Sub** : chaque pod vLLM agit comme un **éditeur (publisher)** qui publie en continu des événements dès que son cache local change. Le routeur llm-d, via son composant `kvevents.Pool`, agit comme un **abonné (subscriber)**.
-- **Mécanisme de découverte** : pour une scalabilité maximale, chaque pod vLLM **bind son propre socket ZMQ**. Chaque réplica du routeur llm-d s'abonne alors à **chaque pod indépendamment**. Cette architecture "en étoile" assure une haute disponibilité et une tolérance aux pannes.
-- **Format des messages** : les événements sont publiés sur des topics structurés, par exemple `kv@<POD_IP>@<MODEL_NAME>`. Le payload est sérialisé en **msgpack**, un format binaire léger et rapide.
+- **Pub/Sub architecture**: each vLLM pod acts as a **publisher**, continuously publishing events whenever its local cache changes. The llm-d router, via its `kvevents.Pool` component, acts as a **subscriber**.
+- **Discovery mechanism**: for maximum scalability, each vLLM pod **binds its own ZMQ socket**. Each router replica then subscribes to **each pod independently**. This "star" architecture ensures high availability and fault tolerance.
+- **Message format**: events are published on structured topics, e.g., `kv@<POD_IP>@<MODEL_NAME>`. The payload is serialized in **msgpack**, a lightweight, fast binary format.
 
 ```mermaid
 sequenceDiagram
     participant PodA as Pod vLLM A (publisher)
     participant PodB as Pod vLLM B (publisher)
     participant PodC as Pod vLLM C (publisher)
-    participant KVP as kvevents.Pool (subscriber, dans le Router)
+    participant KVP as kvevents.Pool (subscriber, in Router)
 
-    Note over PodA,PodC: Chaque pod bind son propre socket ZMQ
+    Note over PodA,PodC: Each pod binds its own ZMQ socket
     PodA-->>KVP: topic kv@IP_A@modelX : BlockStored(hash=abc123)
     PodB-->>KVP: topic kv@IP_B@modelX : BlockRemoved(hash=def456)
     PodC-->>KVP: topic kv@IP_C@modelX : AllBlocksCleared
-    KVP->>KVP: Met à jour l'index global (kvblock.Index)
+    KVP->>KVP: Updates global index (kvblock.Index)
 ```
 
-### 7.2 Le moteur de performance : la communication HPC (CUDA, RDMA, NIXL)
+### 7.2 The Performance Engine: HPC Communication (CUDA, RDMA, NIXL)
 
-Si ZMQ gère la **stratégie** (où se trouve le cache), une autre couche, bien plus rapide, gère le **mouvement des données elles-mêmes** : le transfert des poids du modèle et du KV-cache entre GPU.
+While ZMQ handles the **strategy** (where the cache is), another, much faster layer handles the **data movement itself**: transferring model weights and KV-cache between GPUs.
 
-- **L'enjeu** : dans une architecture désagrégée, le KV-cache doit être transféré du pod *prefill* au pod *decode* **avant** que le premier token ne soit généré. La latence de ce transfert impacte directement le TTFT.
-- **La solution : NIXL et une pile en couches**. llm-d utilise **NIXL (NVIDIA Inference Xfer Library)** comme bibliothèque de transfert principale. NIXL agit comme une couche d'abstraction, permettant à vLLM d'initier des transferts sans connaître les détails du réseau sous-jacent. Il fonctionne en mode **pull-based** : le pod *decode* lit directement la mémoire GPU du pod *prefill* via des **lectures RDMA one-sided**, réduisant la charge CPU et la synchronisation.
+- **The challenge**: in a disaggregated architecture, the KV-cache must be transferred from the *prefill* pod to the *decode* pod **before** the first token is generated. The latency of this transfer directly impacts TTFT.
+- **The solution: NIXL and a layered stack**. llm-d uses **NIXL (NVIDIA Inference Xfer Library)** as its primary transfer library. NIXL acts as an abstraction layer, allowing vLLM to initiate transfers without knowing the underlying network details. It operates in **pull-based** mode: the *decode* pod directly reads the GPU memory of the *prefill* pod via **one-sided RDMA reads**, reducing CPU overhead and synchronization.
 
-NIXL s'appuie sur une pile de transport modulaire :
+NIXL builds on a modular transport stack:
 
-| Backend | Rôle |
+| Backend | Role |
 |---|---|
-| **UCX (Unified Communication X)** | Backend par défaut ; framework mature de l'écosystème HPC, abstrait InfiniBand, RoCE et TCP. |
-| **UCCL (Unified Cloud Communication Library)** | Backend plus récent, contrôle plus fin, flow splitting et congestion control adaptés aux patterns de trafic IA. |
-| **libfabric** | Utilisé spécifiquement sur AWS pour supporter l'EFA (Elastic Fabric Adapter). |
+| **UCX (Unified Communication X)** | Default backend; mature HPC framework, abstracts InfiniBand, RoCE, and TCP. |
+| **UCCL (Unified Cloud Communication Library)** | Newer backend, finer control, flow splitting and congestion control tailored to AI traffic patterns. |
+| **libfabric** | Used specifically on AWS to support EFA (Elastic Fabric Adapter). |
 
-llm-d intègre aussi des bibliothèques et kernels optimisés CUDA comme **NVSHMEM**, **DeepEP** et **FlashInfer**. La chaîne de compilation gère ces dépendances complexes en compilant UCX et NVSHMEM avant de construire les kernels spécialisés. Le support s'étend également à **Intel XPU**, **Google TPU** et **AMD ROCm**.
+llm-d also integrates optimized CUDA libraries and kernels such as **NVSHMEM**, **DeepEP**, and **FlashInfer**. The build chain handles these complex dependencies by compiling UCX and NVSHMEM before building the specialized kernels. Support extends to **Intel XPU**, **Google TPU**, and **AMD ROCm** as well.
 
 ```mermaid
 flowchart TB
-    NIXL["NIXL<br/>(couche d'abstraction de transfert)"]
-    NIXL --> UCX["UCX<br/>backend par défaut<br/>InfiniBand / RoCE / TCP"]
+    NIXL["NIXL<br/>(transfer abstraction layer)"]
+    NIXL --> UCX["UCX<br/>default backend<br/>InfiniBand / RoCE / TCP"]
     NIXL --> UCCL["UCCL<br/>flow splitting,<br/>congestion control"]
     NIXL --> LIBFABRIC["libfabric<br/>AWS EFA"]
-    NIXL --> CUDA["Intégration CUDA<br/>NVSHMEM, DeepEP, FlashInfer"]
+    NIXL --> CUDA["CUDA integration<br/>NVSHMEM, DeepEP, FlashInfer"]
     CUDA --> HW["NVIDIA GPU<br/>+ AMD ROCm, Intel XPU, Google TPU"]
 ```
 
-### 7.3 Synthèse : une architecture de communication à deux vitesses
+### 7.3 Synthesis: A Two-Speed Communication Architecture
 
-- **ZMQ** est le **système nerveux** : il transmet l'information (métadonnées sur l'état du cache) de façon légère et asynchrone, permettant à tous les serveurs vLLM de publier l'état de leur cache pour que le routeur prenne des décisions quasi temps réel.
-- **NIXL / RDMA / CUDA** est le **système musculaire** : il déplace massivement les données réelles (poids, KV-cache) entre GPU, de façon ultra-rapide.
+- **ZMQ** is the **nervous system**: it transmits information (metadata about cache state) in a lightweight, asynchronous manner, allowing all vLLM servers to publish their cache state so the router can make near-real-time decisions.
+- **NIXL / RDMA / CUDA** is the **muscular system**: it moves massive amounts of actual data (weights, KV-cache) between GPUs, at ultra-high speed.
 
-llm-d orchestre ces deux mondes pour offrir une infrastructure d'inférence distribuée à la fois intelligente et extrêmement performante.
+llm-d orchestrates these two worlds to deliver a distributed inference infrastructure that is both intelligent and extremely performant.
 
 ---
 
-## 8. Comment llm-d "parle" à vLLM et LMCache — le plan de contrôle
+## 8. How llm-d "Talks" to vLLM and LMCache — The Control Plane
 
-Il faut voir cela comme une **orchestration en trois couches** qui fonctionne en continu : des déclarations Kubernetes, des flux d'événements, et des connecteurs API.
+Think of this as a **three-layer orchestration** that operates continuously: Kubernetes declarations, event streams, and API connectors.
 
-### 8.1 Les ressources personnalisées Kubernetes (CRD) — le "quoi orchestrer"
+### 8.1 Kubernetes Custom Resources (CRDs) — The "What to Orchestrate"
 
-- **`InferencePool`** : définit un groupe de serveurs de modèles (pods vLLM) servant le même modèle. Elle indique quels pods surveiller (sélecteur de labels), sur quel port ils écoutent, et où trouver l'EPP.
+- **`InferencePool`**: defines a group of model servers (vLLM pods) serving the same model. It specifies which pods to watch (label selector), which port they listen on, and where to find the EPP.
 
-  > *Exemple concret* : un fichier YAML dit à llm-d : *"Va chercher tous les pods qui ont le label `model: llama3` et `role: prefill` dans le namespace `llm-d` ; ils formeront mon InferencePool pour le pré-remplissage."*
+  > *Concrete example*: a YAML file tells llm-d: *"Go find all pods with the label `model: llama3` and `role: prefill` in the `llm-d` namespace; they form my prefill InferencePool."*
 
-- **`HTTPRoute`** : dit au Proxy comment acheminer le trafic externe vers le bon `InferencePool`.
+- **`HTTPRoute`**: tells the Proxy how to route external traffic to the correct `InferencePool`.
 
-### 8.2 Les connecteurs — l'interface technique avec vLLM
+### 8.2 Connectors — The Technical Interface to vLLM
 
-Pour interagir avec vLLM et LMCache, llm-d s'appuie sur des **connecteurs**, des morceaux de code qui s'intègrent dans l'API de vLLM :
+To interact with vLLM and LMCache, llm-d relies on **connectors** — pieces of code that integrate into vLLM's API:
 
-- **`OffloadingConnector`** (natif de vLLM) : activé en passant des arguments au lancement de vLLM. Permet à vLLM de décharger son cache KV vers le CPU ou un stockage partagé — llm-d fournit un backend (*llm-d FS backend*) permettant à ce connecteur d'écrire sur un système de fichiers partagé, qui peut être LMCache.
-- **Connecteur LMCache** (externe) : llm-d configure vLLM pour déléguer toute la gestion de son cache à LMCache.
+- **`OffloadingConnector`** (native to vLLM): activated by passing launch arguments to vLLM. Allows vLLM to offload its KV-cache to CPU or shared storage — llm-d provides a backend (*llm-d FS backend*) that lets this connector write to a shared filesystem, which can be LMCache.
+- **LMCache connector** (external): llm-d configures vLLM to delegate all cache management to LMCache.
 
 ```mermaid
 flowchart TB
-    Admin[Administrateur] -->|applique| CR1[InferencePool CRD]
-    Admin -->|applique| CR2[HTTPRoute CRD]
-    CR1 --> LLMD[llm-d lit les CRD]
+    Admin[Administrator] -->|applies| CR1[InferencePool CRD]
+    Admin -->|applies| CR2[HTTPRoute CRD]
+    CR1 --> LLMD[llm-d reads CRDs]
     CR2 --> LLMD
-    LLMD -->|configure| EPP3[EPP]
-    LLMD -->|configure| Proxy3[Proxy Envoy]
-    LLMD -.active via flags CLI.-> Conn{Connecteur vLLM}
-    Conn -->|natif| Off[OffloadingConnector]
-    Conn -->|externe| LMC[Connecteur LMCache]
+    LLMD -->|configures| EPP3[EPP]
+    LLMD -->|configures| Proxy3[Envoy Proxy]
+    LLMD -.activates via CLI flags.-> Conn{vLLM Connector}
+    Conn -->|native| Off[OffloadingConnector]
+    Conn -->|external| LMC[LMCache Connector]
 ```
 
-### 8.3 Le dialogue en deux temps avec vLLM
+### 8.3 The Two-Phase Dialogue with vLLM
 
-**A. vLLM parle à llm-d — le "chemin d'écriture" (Write Path)**
+**A. vLLM talks to llm-d — the "Write Path"**
 
-Chaque pod vLLM publie des `KVEvents` en ZMQ PUB/SUB (voir Section 7.1), reçus par le `kvevents.Pool` du KV-Cache Manager de llm-d.
+Each vLLM pod publishes `KVEvents` via ZMQ PUB/SUB (see Section 7.1), received by the `kvevents.Pool` of llm-d's KV-Cache Manager.
 
-> *Exemple* : un utilisateur envoie un long prompt à `vLLM-Pod-A`. Le pod calcule le KV-cache, puis publie immédiatement : *"Cache pour le hash `abc123` disponible sur moi (Pod-A, IP X, mémoire GPU)."* Le KV-Cache Manager met à jour son index global.
+> *Example*: a user sends a long prompt to `vLLM-Pod-A`. The pod computes the KV-cache, then immediately publishes: *"Cache for hash `abc123` available on me (Pod-A, IP X, GPU memory)."* The KV-Cache Manager updates its global index.
 
-**B. llm-d parle à vLLM — le "chemin de lecture" (Read Path)**
+**B. llm-d talks to vLLM — the "Read Path"**
 
-Quand une nouvelle requête arrive, l'EPP interroge le KV-Cache Manager, reçoit un score de "cache hit" par pod, choisit le meilleur, et donne l'instruction au Proxy d'acheminer la requête vers ce pod précis.
+When a new request arrives, the EPP queries the KV-Cache Manager, receives a per-pod "cache hit" score, picks the best one, and instructs the Proxy to route the request to that specific pod.
 
-> *Exemple* : un nouvel utilisateur envoie une requête avec le même prompt `abc123`. Le KV-Cache Manager répond : *"vLLM-Pod-A a un score de 1.0 (cache complet), les autres 0.0."* L'EPP instruit le Proxy d'acheminer vers Pod-A, qui génère la réponse extrêmement rapidement, sans recalculer le prompt.
+> *Example*: a new user sends a request with the same prompt `abc123`. The KV-Cache Manager responds: *"vLLM-Pod-A has a score of 1.0 (full cache), all others 0.0."* The EPP instructs the Proxy to route to Pod-A, which generates the response extremely fast, without recalculating the prompt.
 
-### 8.4 LMCache comme "mémoire secondaire" partagée
+### 8.4 LMCache as Shared "Secondary Memory"
 
-LMCache n'est pas un composant qui "parle" directement à llm-d — c'est un **système de stockage** que llm-d utilise via vLLM. Quand la mémoire GPU d'un pod vLLM est saturée (ou selon une politique définie), le pod peut **décharger (offload)** ses blocs de cache les moins utilisés vers LMCache. Une fois là, ces blocs deviennent disponibles pour **tous les autres pods vLLM du cluster**.
+LMCache is not a component that "talks" directly to llm-d — it is a **storage system** that llm-d uses via vLLM. When a vLLM pod's GPU memory is saturated (or per a defined policy), the pod can **offload** its least-used cache blocks to LMCache. Once there, those blocks become available to **all other vLLM pods in the cluster**.
 
-> *Exemple* : `vLLM-Pod-A` décharge le cache `abc123` vers LMCache via l'`OffloadingConnector` activé par llm-d, puis publie : *"Cache pour `abc123` maintenant disponible sur le stockage partagé."* Plus tard, `vLLM-Pod-B` reçoit une requête pour `abc123` : n'ayant pas le cache en local, il le **charge (load)** depuis LMCache dans sa propre mémoire GPU avant de générer — le calcul lourd est de nouveau évité, même si le cache a changé de serveur physique.
+> *Example*: `vLLM-Pod-A` offloads the cache for `abc123` to LMCache via the `OffloadingConnector` activated by llm-d, then publishes: *"Cache for `abc123` now available on shared storage."* Later, `vLLM-Pod-B` receives a request for `abc123`: not having the cache locally, it **loads** it from LMCache into its own GPU memory before generating — the heavy computation is again avoided, even though the cache has moved physical servers.
 
-### 8.5 Synthèse du cycle de vie complet d'une requête
+### 8.5 Complete Request Lifecycle Synthesis
 
 ```mermaid
 sequenceDiagram
-    participant U as Utilisateur
+    participant U as User
     participant Proxy as Proxy (Envoy)
     participant EPP as EPP
     participant KVM as KV-Cache Manager
     participant PA as vLLM-Pod-A
-    participant LMC as LMCache (stockage partagé)
+    participant LMC as LMCache (shared storage)
 
-    Note over Proxy,PA: 1. Déploiement : InferencePool + HTTPRoute lus par llm-d
+    Note over Proxy,PA: 1. Deployment: InferencePool + HTTPRoute read by llm-d
 
-    U->>Proxy: Requête (1er passage — Cache Miss)
-    Proxy->>EPP: Quel pod choisir ?
-    EPP->>KVM: Cache pour ce prompt ?
-    KVM-->>EPP: Aucun cache connu
-    EPP-->>Proxy: Choix équilibré → Pod-A
-    Proxy->>PA: Route vers Pod-A
-    PA->>PA: Calcule le KV-cache (prefill complet)
-    PA-->>KVM: Publie KVEvent (ZMQ) : cache dispo sur moi
-    PA->>LMC: (optionnel) Offload du cache vers LMCache
+    U->>Proxy: Request (1st pass — Cache Miss)
+    Proxy->>EPP: Which pod to choose?
+    EPP->>KVM: Cache for this prompt?
+    KVM-->>EPP: No known cache
+    EPP-->>Proxy: Balanced choice → Pod-A
+    Proxy->>PA: Route to Pod-A
+    PA->>PA: Computes KV-cache (full prefill)
+    PA-->>KVM: Publishes KVEvent (ZMQ): cache available on me
+    PA->>LMC: (optional) Offload cache to LMCache
 
-    U->>Proxy: Requête suivante, même prompt (Cache Hit)
-    Proxy->>EPP: Quel pod choisir ?
-    EPP->>KVM: Cache pour ce prompt ?
-    KVM-->>EPP: Pod-A a le cache (ou dispo via LMCache)
-    EPP-->>Proxy: Route vers Pod-A
-    Proxy->>PA: Route vers Pod-A
-    PA->>PA: Utilise le cache existant, saute le prefill
-    PA-->>Proxy: Réponse générée rapidement
-    Proxy-->>U: Réponse streamée
+    U->>Proxy: Next request, same prompt (Cache Hit)
+    Proxy->>EPP: Which pod to choose?
+    EPP->>KVM: Cache for this prompt?
+    KVM-->>EPP: Pod-A has cache (or available via LMCache)
+    EPP-->>Proxy: Route to Pod-A
+    Proxy->>PA: Route to Pod-A
+    PA->>PA: Uses existing cache, skips prefill
+    PA-->>Proxy: Fast generated response
+    Proxy-->>U: Streamed response
 ```
 
 ---
 
-## 9. Le cache KV en trois phases — de la mémoire locale à la ressource routable
+## 9. The KV Cache in Three Phases — From Local Memory to a Routable Resource
 
-Ce schéma conceptuel illustre le cœur neuronal de llm-d : la transformation du KV-cache, habituellement une ressource **locale et éphémère** à un seul GPU, en une **ressource réseau partagée, indexée et routable** à l'échelle de tout le cluster.
+This conceptual diagram illustrates the neural core of llm-d: the transformation of KV-cache, normally a **local and ephemeral** resource tied to a single GPU, into a **shared, indexed, and routable network resource** at cluster scale.
 
-### Phase 1 — L'indexation du cache (la "mémoire vive" du cluster)
+### Phase 1 — Cache Indexing (The Cluster's "Working Memory")
 
-Lorsque vLLM reçoit un prompt, il calcule les clés et valeurs d'attention (KV-cache), une phase de calcul lourde (le *prefill*). Sans coordination, un autre serveur recevant le même prompt plus tard **recalculerait** ces mêmes valeurs — un gaspillage de calcul et d'électricité.
+When vLLM receives a prompt, it computes the attention keys and values (KV-cache), a compute-heavy phase (the *prefill*). Without coordination, another server receiving the same prompt later **would recalculate** those same values — a waste of compute and electricity.
 
-Dans le système : `vLLM1` reçoit "Prompt A", exécute le prefill, stocke le cache en HBM locale, puis **publie un événement** (ZMQ) : *"Cache du préfixe 'Prompt A' disponible sur moi."* Le `KV-Cache Manager` s'abonne à tous ces événements et met à jour sa table de hachage globale en quelques millisecondes.
+In the system: `vLLM1` receives "Prompt A", runs prefill, stores the cache in local HBM, then **publishes an event** (ZMQ): *"Cache for prefix 'Prompt A' available on me."* The `KV-Cache Manager` subscribes to all these events and updates its global hash table within milliseconds.
 
-### Phase 2 — Le routage "intelligent" (l'évitement du recalcul)
+### Phase 2 — "Intelligent" Routing (Avoiding Recalculation)
 
-Sans routage conscient du cache, un load-balancer classique enverrait "Prompt A" vers `vLLM2` avec 50% de chances, provoquant un cache miss coûteux.
+Without cache-aware routing, a classic load-balancer would send "Prompt A" to `vLLM2` with 50% probability, causing an expensive cache miss.
 
-Dans le système : un nouveau client envoie le même "Prompt A" au Router (EPP). Le Router interroge le KV-Cache Manager : *"Pour ce préfixe, quel est le meilleur candidat ?"* L'index répond : *"vLLM1 est le plus à chaud."* Le Router achemine **exclusivement** vers `vLLM1`, qui saute le prefill et passe directement au decode — c'est un **"Cache Hit"**.
+In the system: a new client sends the same "Prompt A" to the Router (EPP). The Router queries the KV-Cache Manager: *"For this prefix, who is the best candidate?"* The index answers: *"vLLM1 is the hottest."* The Router sends **exclusively** to `vLLM1`, which skips prefill and goes directly to decode — this is a **"Cache Hit"**.
 
-### Phase 3 — La mutualisation et la hiérarchie du cache (la stratégie de coûts)
+### Phase 3 — Cache Sharing and Hierarchy (The Cost Strategy)
 
-La mémoire GPU (HBM) est le composant le plus cher et le plus rare du cluster. Si `vLLM1` accumule trop de caches peu utilisés, il sature sa mémoire.
+GPU memory (HBM) is the most expensive and scarcest component in the cluster. If `vLLM1` accumulates too many rarely-used caches, it saturates its memory.
 
-Dans le système : `vLLM1` **offload** le cache vers le **stockage partagé LMCache** (souvent RAM CPU rapide ou NVMe). Le cache devient **persistant et partagé** : même si `vLLM1` redémarre, est saturé, ou si le routeur envoie la requête suivante vers `vLLM2`, celui-ci peut **charger** ce cache depuis LMCache avant de générer. Le prefill est de nouveau évité, même si le cache a changé de serveur physique.
+In the system: `vLLM1` **offloads** cache to **LMCache shared storage** (often fast CPU RAM or NVMe). The cache becomes **persistent and shared**: even if `vLLM1` restarts, is saturated, or the router sends the next request to `vLLM2`, that pod can **load** this cache from LMCache before generating. The prefill is again avoided, even if the cache has moved physical servers.
 
 ```mermaid
 flowchart LR
-    subgraph Phase1["Phase 1 — Indexation"]
-        V1[vLLM1 calcule<br/>le KV-cache] -->|publie événement ZMQ| KVM1[KV-Cache Manager<br/>met à jour l'index]
+    subgraph Phase1["Phase 1 — Indexing"]
+        V1[vLLM1 computes<br/>KV-cache] -->|publishes ZMQ event| KVM1[KV-Cache Manager<br/>updates index]
     end
-    subgraph Phase2["Phase 2 — Routage intelligent"]
-        C2[Nouveau client<br/>même prompt] --> R2[Router / EPP]
-        R2 -->|interroge| KVM1
-        KVM1 -->|"vLLM1 est le plus à chaud"| R2
-        R2 -->|route exclusivement| V1b[vLLM1<br/>Cache Hit]
+    subgraph Phase2["Phase 2 — Intelligent routing"]
+        C2[New client<br/>same prompt] --> R2[Router / EPP]
+        R2 -->|queries| KVM1
+        KVM1 -->|"vLLM1 is hottest"| R2
+        R2 -->|routes exclusively| V1b[vLLM1<br/>Cache Hit]
     end
-    subgraph Phase3["Phase 3 — Mutualisation / hiérarchie"]
-        V1c[vLLM1 sature sa HBM] -->|offload| LMC3[LMCache<br/>stockage partagé]
-        LMC3 -->|load si besoin| V2b[vLLM2<br/>récupère le cache]
+    subgraph Phase3["Phase 3 — Sharing / hierarchy"]
+        V1c[vLLM1 saturates HBM] -->|offload| LMC3[LMCache<br/>shared storage]
+        LMC3 -->|load if needed| V2b[vLLM2<br/>retrieves cache]
     end
     Phase1 --> Phase2 --> Phase3
 ```
 
-### Synthèse : comment ces trois phases interagissent
+### Synthesis: How These Three Phases Interact
 
-Ce n'est pas une simple séquence, mais un **cycle de vie continu** :
+This is not a simple sequence, but a **continuous lifecycle**:
 
-1. La **Phase 1** rend le cache **découvrable** (l'orchestrateur sait où se trouve la connaissance).
-2. La **Phase 2** rend le cache **exploitable** (le routeur oriente le trafic exactement là où se trouve la connaissance, pour un gain de vitesse maximal).
-3. La **Phase 3** rend le cache **durable et transportable** (libère les ressources chères et évite de perdre le travail si un serveur change).
+1. **Phase 1** makes the cache **discoverable** (the orchestrator knows where the knowledge is).
+2. **Phase 2** makes the cache **actionable** (the router directs traffic exactly where the knowledge is, for maximum speed gain).
+3. **Phase 3** makes the cache **durable and transportable** (frees expensive resources and avoids losing work if a server changes).
 
-En production, ce mécanisme tourne en boucle des milliers de fois par seconde. llm-d atteint ainsi deux objectifs majeurs :
+In production, this mechanism runs in a loop thousands of times per second. llm-d thus achieves two major objectives:
 
-- **Réduction drastique du coût par token** : moins de recalculs de prefill = moins de consommation GPU.
-- **Latence quasi constante** : la durée de réponse dépend principalement de la longueur de la génération, et non plus de la longueur du prompt initial, car le calcul lourd est contourné grâce au routage précis vers le cache.
+- **Drastic reduction in cost per token**: fewer prefill recalculations = less GPU consumption.
+- **Near-constant latency**: response time depends primarily on generation length, not on the initial prompt length, because the heavy computation is bypassed through precise routing to the cache.
 
 ---
 
-## 10. Désagrégation Prefill/Decode (P/D)
+## 10. Prefill/Decode Disaggregation (P/D)
 
-### 10.1 L'idée centrale
+### 10.1 The Core Idea
 
-Au lieu de faire tourner prefill et decode pour une requête sur le même GPU/pod, llm-d peut router l'étape de traitement du prompt vers un **worker prefill**, et l'étape de génération de tokens vers un **worker decode** séparément scalé, en transférant le KV-cache calculé entre eux via un interconnect haute performance.
+Instead of running prefill and decode for a request on the same GPU/pod, llm-d can route the prompt-processing step to a **prefill worker**, and the token-generation step to a separately scaled **decode worker**, transferring the computed KV-cache between them via a high-performance interconnect.
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Router as Router llm-d (Proxy + EPP)
-    participant Prefill as Worker Prefill (vLLM)
-    participant Decode as Worker Decode (vLLM)
-    participant Xfer as Transfert KV (NIXL / RDMA)
+    participant Router as llm-d Router (Proxy + EPP)
+    participant Prefill as Prefill Worker (vLLM)
+    participant Decode as Decode Worker (vLLM)
+    participant Xfer as KV Transfer (NIXL / RDMA)
 
-    Client->>Router: Requête d'inférence
-    Router->>Prefill: Route le prompt pour prefill
-    Prefill->>Prefill: Calcule le KV-cache (compute-bound)
-    Prefill->>Xfer: Publie/expose le KV-cache
-    Xfer->>Decode: Transfère les blocs de KV-cache
-    Decode->>Decode: Génère les tokens (memory-bound)
-    Decode-->>Router: Stream de tokens
-    Router-->>Client: Réponse streamée
+    Client->>Router: Inference request
+    Router->>Prefill: Route prompt for prefill
+    Prefill->>Prefill: Computes KV-cache (compute-bound)
+    Prefill->>Xfer: Publishes/exposes KV-cache
+    Xfer->>Decode: Transfers KV-cache blocks
+    Decode->>Decode: Generates tokens (memory-bound)
+    Decode-->>Router: Token stream
+    Router-->>Client: Streamed response
 ```
 
-### 10.2 Pourquoi cela aide
+### 10.2 Why It Helps
 
-- Chaque phase tourne sur du matériel adapté à son goulot d'étranglement.
-- Les longs prefills ne bloquent plus le decode des autres utilisateurs concurrents sur le même GPU.
-- Le **TPOT** (Time-Per-Output-Token) devient plus stable et prédictible — important pour les engagements de SLA.
-- Chaque pool (prefill, decode) peut être scalé indépendamment selon son propre signal de goulot d'étranglement.
+- Each phase runs on hardware suited to its bottleneck.
+- Long prefills no longer block decode for other concurrent users on the same GPU.
+- **TPOT** (Time-Per-Output-Token) becomes more stable and predictable — important for SLA commitments.
+- Each pool (prefill, decode) can be scaled independently according to its own bottleneck signal.
 
-### 10.3 Le prérequis dur : la performance réseau
+### 10.3 The Hard Prerequisite: Network Performance
 
-Le transfert de KV-cache entre workers prefill et decode déplace des tenseurs de plusieurs gigaoctets par requête. Si l'interconnect est lent, le coût du transfert peut dépasser le coût de simplement recalculer le cache, annulant tout le bénéfice. La désagrégation en production suppose donc un **interconnect haute performance** : NIC compatibles RDMA, NVLink pour le transfert intra-nœud, InfiniBand ou RoCE pour le transfert inter-nœuds. Sur un réseau cloud classique 1GbE/10GbE sans RDMA, la désagrégation ne paiera probablement pas et ne devrait généralement pas être activée.
+Transferring KV-cache between prefill and decode workers moves multi-gigabyte tensors per request. If the interconnect is slow, the transfer cost can exceed the cost of simply recalculating the cache, negating the entire benefit. Disaggregation in production therefore assumes a **high-performance interconnect**: RDMA-capable NICs, NVLink for intra-node transfer, InfiniBand or RoCE for inter-node transfer. On a classic 1GbE/10GbE cloud network without RDMA, disaggregation will likely not pay off and should generally not be enabled.
 
-### 10.4 La couche de transport : NIXL
+### 10.4 The Transport Layer: NIXL
 
-Le transport du KV-cache sur ce chemin est géré par **NIXL**, la même couche décrite en Section 7.2, qui est aussi celle utilisée par les implémentations de prefill désagrégé de vLLM et LMCache (voir Sections 13–14).
+KV-cache transport on this path is handled by **NIXL**, the same layer described in Section 7.2, which is also the one used by vLLM's and LMCache's disaggregated prefill implementations (see Sections 13–14).
 
-### 10.5 Le "Decider" et le routing sidecar — la logique de décision fine
+### 10.5 The Decider and Routing Sidecar — Fine-Grained Decision Logic
 
-L'EPP utilise un **`disagg-profile-handler`** qui suit ces étapes :
+The EPP uses a **`disagg-profile-handler`** that follows these steps:
 
-1. Le proxy transfère la requête à l'EPP.
-2. Le `disagg-profile-handler` exécute le `decode-profile` pour sélectionner un endpoint **D**.
-3. Le **Decider** consulte l'état du cache sur D pour décider si la requête doit réellement être désagrégée.
-4. Si **non** (petit suffixe non-caché) → l'EPP retourne uniquement D.
-5. Si **oui** (grand suffixe non-caché) → l'EPP exécute le `prefill-profile` pour sélectionner un endpoint **P**, et retourne P et D.
+1. The proxy forwards the request to the EPP.
+2. The `disagg-profile-handler` runs the `decode-profile` to select an endpoint **D**.
+3. The **Decider** consults the cache state on D to decide whether the request should actually be disaggregated.
+4. If **no** (small uncached suffix) → the EPP returns only D.
+5. If **yes** (large uncached suffix) → the EPP runs the `prefill-profile` to select an endpoint **P**, and returns both P and D.
 
-### 10.6 Filtrage par labels
+### 10.6 Label-Based Filtering
 
-llm-d utilise le label **`llm-d.ai/role`** avec les valeurs :
+llm-d uses the label **`llm-d.ai/role`** with values:
 
-- `prefill` → workers dédiés au préremplissage
-- `decode` → workers dédiés à la génération
+- `prefill` → workers dedicated to prefilling
+- `decode` → workers dedicated to generation
 
 ```mermaid
 sequenceDiagram
@@ -623,53 +623,53 @@ sequenceDiagram
     participant Proxy as Proxy (Envoy)
     participant EPP as EPP (Endpoint Picker)
     participant Decider as Decider
-    participant P as Worker Prefill
-    participant D as Worker Decode
+    participant P as Prefill Worker
+    participant D as Decode Worker
 
-    Client->>Proxy: Requête d'inférence
-    Proxy->>EPP: ext-proc : évaluation
-    EPP->>EPP: decode-profile (sélection D)
-    EPP->>Decider: Consultation du cache sur D
-    alt Petit suffixe non-caché
-        Decider-->>EPP: Pas de désagrégation nécessaire
-        EPP-->>Proxy: Retourne D uniquement
-        Proxy->>D: Route vers D
-    else Grand suffixe non-caché
-        Decider-->>EPP: Désagrégation nécessaire
-        EPP->>EPP: prefill-profile (sélection P)
-        EPP-->>Proxy: Retourne P et D
-        Proxy->>P: Route vers P (prefill)
-        P->>D: Transfert KV via NIXL/RDMA
-        Proxy->>D: Route vers D (decode)
+    Client->>Proxy: Inference request
+    Proxy->>EPP: ext-proc: evaluate
+    EPP->>EPP: decode-profile (select D)
+    EPP->>Decider: Consult cache on D
+    alt Small uncached suffix
+        Decider-->>EPP: No disaggregation needed
+        EPP-->>Proxy: Return D only
+        Proxy->>D: Route to D
+    else Large uncached suffix
+        Decider-->>EPP: Disaggregation needed
+        EPP->>EPP: prefill-profile (select P)
+        EPP-->>Proxy: Return P and D
+        Proxy->>P: Route to P (prefill)
+        P->>D: Transfer KV via NIXL/RDMA
+        Proxy->>D: Route to D (decode)
     end
-    D-->>Proxy: Stream de tokens
-    Proxy-->>Client: Réponse streamée
+    D-->>Proxy: Token stream
+    Proxy-->>Client: Streamed response
 ```
 
 ---
 
-## 11. Wide Expert Parallelism (pour les modèles MoE)
+## 11. Wide Expert Parallelism (for MoE Models)
 
-Pour les modèles Mixture-of-Experts (ex. architectures de la classe DeepSeek-R1, 500 Go+ de poids), un seul GPU ne peut pas économiquement héberger tous les experts. Le well-lit path **Wide Expert Parallelism (Wide EP)** de llm-d distribue les experts sur de nombreux GPU.
+For Mixture-of-Experts models (e.g., DeepSeek-R1-class architectures, 500 GB+ of weights), a single GPU cannot economically host all experts. llm-d's **Wide Expert Parallelism (Wide EP)** well-lit path distributes experts across many GPUs.
 
-### 11.1 Le flux dispatch/combine
+### 11.1 The Dispatch/Combine Flow
 
-1. Chaque rank exécute l'attention indépendamment (parallélisme de données).
-2. Le routeur MoE sélectionne les `topk` experts pour chaque token (ex. 8 sur 256 pour DeepSeek).
-3. Les tokens sont **dispatchés** vers les ranks experts appropriés.
-4. Chaque expert s'exécute indépendamment.
-5. Les tokens sont **combinés** (*combine*) vers le rank d'attention original.
+1. Each rank runs attention independently (data parallelism).
+2. The MoE router selects the `topk` experts for each token (e.g., 8 out of 256 for DeepSeek).
+3. Tokens are **dispatched** to the appropriate expert ranks.
+4. Each expert runs independently.
+5. Tokens are **combined** back to the original attention rank.
 
-### 11.2 Infrastructure requise
+### 11.2 Required Infrastructure
 
-- Le dispatch/combine utilise le backend **DeepEP** sur **NVSHMEM**, avec **RDMA initié par le GPU** (transport `ibgda`).
-- Nécessite une connectivité **full-mesh InfiniBand/RoCE**.
-- Guide validé sur **32 GPU NVIDIA H200 ou B200**.
-- Orchestration via **LeaderWorkerSet (LWS)**, une CRD Kubernetes, pour coordonner les groupes de workers multi-hôtes (un pod leader coordonnant un ensemble de pods workers).
+- Dispatch/combine uses the **DeepEP** backend on **NVSHMEM**, with **GPU-initiated RDMA** (`ibgda` transport).
+- Requires **full-mesh InfiniBand/RoCE** connectivity.
+- Validated guide on **32 NVIDIA H200 or B200 GPUs**.
+- Orchestration via **LeaderWorkerSet (LWS)**, a Kubernetes CRD, to coordinate multi-host worker groups (a leader pod coordinating a set of worker pods).
 
 ```mermaid
 flowchart LR
-    subgraph DPEP["Déploiement DP/EP"]
+    subgraph DPEP["DP/EP Deployment"]
         A[Rank 1: Attention] -->|Dispatch| E1[Expert 1]
         A -->|Dispatch| E3[Expert 3]
         B[Rank 2: Attention] -->|Dispatch| E2[Expert 2]
@@ -692,9 +692,9 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Router4[Router llm-d] --> LWS4[Groupe LeaderWorkerSet]
-    subgraph LWSGroup["Déploiement MoE multi-nœuds"]
-        Leader4[Pod Leader<br/>coordonne le groupe]
+    Router4[llm-d Router] --> LWS4[LeaderWorkerSet Group]
+    subgraph LWSGroup["Multi-node MoE Deployment"]
+        Leader4[Leader Pod<br/>coordinates the group]
         W1_4[Worker: Experts 1-N]
         W2_4[Worker: Experts N+1-2N]
         W3_4[Worker: Experts 2N+1-3N]
@@ -706,73 +706,73 @@ flowchart LR
     end
 ```
 
-Dans les benchmarks propres de la release 0.3 de llm-d, ce chemin a scalé le débit du parallélisme expert jusqu'à environ **2,2k tokens/s par GPU H200**. Comme pour la désagrégation, cette fonctionnalité suppose un interconnect rapide entre nœuds.
+In llm-d's release 0.3 benchmarks, this path scaled expert-parallelism throughput to approximately **2.2k tokens/s per H200 GPU**. As with disaggregation, this feature assumes a fast inter-node interconnect.
 
 ---
 
-## 12. Autoscaling piloté par les SLO
+## 12. SLO-Driven Autoscaling
 
-L'autoscaling Kubernetes générique (HPA basé CPU/mémoire, ou règles KEDA simples déclenchées par la profondeur de file) n'a aucune notion des niveaux de service spécifiques à l'inférence. Le pilier "excellence opérationnelle" de llm-d superpose une logique d'autoscaling sur des signaux d'inférence réels.
+Generic Kubernetes autoscaling (CPU/memory-based HPA, or simple KEDA rules triggered by queue depth) has no notion of inference-specific service levels. llm-d's "operational excellence" pillar overlays autoscaling logic on real inference signals.
 
-### 12.1 Signaux utilisés
+### 12.1 Signals Used
 
-- Utilisation / taux de hit du KV-cache
-- Profondeur de file et nombre de requêtes en vol, par pool (prefill vs. decode)
-- TTFT / TPOT observés, comparés aux cibles SLO configurées
+- KV-cache utilization / hit rate
+- Queue depth and in-flight request count, per pool (prefill vs. decode)
+- Observed TTFT / TPOT, compared to configured SLO targets
 
-### 12.2 Principe de scaling — proactif et basé sur un modèle de file d'attente
+### 12.2 Scaling Principle — Proactive and Queue-Model-Based
 
-L'autoscaling de llm-d est **proactif** et s'appuie sur :
+llm-d's autoscaling is **proactive** and relies on:
 
-- Un **modèle de file d'attente** : analyse pilotée par les SLO basée sur la théorie des files d'attente.
-- Le **SLOMultiplier** : le ratio maximal tolérable entre le temps d'itération sous charge et la latence de base.
+- A **queueing model**: SLO-driven analysis based on queueing theory.
+- The **SLOMultiplier**: the maximum tolerable ratio between iteration time under load and baseline latency.
 
-L'autoscaler compare les signaux réels aux cibles SLO :
+The autoscaler compares actual signals against SLO targets:
 
-- Si un dépassement de SLO est proche → **scale out**.
-- Si la marge est confortable et le taux de hit de cache élevé → **scale in**.
+- If an SLO breach is approaching → **scale out**.
+- If headroom is comfortable and cache hit rate is high → **scale in**.
 
 ```mermaid
 flowchart LR
-    M["Signaux :<br/>TTFT, TPOT,<br/>taux de hit cache,<br/>profondeur de file"] --> A[Autoscaler SLO-aware<br/>modèle de file d'attente + SLOMultiplier]
-    A --> D{Comparaison vs. cibles SLO}
-    D -->|approche d'un breach| Out[Scale out du pool de workers]
-    D -->|marge confortable<br/>+ cache hit élevé| In[Scale in du pool de workers]
+    M["Signals:<br/>TTFT, TPOT,<br/>cache hit rate,<br/>queue depth"] --> A[SLO-aware Autoscaler<br/>queueing model + SLOMultiplier]
+    A --> D{Comparison vs. SLO targets}
+    D -->|approaching breach| Out[Scale out worker pool]
+    D -->|comfortable headroom<br/>+ high cache hit| In[Scale in worker pool]
 ```
 
-L'intention affichée est de laisser les clusters tourner plus "chauds" — c'est-à-dire plus proches de l'utilisation complète — avant de scaler, extrayant plus de travail utile par GPU tout en respectant les objectifs de latence, plutôt que de provisionner de manière conservatrice "au cas où".
+The stated intent is to let clusters run "hotter" — closer to full utilization — before scaling, extracting more useful work per GPU while respecting latency objectives, rather than provisioning conservatively "just in case."
 
-llm-d inclut aussi un **contrôle de flux** pour l'équité multi-tenant (pour qu'un tenant bruyant ne puisse pas affamer les autres en temps GPU) et des **API de batch compatibles OpenAI** pour l'inférence asynchrone hors-ligne à grande échelle, maximisant l'utilisation matérielle en dehors du chemin de serving en ligne.
+llm-d also includes **flow control** for multi-tenant fairness (so a noisy tenant cannot starve others of GPU time) and **OpenAI-compatible batch APIs** for large-scale asynchronous offline inference, maximizing hardware utilization outside the online serving path.
 
 ---
 
-## 13. Intégration avec vLLM
+## 13. Integration with vLLM
 
-vLLM est le moteur de serving principal et le plus profondément supporté par llm-d (SGLang est aussi supporté comme moteur alternatif dans certains well-lit paths — voir Section 15).
+vLLM is the primary and most deeply supported serving engine in llm-d (SGLang is also supported as an alternative engine in certain well-lit paths — see Section 15).
 
-La séparation des responsabilités est nette :
+The separation of responsibilities is clean:
 
-- **vLLM** possède tout ce qui se passe **à l'intérieur** d'une réplique : chargement du modèle, PagedAttention, batching, la boucle réelle de génération de tokens — et, crucialement, l'exposition des métriques et événements de KV-cache dont dépend le reste de la pile.
-- **llm-d** possède tout ce qui se passe **à travers** les réplicas : quelle réplique reçoit quelle requête, comment les phases sont réparties entre réplicas, et comment tout le pool scale.
+- **vLLM** owns everything that happens **inside** a replica: model loading, PagedAttention, batching, the actual token generation loop — and, crucially, exposing the KV-cache metrics and events the rest of the stack depends on.
+- **llm-d** owns everything that happens **across** replicas: which replica gets which request, how phases are distributed across replicas, and how the entire pool scales.
 
-### 13.1 Ce que chaque pod vLLM doit faire
+### 13.1 What Each vLLM Pod Must Do
 
-1. Exposer des **métriques compatibles Prometheus** — profondeur de file, pourcentage d'utilisation du KV-cache GPU, nombre de requêtes en cours/en attente, etc. — consommées par les scorers de l'EPP.
-2. Émettre des **événements de KV-cache** (création/éviction de blocs) qui alimentent le KV-Cache Indexer pour le routage précis du prefix-cache.
-3. S'**enregistrer auprès de l'InferencePool** pour que le Router puisse le découvrir comme candidat valide.
-4. Pour les déploiements désagrégés, démarrer avec le bon `--kv-transfer-config` pour savoir s'il agit comme producteur KV (prefill) ou consommateur KV (decode), et via quel connecteur (voir Section 14).
+1. Expose **Prometheus-compatible metrics** — queue depth, GPU KV-cache utilization percentage, number of running/waiting requests, etc. — consumed by the EPP's scorers.
+2. Emit **KV-cache events** (block creation/eviction) that feed the KV-Cache Indexer for precise prefix-cache routing.
+3. **Register with the InferencePool** so the Router can discover it as a valid candidate.
+4. For disaggregated deployments, start with the correct `--kv-transfer-config` to know whether it acts as a KV producer (prefill) or KV consumer (decode), and via which connector (see Section 14).
 
-### 13.2 Le connecteur KV — la couture technique
+### 13.2 The KV Connector — The Technical Seam
 
-L'évolution architecturale de vLLM (la réécriture du moteur "V1") a spécifiquement ajouté une **interface de connecteur KV propre et pluggable** dans le cœur, pour que des systèmes externes de cache/transfert — comme LMCache et des connecteurs basés NIXL — puissent s'attacher **sans forker vLLM**. Cette interface de connecteur est la couture technique qui rend possibles les fonctionnalités conscientes du cache et désagrégées de llm-d sans que vLLM lui-même ne devienne un système distribué.
+vLLM's architectural evolution (the "V1" engine rewrite) specifically added a **clean, pluggable KV-connector interface** to the core, so external cache/transfer systems — like LMCache and NIXL-based connectors — can attach **without forking vLLM**. This connector interface is the technical seam that makes llm-d's cache-aware and disaggregated features possible without vLLM itself becoming a distributed system.
 
 ```mermaid
 flowchart TB
-    subgraph vLLMPod["Pod vLLM (V1 engine)"]
-        Exec[Boucle d'exécution<br/>PagedAttention, batching]
-        Metrics[Métriques Prometheus]
-        KVEvt[Émetteur d'événements KV<br/>ZMQ PUB]
-        ConnAPI[Interface KV-Connector<br/>pluggable]
+    subgraph vLLMPod["vLLM Pod (V1 engine)"]
+        Exec[Execution loop<br/>PagedAttention, batching]
+        Metrics[Prometheus metrics]
+        KVEvt[KV event emitter<br/>ZMQ PUB]
+        ConnAPI[Pluggable KV-Connector<br/>interface]
     end
     Exec --> Metrics
     Exec --> KVEvt
@@ -785,22 +785,22 @@ flowchart TB
 
 ---
 
-## 14. Intégration avec LMCache
+## 14. Integration with LMCache
 
-**LMCache** est un projet open-source indépendant qui étend les moteurs d'inférence (principalement vLLM) avec une couche de KV-cache multi-tier haute performance. Dans l'écosystème llm-d, LMCache est communément décrit comme la **couche de KV-cache par défaut** de llm-d — il ne fait pas partie du code de llm-d lui-même, mais les well-lit paths et guides de llm-d l'intègrent comme la manière recommandée d'obtenir un cache hiérarchisé et une réutilisation de cache inter-nœuds.
+**LMCache** is an independent open-source project that extends inference engines (primarily vLLM) with a high-performance multi-tier KV-cache layer. In the llm-d ecosystem, LMCache is commonly described as the **default KV-cache layer** of llm-d — it is not part of llm-d's own code, but llm-d's well-lit paths and guides integrate it as the recommended way to get hierarchical caching and cross-node cache reuse.
 
-### 14.1 Mode d'intégration : le connecteur KV plug-in
+### 14.1 Integration Mode: The Plug-in KV Connector
 
-LMCache s'attache à vLLM via l'API KV-Connector de vLLM. Dans le moteur V1 actuel de vLLM, la classe de connecteur pertinente est **`LMCacheConnectorV1`**. C'est le chemin d'intégration principal et recommandé : il permet à LMCache de gérer sa propre indexation de blocs et sa mémoire multi-tier (HBM GPU → RAM CPU → SSD local → stockage distant/partagé) tout en s'appuyant sur la boucle d'exécution de vLLM.
+LMCache attaches to vLLM via vLLM's KV-Connector API. In vLLM's current V1 engine, the relevant connector class is **`LMCacheConnectorV1`**. This is the primary and recommended integration path: it lets LMCache manage its own block indexing and multi-tier memory (GPU HBM → CPU RAM → local SSD → remote/shared storage) while leveraging vLLM's execution loop.
 
-Un chemin alternatif, plus léger, est le **connecteur d'offloading natif de vLLM**, qui étend le cache vers la RAM CPU ou un système de fichiers partagé sans intégrer toute la pile LMCache — utile quand seul un simple offload CPU est nécessaire, pas un cache complet multi-tier/partagé.
+An alternative, lighter path is vLLM's **native offloading connector**, which extends cache to CPU RAM or a shared filesystem without integrating the full LMCache stack — useful when only simple CPU offload is needed, not full multi-tier/shared caching.
 
-### 14.2 Désagrégation prefill avec LMCache — le câblage concret
+### 14.2 Prefill Disaggregation with LMCache — The Concrete Wiring
 
-Pour la désagrégation P/D, chaque instance vLLM est lancée avec un `kv-transfer-config` sélectionnant un connecteur KV et un rôle :
+For P/D disaggregation, each vLLM instance is launched with a `kv-transfer-config` selecting a KV connector and a role:
 
 ```bash
-# Instance Prefill (producteur)
+# Prefill instance (producer)
 vllm serve meta-llama/Llama-3.1-8B-Instruct \
   --port 7100 \
   --kv-transfer-config \
@@ -808,7 +808,7 @@ vllm serve meta-llama/Llama-3.1-8B-Instruct \
     "kv_connector_extra_config":{"discard_partial_chunks": false,
     "lmcache_rpc_port":"producer1"}}'
 
-# Instance Decode (consommateur)
+# Decode instance (consumer)
 UCX_TLS=cuda_ipc,cuda_copy,tcp \
 LMCACHE_CONFIG_FILE=lmcache-decoder-config.yaml \
 CUDA_VISIBLE_DEVICES=1 \
@@ -820,11 +820,11 @@ vllm serve meta-llama/Llama-3.1-8B-Instruct \
     "lmcache_rpc_port":"consumer1"}}'
 ```
 
-Sous le capot, LMCache utilise **NIXL** comme transport de transfert KV (supportant NVLink, NIC RDMA, ou TCP en repli), donc la même couche NIXL décrite en Section 7.2 transporte les tenseurs déplacés par le connecteur de LMCache.
+Under the hood, LMCache uses **NIXL** as the KV transfer transport (supporting NVLink, RDMA NICs, or TCP as fallback), so the same NIXL layer described in Section 7.2 transports the tensors moved by LMCache's connector.
 
-vLLM propose aussi un chemin plus minimal, **`NixlConnector`**, pour les équipes voulant un envoi/réception NIXL pleinement asynchrone sans la pile LMCache complète (stockage multi-tier, réutilisation de cache inter-requêtes à l'échelle du pool). Les deux peuvent même être composés via **`MultiConnector`** de vLLM, ex. `[NixlConnector (kv_producer), LMCacheMPConnector]`, pour que le transfert KV en direct et le cache multi-tier durable coexistent.
+vLLM also offers a more minimal path, **`NixlConnector`**, for teams wanting fully asynchronous NIXL send/receive without the full LMCache stack (multi-tier storage, cross-request pool-scale cache reuse). Both can even be composed via vLLM's **`MultiConnector`**, e.g., `[NixlConnector (kv_producer), LMCacheMPConnector]`, so live KV transfer and durable multi-tier caching coexist.
 
-Chaque instance vLLM de ce setup tourne typiquement avec son propre processus serveur LMCache (ils ne doivent pas en partager un), démarré indépendamment :
+Each vLLM instance in this setup typically runs with its own LMCache server process (they should not share one), started independently:
 
 ```bash
 lmcache server \
@@ -833,44 +833,44 @@ lmcache server \
   --instance-id prefiller
 ```
 
-Un routeur en amant de la paire prefill/decode (dans le cas de llm-d, le Router/EPP décrit en Section 5) envoie chaque requête vers une instance prefill puis une instance decode en séquence, en enfilant la poignée de main NIXL entre les deux.
+A router in front of the prefill/decode pair (in llm-d's case, the Router/EPP described in Section 5) sends each request to a prefill instance then a decode instance in sequence, threading the NIXL handshake between them.
 
-### 14.3 Ce que LMCache apporte spécifiquement
+### 14.3 What LMCache Specifically Provides
 
-| Capacité | Fournie par |
+| Capability | Provided By |
 |---|---|
-| Stockage KV multi-tier (HBM → DRAM → SSD → distant) | LMCache |
-| Réutilisation de cache inter-requête, inter-réplica ("CacheBlend") | LMCache |
-| Transfert de KV-cache pour la désagrégation prefill/decode | Connecteur NIXL de LMCache, ou `NixlConnector` natif de vLLM |
-| Visibilité cluster-wide de la localisation du cache | KV-Cache Indexer de llm-d, alimenté par les événements émis par LMCache/vLLM |
-| Décision de quel pod router selon cette visibilité | Endpoint Picker de llm-d |
+| Multi-tier KV storage (HBM → DRAM → SSD → remote) | LMCache |
+| Cross-request, cross-replica cache reuse ("CacheBlend") | LMCache |
+| KV-cache transfer for prefill/decode disaggregation | LMCache's NIXL connector, or vLLM's native `NixlConnector` |
+| Cluster-wide visibility of cache location | llm-d's KV-Cache Indexer, fed by events emitted by LMCache/vLLM |
+| Decision of which pod to route based on that visibility | llm-d's Endpoint Picker |
 
-En résumé : **LMCache gère et déplace le cache** ; **llm-d sait où est le cache et route en conséquence**. Aucun ne remplace l'autre — ce sont des couches complémentaires.
+In summary: **LMCache manages and moves the cache**; **llm-d knows where the cache is and routes accordingly**. Neither replaces the other — they are complementary layers.
 
 ---
 
-## 15. Support multi-moteurs : SGLang et TensorRT-LLM
+## 15. Multi-Engine Support: SGLang and TensorRT-LLM
 
-Bien que vLLM soit le moteur le plus profondément intégré, llm-d supporte également **SGLang** et **TensorRT-LLM** (`trtllm-serve`) comme moteurs de serving alternatifs.
+While vLLM is the most deeply integrated engine, llm-d also supports **SGLang** and **TensorRT-LLM** (`trtllm-serve`) as alternative serving engines.
 
-SGLang est supporté à travers l'ensemble des well-lit paths :
+SGLang is supported across all well-lit paths:
 
-- Routage "prefix-aware"
-- Gestion distribuée du KV-cache
-- Désagrégation P/D
-- Autoscaling SLO-aware et contrôle de flux
+- Prefix-aware routing
+- Distributed KV-cache management
+- P/D disaggregation
+- SLO-aware autoscaling and flow control
 
 ```mermaid
 flowchart TB
-    Router6[Router llm-d / EPP] --> Eng{Moteur de serving}
-    Eng --> VLLM6[vLLM<br/>intégration la plus profonde]
-    Eng --> SGL6[SGLang<br/>tous les well-lit paths]
+    Router6[llm-d Router / EPP] --> Eng{Serving Engine}
+    Eng --> VLLM6[vLLM<br/>deepest integration]
+    Eng --> SGL6[SGLang<br/>all well-lit paths]
     Eng --> TRT6[TensorRT-LLM<br/>trtllm-serve]
 ```
 
 ---
 
-## 16. Le chemin de données complet, de bout en bout
+## 16. The Complete End-to-End Data Path
 
 ```mermaid
 sequenceDiagram
@@ -878,50 +878,50 @@ sequenceDiagram
     participant GW as Gateway (Envoy/Istio)
     participant EPP as Endpoint Picker
     participant IDX as KV-Cache Indexer
-    participant PF as Pod vLLM Prefill (+LMCache)
-    participant DC as Pod vLLM Decode (+LMCache)
+    participant PF as vLLM Prefill Pod (+LMCache)
+    participant DC as vLLM Decode Pod (+LMCache)
 
     C->>GW: POST /v1/chat/completions
-    GW->>EPP: ext-proc : évaluer la requête
-    EPP->>IDX: Quel pod détient ce préfixe ?
-    IDX-->>EPP: Pod PF a 80% du préfixe en cache
-    EPP-->>GW: Route : prefill → PF, decode → DC
-    GW->>PF: Transfère le prompt
-    PF->>PF: Calcule les 20% restants du KV-cache
-    PF->>DC: Transfère le KV-cache complet via LMCache/NIXL
-    DC->>DC: Génère les tokens (streaming)
-    DC-->>GW: Flux SSE de tokens
-    GW-->>C: Réponse streamée
-    PF-->>IDX: Émet les événements de blocs KV (créés/évincés)
-    DC-->>IDX: Émet les événements de blocs KV (créés/évincés)
+    GW->>EPP: ext-proc: evaluate request
+    EPP->>IDX: Which pod holds this prefix?
+    IDX-->>EPP: Pod PF has 80% of prefix in cache
+    EPP-->>GW: Route: prefill → PF, decode → DC
+    GW->>PF: Forward prompt
+    PF->>PF: Computes remaining 20% of KV-cache
+    PF->>DC: Transfers full KV-cache via LMCache/NIXL
+    DC->>DC: Generates tokens (streaming)
+    DC-->>GW: SSE token stream
+    GW-->>C: Streamed response
+    PF-->>IDX: Emits KV block events (created/evicted)
+    DC-->>IDX: Emits KV block events (created/evicted)
 ```
 
-Cette vue composite résume tout : l'intelligence de routage (Sections 5–6) décide **où** ; la désagrégation (Section 10) décide **comment** le travail est réparti ; LMCache et NIXL (Section 14) décident **comment** le cache se déplace physiquement ; et l'autoscaler (Section 12) décide **combien** de pods existent pour accomplir tout cela.
+This composite view summarizes everything: routing intelligence (Sections 5–6) decides **where**; disaggregation (Section 10) decides **how** work is split; LMCache and NIXL (Section 14) decide **how** the cache physically moves; and the autoscaler (Section 12) decides **how many** pods exist to accomplish all of this.
 
 ---
 
-## 17. Relation avec Kubernetes, KServe, Gateway API et LeaderWorkerSet
+## 17. Relationship with Kubernetes, KServe, Gateway API, and LeaderWorkerSet
 
-llm-d ne réinvente délibérément pas les primitives Kubernetes. Il compose avec :
+llm-d deliberately does not reinvent Kubernetes primitives. It composes with:
 
-- **Gateway API / Gateway API Inference Extension (GAIE)** : llm-d est une implémentation de référence principale de GAIE, notamment de l'`InferencePool` et de l'Endpoint Picker Protocol ; le dépôt GAIE possède la définition de l'API `InferencePool`, tandis que le dépôt du router de llm-d possède désormais l'implémentation de l'EPP et les API `InferenceObjective` / `InferenceModelRewrite`.
-- **KServe** : gère le **cycle de vie du modèle** — déploiement, versionnage, rollout canary — via sa custom resource `LLMInferenceService`, tandis que llm-d gère le **routage et l'optimisation du cache au moment de l'inférence**, en dessous. Les deux sont explicitement conçus pour être superposés, pas en compétition : *"llm-d complète plutôt qu'il ne remplace KServe."* Concrètement, KServe utilise `LLMInferenceService` pour déclarer la configuration P/D, et llm-d fournit LeaderWorkerSet pour l'orchestration multi-nœuds — la combinaison apportant scalabilité, performance et maîtrise des coûts.
-- **LeaderWorkerSet (LWS)** : une API Kubernetes (menée par Google) pour orchestrer des groupes de workers multi-nœuds avec une topologie leader/worker ; llm-d l'utilise pour le parallélisme expert large et d'autres topologies désagrégées multi-nœuds.
-- **KEDA / HPA** : la logique d'autoscaling SLO-aware de llm-d est conçue pour se superposer aux autoscalers Kubernetes standards, ou pour leur fournir des signaux, plutôt que de remplacer le mécanisme de scaling sous-jacent.
-- **Volcano / Kueue / KAITO** : reconnus dans la propre candidature CNCF Sandbox de llm-d comme des projets adjacents avec un recouvrement de portée partiel (scheduling batch/gang, toolchain de déploiement de modèle) ; llm-d reste délibérément agnostique sur la manière dont les serveurs de modèles sont déployés.
+- **Gateway API / Gateway API Inference Extension (GAIE)**: llm-d is a primary reference implementation of GAIE, notably the `InferencePool` and the Endpoint Picker Protocol; the GAIE repository holds the `InferencePool` API definition, while the llm-d router repository now holds the EPP implementation and the `InferenceObjective` / `InferenceModelRewrite` APIs.
+- **KServe**: handles the **model lifecycle** — deployment, versioning, canary rollout — via its `LLMInferenceService` custom resource, while llm-d handles **routing and cache optimization at inference time**, underneath. The two are explicitly designed to be layered, not competing: *"llm-d complements rather than replaces KServe."* Concretely, KServe uses `LLMInferenceService` to declare the P/D configuration, and llm-d provides LeaderWorkerSet for multi-node orchestration — the combination bringing scalability, performance, and cost control.
+- **LeaderWorkerSet (LWS)**: a Kubernetes API (led by Google) for orchestrating multi-node worker groups with a leader/worker topology; llm-d uses it for wide expert parallelism and other multi-node disaggregated topologies.
+- **KEDA / HPA**: llm-d's SLO-aware autoscaling logic is designed to overlay on top of standard Kubernetes autoscalers, or to feed them signals, rather than replacing the underlying scaling mechanism.
+- **Volcano / Kueue / KAITO**: recognized in llm-d's own CNCF Sandbox application as adjacent projects with partial scope overlap (batch/gang scheduling, model deployment tooling); llm-d remains deliberately agnostic about how model servers are deployed.
 
 ```mermaid
 flowchart TB
-    subgraph ControlPlane["Plan de contrôle"]
-        KServe7["KServe<br/>(cycle de vie du modèle, rollout)"]
+    subgraph ControlPlane["Control Plane"]
+        KServe7["KServe<br/>(model lifecycle, rollout)"]
     end
-    subgraph DataPlaneRouting["Plan de données conscient de l'inférence"]
+    subgraph DataPlaneRouting["Inference-aware Data Plane"]
         GAIE7["Gateway API +<br/>Inference Extension"]
-        LLMD7["Router llm-d (EPP)"]
+        LLMD7["llm-d Router (EPP)"]
     end
-    subgraph Compute["Couche de calcul"]
-        VLLM7["Pods vLLM / SGLang"]
-        LWS7["LeaderWorkerSet<br/>(groupes multi-nœuds)"]
+    subgraph Compute["Compute Layer"]
+        VLLM7["vLLM / SGLang Pods"]
+        LWS7["LeaderWorkerSet<br/>(multi-node groups)"]
     end
     KServe7 --> GAIE7
     GAIE7 --> LLMD7
@@ -931,70 +931,70 @@ flowchart TB
 
 ---
 
-## 18. Mise en œuvre concrète : prérequis et préparation du cluster
+## 18. Concrete Implementation: Prerequisites and Cluster Preparation
 
-Avant de déployer n'importe quel well-lit path de llm-d, les prérequis documentés sont :
+Before deploying any llm-d well-lit path, the documented prerequisites are:
 
-### 18.1 Outillage client (sur la machine de l'opérateur)
+### 18.1 Client Tooling (on the operator's machine)
 
 ```bash
-kubectl version --client   # v1.30+ recommandé
+kubectl version --client   # v1.30+ recommended
 helm version                # v3.12+
 yq --version
 kustomize version
 helmfile --version
-nvidia-smi                  # confirmer le pilote GPU / la visibilité
+nvidia-smi                  # confirm GPU driver / visibility
 ```
 
-### 18.2 CRD côté cluster — Gateway API et l'extension d'inférence
+### 18.2 Cluster-Side CRDs — Gateway API and Inference Extension
 
 ```bash
-# 1. CRD Gateway API
+# 1. Gateway API CRDs
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
 
-# 2. CRD Gateway API Inference Extension (GAIE)
+# 2. Gateway API Inference Extension (GAIE) CRDs
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v0.3.0/manifests.yaml
 ```
 
 ### 18.3 Secrets
 
-La plupart des guides de serving de modèles attendent un secret Kubernetes portant un token Hugging Face, conventionnellement nommé `llm-d-hf-token`, utilisé pour tirer des poids de modèles fermés (gated).
+Most model-serving guides expect a Kubernetes secret containing a Hugging Face token, conventionally named `llm-d-hf-token`, used to pull gated model weights.
 
-### 18.4 Étiquetage matériel
+### 18.4 Hardware Labeling
 
-Les nœuds du cluster doivent être étiquetés et préparés pour le backend d'accélérateur spécifique utilisé (CUDA pour NVIDIA, ROCm pour AMD, XPU pour Intel, ou pools de nœuds spécifiques TPU sur GKE).
+Cluster nodes must be labeled and prepared for the specific accelerator backend used (CUDA for NVIDIA, ROCm for AMD, XPU for Intel, or specific TPU node pools on GKE).
 
-### 18.5 Prérequis réseau — uniquement pour la désagrégation / Wide EP
+### 18.5 Network Prerequisites — Only for Disaggregation / Wide EP
 
-Interconnect compatible RDMA (InfiniBand ou RoCE) entre les nœuds qui échangeront du KV-cache ou du trafic expert-parallèle. **Non requis** pour le chemin de base de routage conscient du cache.
+RDMA-capable interconnect (InfiniBand or RoCE) between nodes that will exchange KV-cache or expert-parallel traffic. **Not required** for the basic cache-aware routing path.
 
-> ⚠️ Toujours confirmer les numéros de version exacts (tags de release Gateway API et GAIE) sur les pages GitHub releases actuelles de llm-d et de gateway-api-inference-extension avant de déployer, car ces éléments évoluent vite tant que le projet est en CNCF Sandbox.
+> ⚠️ Always confirm exact version numbers (Gateway API and GAIE release tags) on the current llm-d and gateway-api-inference-extension GitHub releases pages before deploying, as these evolve quickly while the project is in CNCF Sandbox.
 
 ---
 
-## 19. Mise en œuvre concrète : déployer les "Well-Lit Paths"
+## 19. Concrete Implementation: Deploying the "Well-Lit Paths"
 
-llm-d livre ses patterns de production sous forme de **"well-lit paths"** — des blueprints benchmarkés, reproductibles, basés sur des charts Helm — plutôt qu'un installeur monolithique unique.
+llm-d delivers its production patterns as **"well-lit paths"** — benchmarked, reproducible blueprints based on Helm charts — rather than a single monolithic installer.
 
-### 19.1 Catalogue complet des well-lit paths
+### 19.1 Complete Well-Lit Path Catalog
 
-1. **Intelligent Inference Scheduling** — le chemin de base de routage conscient du cache (vLLM ou SGLang, serving à phase unique).
-2. **Precise Prefix-Cache Routing** — ajoute le KV-Cache Indexer pour un routage exact (non heuristique) des hits de cache.
-3. **Wide EP / LWS** — serving MoE multi-nœuds.
-4. **Flow Control** — équité multi-tenant et priorisation des requêtes.
-5. **Predicted-Latency Routing** — le scorer expérimental de latence prédite.
-6. **Batch Gateway** — inférence asynchrone par batch compatible OpenAI.
+1. **Intelligent Inference Scheduling** — the baseline cache-aware routing path (vLLM or SGLang, single-phase serving).
+2. **Precise Prefix-Cache Routing** — adds the KV-Cache Indexer for exact (non-heuristic) cache-hit routing.
+3. **Wide EP / LWS** — multi-node MoE serving.
+4. **Flow Control** — multi-tenant fairness and request prioritization.
+5. **Predicted-Latency Routing** — the experimental predicted-latency scorer.
+6. **Batch Gateway** — OpenAI-compatible asynchronous batch inference.
 
 ```mermaid
 flowchart TB
-    Base[1. Intelligent Inference Scheduling<br/>routage baseline] --> Precise[2. Precise Prefix-Cache Routing<br/>KV-Cache Indexer]
-    Precise --> Flow[4. Flow Control<br/>équité multi-tenant]
-    Precise --> Pred[5. Predicted-Latency Routing<br/>expérimental]
-    Precise --> Wide[3. Wide EP / LWS<br/>MoE multi-nœuds]
-    Base --> Batch[6. Batch Gateway<br/>inférence asynchrone]
+    Base[1. Intelligent Inference Scheduling<br/>baseline routing] --> Precise[2. Precise Prefix-Cache Routing<br/>KV-Cache Indexer]
+    Precise --> Flow[4. Flow Control<br/>multi-tenant fairness]
+    Precise --> Pred[5. Predicted-Latency Routing<br/>experimental]
+    Precise --> Wide[3. Wide EP / LWS<br/>multi-node MoE]
+    Base --> Batch[6. Batch Gateway<br/>async inference]
 ```
 
-### 19.2 Installation représentative du chemin de routage de base
+### 19.2 Representative Baseline Routing Path Installation
 
 ```bash
 helm repo add llm-d https://llm-d.github.io/llm-d-deployer
@@ -1010,213 +1010,213 @@ helm install llm-d llm-d/llm-d \
   --set autoscaling.enabled=true \
   --set autoscaling.scaleToZero=true
 
-# Vérification
+# Verification
 kubectl get pods -n llm-serving -w
 kubectl get inferencepool -n llm-serving
 ```
 
-> ⚠️ Traiter les flags `--set` ci-dessus comme illustratifs. llm-d étant un projet CNCF Sandbox à évolution rapide avec des charts Helm par dépôt (router, indexer, guides well-lit-path), toujours tirer le schéma exact de `values.yaml` depuis le guide well-lit-path spécifique suivi dans la documentation actuelle de llm-d/llm-d (`guides/README.md` et les fichiers `guides/<path>/README.md`) plutôt que de supposer que les noms de flags sont stables entre releases.
+> ⚠️ Treat the `--set` flags above as illustrative. Since llm-d is a fast-evolving CNCF Sandbox project with per-repository Helm charts (router, indexer, well-lit-path guides), always pull the exact `values.yaml` schema from the specific well-lit-path guide being followed in the current llm-d/llm-d documentation (`guides/README.md` and the `guides/<path>/README.md` files) rather than assuming flag names are stable between releases.
 
-### 19.3 Piège fréquent au premier déploiement
+### 19.3 Common First-Deployment Pitfall
 
-Le choix par défaut à faire explicitement après l'installation est le câblage de l'`HTTPRoute` : cette ressource référence la Gateway et l'InferencePool par nom, et si les noms de release sont personnalisés (par ex. via un `RELEASE_NAME_POSTFIX`), l'`HTTPRoute` doit être mise à jour en conséquence avant d'être appliquée — un mode d'échec fréquent au premier déploiement.
+The default choice to make explicitly after installation is the `HTTPRoute` wiring: this resource references the Gateway and InferencePool by name, and if release names are customized (e.g., via a `RELEASE_NAME_POSTFIX`), the `HTTPRoute` must be updated accordingly before applying — a common first-deployment failure mode.
 
 ---
 
-## 20. Mise en œuvre concrète : configurer le service désagrégé avec LMCache + NIXL
+## 20. Concrete Implementation: Configuring the Disaggregated Service with LMCache + NIXL
 
-Voici la mécanique à câbler pour activer la désagrégation P/D avec LMCache sous un pool routé par llm-d (exemple mono-nœud, généralisable au multi-nœuds avec IP routables).
+Here is the mechanics to wire up to enable P/D disaggregation with LMCache under an llm-d-routed pool (single-node example, generalizable to multi-node with routable IPs).
 
-### Étape 1 — installer les dépendances dans l'image du serveur de modèle
+### Step 1 — Install dependencies in the model server image
 
 ```bash
 pip install lmcache
-# NIXL (tiré automatiquement via l'extra lmcache[nixl], nécessite nixl>=1.3.0)
+# NIXL (pulled automatically via the lmcache[nixl] extra, requires nixl>=1.3.0)
 pip install "lmcache[nixl]"
 ```
 
-### Étape 2 — démarrer un serveur LMCache par instance vLLM
+### Step 2 — Start one LMCache server per vLLM instance
 
 ```bash
-# Serveur LMCache côté prefill
+# LMCache server on the prefill side
 lmcache server \
   --port 6555 --http-port 8090 \
   --l1-size-gb 100 --eviction-policy LRU --chunk-size 256 \
   --instance-id prefiller
 
-# Serveur LMCache côté decode (port / instance-id différents)
+# LMCache server on the decode side (different port / instance-id)
 lmcache server \
   --port 6655 --http-port 8091 \
   --l1-size-gb 100 --eviction-policy LRU --chunk-size 256 \
   --instance-id decoder
 ```
 
-### Étape 3 — démarrer les deux instances vLLM avec les rôles de connecteur correspondants
+### Step 3 — Start both vLLM instances with the corresponding connector roles
 
-Variables d'environnement clés pour la poignée de main NIXL :
+Key environment variables for the NIXL handshake:
 
 ```bash
-export VLLM_NIXL_SIDE_CHANNEL_HOST=<hôte-routable>
-export VLLM_NIXL_SIDE_CHANNEL_PORT=5600   # doit différer par instance sur le même hôte
+export VLLM_NIXL_SIDE_CHANNEL_HOST=<routable-host>
+export VLLM_NIXL_SIDE_CHANNEL_PORT=5600   # must differ per instance on the same host
 export UCX_NET_DEVICES=all
 export NCCL_CUMEM_ENABLE=1
 ```
 
-### Étape 4 — mettre un routeur conscient P/D devant les deux instances
+### Step 4 — Put a P/D-aware router in front of both instances
 
-Dans un déploiement LMCache autonome, ce rôle est joué par l'helper `vllm-router --vllm-pd-disaggregation`. Dans llm-d, ce rôle est joué par le Router/EPP décrit en Section 5, utilisant les plugins de scoring `prefill-filter` / `decode-filter` pour envoyer chaque requête au bon membre du pool en séquence.
+In a standalone LMCache deployment, this role is played by the `vllm-router --vllm-pd-disaggregation` helper. In llm-d, this role is played by the Router/EPP described in Section 5, using the `prefill-filter` / `decode-filter` scoring plugins to send each request to the correct pool member in sequence.
 
-### Étape 5 (optionnel) — réutilisation de cache inter-pool
+### Step 5 (optional) — Cross-pool cache reuse
 
-Pour partager les hits de prefix-cache entre les pools prefill et decode (pas seulement au sein d'une même paire P/D d'une requête), donner aux deux serveurs LMCache accès à une configuration de partage de cache pair-à-pair, pour que des préfixes de prompt identiques vus par l'un ou l'autre pool puissent être réutilisés, et pas seulement au sein de la paire P/D d'une seule requête.
+To share prefix-cache hits between prefill and decode pools (not just within a single request's P/D pair), give both LMCache servers access to a peer-to-peer cache sharing configuration, so identical prompt prefixes seen by either pool can be reused, not just within a single request's P/D pair.
 
-### Notes de packaging Kubernetes
+### Kubernetes Packaging Notes
 
-- Les pods prefill et decode sont typiquement des **Deployments distincts** (ou des groupes **LeaderWorkerSet** pour le prefill/decode multi-nœuds), chacun avec sa propre appartenance à l'InferencePool et des labels de pod (`role: prefill` / `role: decode`) sur lesquels s'appuient les filtres de l'EPP.
-- Le réseau RDMA/RoCE, s'il est utilisé, nécessite généralement `hostNetwork: true` ou une configuration d'interface réseau secondaire basée SR-IOV/Multus, plus le device plugin approprié pour le passthrough NIC — spécifique au cluster et au fournisseur cloud, à valider contre la documentation RDMA-sur-Kubernetes de son propre fournisseur d'infrastructure.
+- Prefill and decode pods are typically **separate Deployments** (or **LeaderWorkerSet** groups for multi-node prefill/decode), each with its own InferencePool membership and pod labels (`role: prefill` / `role: decode`) that the EPP's filters rely on.
+- RDMA/RoCE networking, if used, generally requires `hostNetwork: true` or SR-IOV/Multus-based secondary network interface configuration, plus the appropriate NIC device plugin for passthrough — cluster- and cloud-provider-specific, to validate against your own infrastructure provider's RDMA-on-Kubernetes documentation.
 
 ---
 
-## 21. Observabilité : métriques et tableaux de bord
+## 21. Observability: Metrics and Dashboards
 
-llm-d et ses dépendances exposent des métriques compatibles Prometheus à plusieurs niveaux.
+llm-d and its dependencies expose Prometheus-compatible metrics at multiple levels.
 
-### 21.1 Métriques vLLM essentielles
+### 21.1 Essential vLLM Metrics
 
-| Métrique | Ce qu'elle mesure | Pourquoi c'est important |
+| Metric | What It Measures | Why It Matters |
 |---|---|---|
-| `vllm:num_requests_running` | Requêtes actives en cours | Saturation GPU |
-| `vllm:num_requests_waiting` | Requêtes en file d'attente | Signal principal pour l'autoscaling |
-| `vllm:gpu_cache_usage_perc` / `vllm:kv_cache_usage_perc` | Utilisation du KV-cache | > 0.9 = pression mémoire GPU forte |
-| `vllm:time_to_first_token_seconds` (TTFT, histogramme) | Latence jusqu'au 1er token | Impact direct sur l'expérience utilisateur |
-| `vllm:inter_token_latency_seconds` (ITL, histogramme) | Latence entre tokens successifs | Fluidité du streaming |
-| `vllm:prefix_cache_hits_total` | Hits du cache préfixe | Efficacité du routage conscient du cache |
-| `vllm:prefix_cache_queries_total` | Requêtes totales de cache | Permet de calculer le taux de hit |
+| `vllm:num_requests_running` | Active in-progress requests | GPU saturation |
+| `vllm:num_requests_waiting` | Queued requests | Primary signal for autoscaling |
+| `vllm:gpu_cache_usage_perc` / `vllm:kv_cache_usage_perc` | KV-cache utilization | > 0.9 = strong GPU memory pressure |
+| `vllm:time_to_first_token_seconds` (TTFT, histogram) | Latency to 1st token | Direct impact on user experience |
+| `vllm:inter_token_latency_seconds` (ITL, histogram) | Latency between successive tokens | Streaming smoothness |
+| `vllm:prefix_cache_hits_total` | Prefix cache hits | Cache-aware routing effectiveness |
+| `vllm:prefix_cache_queries_total` | Total cache queries | Enables hit-rate calculation |
 
-### 21.2 Métriques SGLang essentielles
+### 21.2 Essential SGLang Metrics
 
-| Métrique | Ce qu'elle mesure |
+| Metric | What It Measures |
 |---|---|
-| `sglang:num_running_reqs` | Requêtes actives en cours |
+| `sglang:num_running_reqs` | Active in-progress requests |
 
-### 21.3 Métriques au niveau Router / Indexer / Autoscaler
+### 21.3 Router / Indexer / Autoscaler-Level Metrics
 
-| Couche | Métrique | Pourquoi c'est important |
+| Layer | Metric | Why It Matters |
 |---|---|---|
-| EPP / Router | Taux de hit du cache (scorer prefix-cache) | Efficacité du routage conscient du cache |
-| EPP / Router | Latence de décision de routage | Overhead ajouté par le routeur lui-même |
-| KV-Cache Indexer | Fraîcheur / intervalle de synchro de l'index | Fraîcheur des décisions de routage |
-| Chemin désagrégé | Durée de transfert KV, échecs de transfert | Santé du chemin NIXL/RDMA |
-| Autoscaler | Événements de scale-out/scale-in vs. breachs SLO | Si l'autoscaling protège réellement les SLO |
+| EPP / Router | Cache hit rate (prefix-cache scorer) | Cache-aware routing effectiveness |
+| EPP / Router | Routing decision latency | Overhead added by the router itself |
+| KV-Cache Indexer | Index freshness / sync interval | Freshness of routing decisions |
+| Disaggregated path | KV transfer duration, transfer failures | Health of the NIXL/RDMA path |
+| Autoscaler | Scale-out/scale-in events vs. SLO breaches | Whether autoscaling actually protects SLOs |
 
 ```mermaid
 flowchart TB
-    subgraph Sources["Sources de métriques"]
-        M1[Moteur vLLM/SGLang<br/>Prometheus]
+    subgraph Sources["Metric Sources"]
+        M1[vLLM/SGLang Engine<br/>Prometheus]
         M2[EPP / Router]
         M3[KV-Cache Indexer]
-        M4[Chemin désagrégé NIXL/RDMA]
+        M4[Disaggregated NIXL/RDMA path]
         M5[Autoscaler]
     end
-    Sources --> Prom[Serveur Prometheus]
-    Prom --> Dash[Dashboards Grafana]
+    Sources --> Prom[Prometheus Server]
+    Prom --> Dash[Grafana Dashboards]
     Dash --> Bench[llm-d-benchmark<br/>Open Benchmarking Framework]
 ```
 
-Le projet fournit aussi un framework **Open Benchmarking** (`llm-d-benchmark`) spécifiquement pour que les adoptants puissent comparer quantitativement TTFT, TPOT, débit et utilisation du KV-cache avant et après activation de chaque capacité de llm-d, plutôt que de se fier uniquement aux chiffres rapportés par les fournisseurs — une étape que chaque guide tiers recommande explicitement compte tenu du niveau de maturité Sandbox du projet.
+The project also provides an **Open Benchmarking** framework (`llm-d-benchmark`) specifically so adopters can quantitatively compare TTFT, TPOT, throughput, and KV-cache utilization before and after enabling each llm-d capability, rather than relying solely on vendor-reported figures — a step every third-party guide explicitly recommends given the project's Sandbox maturity level.
 
 ---
 
-## 22. Considérations opérationnelles, limites et risques
+## 22. Operational Considerations, Limitations, and Risks
 
-Présentées de façon équilibrée, car il s'agit d'un véritable compromis architectural :
+Presented in a balanced way, as this is a genuine architectural trade-off:
 
-- **Coût de complexité.** Passer de "Envoy + vLLM" à "Envoy + EPP + KV-Cache Indexer + pools prefill/decode séparés + réseau NIXL" est une réelle augmentation du nombre de composants à surveiller, mettre à jour et déboguer. Il faut s'attendre à investir dans de nouveaux runbooks et une familiarité on-call accrue.
+- **Complexity cost.** Moving from "Envoy + vLLM" to "Envoy + EPP + KV-Cache Indexer + separate prefill/decode pools + NIXL networking" is a real increase in the number of components to monitor, upgrade, and debug. Expect to invest in new runbooks and increased on-call familiarity.
 
-- **Le réseau est une barrière dure pour la désagrégation et le Wide EP.** Sans interconnect de classe RDMA (InfiniBand/RoCE), le transfert du KV-cache entre pods prefill et decode — ou le trafic All-to-All expert-parallèle — peut être plus lent que le simple recalcul local, annulant le bénéfice. Sur un réseau cloud classique (1/10GbE, sans RDMA), rester sur le chemin de routage conscient du cache uniquement.
+- **Network is a hard barrier for disaggregation and Wide EP.** Without an RDMA-class interconnect (InfiniBand/RoCE), transferring KV-cache between prefill and decode pods — or expert-parallel All-to-All traffic — can be slower than simply recalculating locally, negating the benefit. On a classic cloud network (1/10GbE, no RDMA), stick to the cache-aware routing path only.
 
-- **Maturité.** En tant que projet CNCF Sandbox (le plus précoce des trois niveaux de maturité), llm-d doit être considéré comme ayant des API évolutives, des changements cassants potentiels entre releases mineures, et des lacunes de robustesse sur les cas limites par rapport aux projets CNCF Incubating/Graduated. Plusieurs guides indépendants convergent vers la même recommandation : valider en staging avec le framework Open Benchmarking avant tout déploiement en production.
+- **Maturity.** As a CNCF Sandbox project (the earliest of the three maturity levels), llm-d should be considered to have evolving APIs, potential breaking changes between minor releases, and edge-case robustness gaps compared to CNCF Incubating/Graduated projects. Multiple independent guides converge on the same recommendation: validate in staging with the Open Benchmarking framework before any production deployment.
 
-- **L'Indexeur comme nouvelle dépendance.** Le KV-Cache Indexer doit lui-même être dimensionné et surveillé ; s'il devient obsolète ou indisponible, l'EPP dégrade typiquement vers un mode de routage moins précis (heuristique ou proche du round-robin), abandonnant silencieusement une partie du bénéfice de hit de cache jusqu'à sa récupération.
+- **The Indexer as a new dependency.** The KV-Cache Indexer must itself be sized and monitored; if it becomes stale or unavailable, the EPP typically degrades to a less precise routing mode (heuristic or near-round-robin), silently forfeiting some cache-hit benefit until it recovers.
 
-- **Pas un remplacement de l'outillage de cycle de vie du modèle.** llm-d ne gère ni le rollout, ni le versionnage, ni le canarying du modèle — cela reste le travail de KServe (ou de votre propre outillage). Traiter llm-d strictement comme la couche de routage/cache/scaling au moment de l'inférence, sous votre plan de contrôle existant.
+- **Not a replacement for model lifecycle tooling.** llm-d does not handle model rollout, versioning, or canarying — that remains the job of KServe (or your own tooling). Treat llm-d strictly as the routing/cache/scaling layer at inference time, beneath your existing control plane.
 
 ---
 
-## 23. Framework de décision : quand adopter llm-d
+## 23. Decision Framework: When to Adopt llm-d
 
-| Signal | Favorise l'adoption de llm-d | Favorise un stack plus simple |
+| Signal | Favors Adopting llm-d | Favors a Simpler Stack |
 |---|---|---|
-| Volume de trafic | Volume soutenu, concurrent élevé, avec pression sur les coûts GPU | Trafic faible/occasionnel, GPU rarement saturés |
-| Structure des prompts | Préfixes fréquemment partagés : system prompts, RAG, chat multi-tours | Prompts courts, très hétérogènes, peu de recouvrement de préfixe |
-| Taille du modèle | Modèles denses larges ou MoE (70B+) | Petits modèles tenant confortablement et tournant vite sur un seul GPU |
-| Réseau | RDMA/InfiniBand/RoCE disponible | Réseau cloud standard uniquement, pas de RDMA |
-| Équipe | Équipe MLOps/plateforme dédiée capable de posséder de nouveaux composants | Petite équipe voulant un minimum de pièces mobiles |
-| Rigueur des SLA | Garanties contractuelles de latence/débit envers des clients | Outillage interne "best-effort" |
+| Traffic volume | Sustained volume, high concurrency, with GPU cost pressure | Low/occasional traffic, GPUs rarely saturated |
+| Prompt structure | Frequently shared prefixes: system prompts, RAG, multi-turn chat | Short, highly heterogeneous prompts, little prefix overlap |
+| Model size | Large dense models or MoE (70B+) | Small models fitting comfortably and running fast on a single GPU |
+| Network | RDMA/InfiniBand/RoCE available | Standard cloud network only, no RDMA |
+| Team | Dedicated MLOps/platform team capable of owning new components | Small team wanting minimum moving parts |
+| SLA rigor | Contractual latency/throughput guarantees to clients | Internal "best-effort" tooling |
 
-### Chemin incrémental recommandé
+### Recommended Incremental Path
 
-Conformément à la philosophie de conception propre du projet :
+In line with the project's own design philosophy:
 
-1. Commencer par le **Router (EPP)** seul, routage conscient du cache sur le pool existant — pas de RDMA requis, délivre la majorité du gain de latence.
-2. Ajouter le **Cache Indexer précis** une fois qu'un routage exact (non heuristique) est souhaité.
-3. Superposer l'**autoscaling piloté par les SLO**.
-4. Seulement une fois que les GPU sont démontrablement saturés côté decode et qu'un réseau de classe RDMA est disponible, évaluer la **désagrégation prefill/decode**.
-5. Recourir au **Wide Expert Parallelism** uniquement si de grands modèles MoE sont réellement servis sur plusieurs nœuds.
+1. Start with the **Router (EPP)** alone, cache-aware routing on the existing pool — no RDMA required, delivers the majority of the latency gain.
+2. Add the **Precise Cache Indexer** once exact (non-heuristic) routing is desired.
+3. Layer on **SLO-driven autoscaling**.
+4. Only once GPUs are demonstrably saturated on the decode side and an RDMA-class network is available, evaluate **prefill/decode disaggregation**.
+5. Resort to **Wide Expert Parallelism** only if large MoE models are actually served across multiple nodes.
 
 ```mermaid
 flowchart TD
-    S1["1. Router EPP seul<br/>routage conscient du cache"] --> S2["2. Cache Indexer précis"]
-    S2 --> S3["3. Autoscaling SLO-aware"]
-    S3 --> S4{"GPU saturés côté decode<br/>ET réseau RDMA dispo ?"}
-    S4 -->|Oui| S5["4. Désagrégation P/D"]
-    S4 -->|Non| Stop1[Rester sur le chemin actuel]
-    S5 --> S6{"Modèle MoE large<br/>multi-nœuds ?"}
-    S6 -->|Oui| S7["5. Wide Expert Parallelism"]
-    S6 -->|Non| Stop2[Rester sur P/D seul]
+    S1["1. Router EPP alone<br/>cache-aware routing"] --> S2["2. Precise Cache Indexer"]
+    S2 --> S3["3. SLO-aware autoscaling"]
+    S3 --> S4{"GPUs saturated on decode<br/>AND RDMA network available?"}
+    S4 -->|Yes| S5["4. P/D disaggregation"]
+    S4 -->|No| Stop1[Stay on current path]
+    S5 --> S6{"Large MoE model<br/>multi-node?"}
+    S6 -->|Yes| S7["5. Wide Expert Parallelism"]
+    S6 -->|No| Stop2[Stay on P/D only]
 ```
 
 ---
 
-## 24. Glossaire
+## 24. Glossary
 
-| Terme | Définition |
+| Term | Definition |
 |---|---|
-| **TTFT** | Time-To-First-Token : latence entre la réception de la requête et le premier token généré. |
-| **TPOT / ITL** | Time-Per-Output-Token / Inter-Token Latency : latence en régime permanent entre tokens générés successifs. |
-| **KV cache** | Les tenseurs clé/valeur d'attention calculés en traitant un prompt, réutilisables pour la génération suivante ou pour des préfixes partagés. |
-| **Prefill** | La phase compute-bound où le modèle traite l'intégralité du prompt d'entrée. |
-| **Decode** | La phase memory-bandwidth-bound où le modèle génère les tokens de sortie un par un. |
-| **P/D disaggregation** | Exécuter prefill et decode sur des workers séparés, scalés indépendamment. |
-| **EPP** | Endpoint Picker — le cerveau de scheduling du Router llm-d. |
-| **InferencePool** | CRD de la Gateway API Inference Extension regroupant les réplicas de serveur de modèle pour un modèle donné. |
-| **GAIE** | Gateway API Inference Extension — le projet SIG-Network de Kubernetes définissant l'InferencePool et l'Endpoint Picker Protocol. |
-| **LWS** | LeaderWorkerSet — CRD Kubernetes pour les groupes de pods leader/worker multi-nœuds. |
-| **NIXL** | NVIDIA Inference Xfer Library — abstraction de transport pour le transfert de KV-cache sur NVLink/RDMA/GPUDirect Storage. |
-| **LMCache** | Bibliothèque open-source de KV-cache multi-tier qui s'intègre à l'interface KV-connector de vLLM. |
-| **KVConnectorV1 / LMCacheConnectorV1 / NixlConnector** | L'interface de connecteur KV pluggable de vLLM et ses implémentations concrètes. |
-| **Wide EP** | Wide Expert Parallelism — distribution des experts MoE sur de nombreux GPU/nœuds. |
-| **Well-lit path** | Le terme de llm-d pour un blueprint de déploiement benchmarké, reproductible et documenté. |
-| **CNCF Sandbox** | Le plus précoce des trois stades de maturité des projets CNCF (Sandbox → Incubating → Graduated). |
-| **ZMQ** | ZeroMQ, bus de messages PUB/SUB utilisé pour le Write Path (métadonnées de cache). |
-| **Decider** | Composant logique de l'EPP décidant si une requête doit réellement être désagrégée en P/D. |
-| **SLOMultiplier** | Ratio maximal tolérable entre le temps d'itération sous charge et la latence de base, utilisé par l'autoscaler. |
+| **TTFT** | Time-To-First-Token: latency between receiving the request and the first generated token. |
+| **TPOT / ITL** | Time-Per-Output-Token / Inter-Token Latency: steady-state latency between successive generated tokens. |
+| **KV cache** | The attention key/value tensors computed while processing a prompt, reusable for subsequent generation or for shared prefixes. |
+| **Prefill** | The compute-bound phase where the model processes the entire input prompt. |
+| **Decode** | The memory-bandwidth-bound phase where the model generates output tokens one by one. |
+| **P/D disaggregation** | Running prefill and decode on separate workers, scaled independently. |
+| **EPP** | Endpoint Picker — the scheduling brain of the llm-d Router. |
+| **InferencePool** | Gateway API Inference Extension CRD grouping model server replicas for a given model. |
+| **GAIE** | Gateway API Inference Extension — the Kubernetes SIG-Network project defining InferencePool and the Endpoint Picker Protocol. |
+| **LWS** | LeaderWorkerSet — Kubernetes CRD for multi-node leader/worker pod groups. |
+| **NIXL** | NVIDIA Inference Xfer Library — transport abstraction for KV-cache transfer over NVLink/RDMA/GPUDirect Storage. |
+| **LMCache** | Open-source multi-tier KV-cache library that integrates with vLLM's KV-connector interface. |
+| **KVConnectorV1 / LMCacheConnectorV1 / NixlConnector** | vLLM's pluggable KV-connector interface and its concrete implementations. |
+| **Wide EP** | Wide Expert Parallelism — distributing MoE experts across many GPUs/nodes. |
+| **Well-lit path** | llm-d's term for a benchmarked, reproducible, documented deployment blueprint. |
+| **CNCF Sandbox** | The earliest of the three CNCF project maturity stages (Sandbox → Incubating → Graduated). |
+| **ZMQ** | ZeroMQ, the PUB/SUB message bus used for the Write Path (cache metadata). |
+| **Decider** | Logic component within the EPP that decides whether a request should actually be disaggregated into P/D. |
+| **SLOMultiplier** | Maximum tolerable ratio between iteration time under load and baseline latency, used by the autoscaler. |
 
 ---
 
-## 25. Sources primaires
+## 25. Primary Sources
 
-- Site et documentation du projet llm-d — `https://llm-d.ai`
-- Dépôt principal llm-d — `https://github.com/llm-d/llm-d`
-- Dépôt du Router llm-d (EPP, terminologie, architecture) — `https://github.com/llm-d/llm-d-router`
-- Candidature CNCF Sandbox — `https://github.com/cncf/sandbox/issues/462`
-- Annonce CNCF, mars 2026 — `https://www.cncf.io/blog/2026/03/24/welcome-llm-d-to-the-cncf-evolving-kubernetes-into-sota-ai-infrastructure/`
-- Annonce Red Hat — `https://www.redhat.com/en/blog/why-were-contributing-llm-d-cncf-standardizing-future-ai`
-- Annonce IBM Research — `https://research.ibm.com/blog/donating-llm-d-to-the-cloud-native-computing-foundation`
-- Annonce Google Cloud (GKE Inference Gateway, EPP) — `https://cloud.google.com/blog/products/containers-kubernetes/llm-d-officially-a-cncf-sandbox-project`
-- Notes de release llm-d 0.3 (routage à latence prédite, chiffres de débit Wide EP) — `https://llm-d.ai/blog/llm-d-v0.3-expanded-hardware-faster-perf-and-igw-ga`
-- Documentation vLLM sur le prefill désagrégé — `https://docs.vllm.ai/en/stable/features/disagg_prefill/`
-- Documentation LMCache, guide de prefill désagrégé — `https://docs.lmcache.ai/getting_started/quickstart/disaggregated_prefill.html` et `https://docs.lmcache.ai/mp/disaggregated_prefill.html`
-- Blog LMCache : désagrégation P/D basée NIXL dans vLLM V1 — `https://blog.lmcache.ai/en/2025/04/11/shaping-nixl-based-pd-disaggregation-in-vllm-v1/`
+- llm-d project website and documentation — `https://llm-d.ai`
+- llm-d main repository — `https://github.com/llm-d/llm-d`
+- llm-d Router repository (EPP, terminology, architecture) — `https://github.com/llm-d/llm-d-router`
+- CNCF Sandbox application — `https://github.com/cncf/sandbox/issues/462`
+- CNCF announcement, March 2026 — `https://www.cncf.io/blog/2026/03/24/welcome-llm-d-to-the-cncf-evolving-kubernetes-into-sota-ai-infrastructure/`
+- Red Hat announcement — `https://www.redhat.com/en/blog/why-were-contributing-llm-d-cncf-standardizing-future-ai`
+- IBM Research announcement — `https://research.ibm.com/blog/donating-llm-d-to-the-cloud-native-computing-foundation`
+- Google Cloud announcement (GKE Inference Gateway, EPP) — `https://cloud.google.com/blog/products/containers-kubernetes/llm-d-officially-a-cncf-sandbox-project`
+- llm-d release 0.3 notes (predicted-latency routing, Wide EP throughput figures) — `https://llm-d.ai/blog/llm-d-v0.3-expanded-hardware-faster-perf-and-igw-ga`
+- vLLM disaggregated prefill documentation — `https://docs.vllm.ai/en/stable/features/disagg_prefill/`
+- LMCache documentation, disaggregated prefill guide — `https://docs.lmcache.ai/getting_started/quickstart/disaggregated_prefill.html` and `https://docs.lmcache.ai/mp/disaggregated_prefill.html`
+- LMCache blog: NIXL-based P/D disaggregation in vLLM V1 — `https://blog.lmcache.ai/en/2025/04/11/shaping-nixl-based-pd-disaggregation-in-vllm-v1/`
 
-> ⚠️ **Avertissement de maturité** : llm-d étant un projet CNCF Sandbox activement évolutif, les flags CLI exacts, les schémas de charts Helm, les numéros de version des releases et les chiffres de benchmark doivent toujours être revérifiés contre le dépôt GitHub llm-d/llm-d en direct et `llm-d.ai/docs` avant d'être utilisés dans un runbook de production — plusieurs des détails de ce document (valeurs Helm, noms de charts, chiffres de débit précis) illustrent le pattern général et étaient exacts à la mi-2026, mais sont exactement le type de détail que ce projet fait évoluer rapidement.
+> ⚠️ **Maturity disclaimer**: As llm-d is an actively evolving CNCF Sandbox project, exact CLI flags, Helm chart schemas, release version numbers, and benchmark figures should always be re-verified against the live llm-d/llm-d GitHub repository and `llm-d.ai/docs` before being used in a production runbook — several details in this document (Helm values, chart names, precise throughput figures) illustrate the general pattern and were accurate as of mid-2026, but are exactly the kind of detail this project evolves rapidly.
