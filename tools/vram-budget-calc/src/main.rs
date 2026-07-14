@@ -187,7 +187,7 @@ fn main() -> Result<()> {
     let gpu_arch = cli
         .gpu
         .as_deref()
-        .map(|name| GpuArch::from_gpu_name(name))
+        .map(GpuArch::from_gpu_name)
         .unwrap_or(GpuArch::Other);
 
     let mut warnings = Vec::new();
