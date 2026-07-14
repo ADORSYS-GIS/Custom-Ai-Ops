@@ -1,0 +1,21 @@
+apiVersion: v2
+name: model-serving-onnx-rust
+description: Helm chart for serving ONNX models with ONNX Runtime GenAI
+type: application
+version: 0.1.0
+appVersion: "0.5.0"
+dependencies:
+  - name: bjw-template
+    version: "0.1.0"
+    repository: "file://../bjw-template"
+maintainers:
+  - name: Custom-Ai-Ops
+    home: https://github.com/rustnew/custom-ai-ops
+sources:
+  - https://github.com/rustnew/custom-ai-ops
+keywords:
+  - ml
+  - inference
+  - onnx
+  - onnx-genai
+  - gpu
