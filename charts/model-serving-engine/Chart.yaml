@@ -2,11 +2,11 @@ apiVersion: v2
 name: model-serving-engine
 description: Helm chart for serving ML models with vLLM
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 maintainers:
-- name: Custom-Ai-Ops
-  home: https://github.com/rustnew/custom-ai-ops
+  - name: Custom-Ai-Ops
+    home: https://github.com/rustnew/custom-ai-ops
 sources:
   - https://github.com/rustnew/custom-ai-ops
 keywords:

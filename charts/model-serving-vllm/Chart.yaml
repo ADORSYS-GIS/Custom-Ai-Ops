@@ -2,7 +2,7 @@ apiVersion: v2
 name: model-serving-vllm
 description: Helm chart for serving Safetensors/AWQ/GPTQ models with vLLM
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.6.3"
 deprecated: true
 dependencies:
@@ -13,4 +13,8 @@ maintainers:
   - name: Custom-Ai-Ops
 annotations:
   deprecated: "true"
-  deprecationNotice: "This chart is deprecated. Use charts/model-serving-engine (unified chart used by ArgoCD AppSet) for all new deployments. This chart has divergent defaults (max-model-len 4096 vs 8192) and lacks KV cache hardening features (KEDA, QoS Guaranteed, swapoff DaemonSet). It will be removed in a future release."
+  deprecationNotice: "This chart is deprecated. Use charts/model-serving-engine
+    (unified chart used by ArgoCD AppSet) for all new deployments. This chart
+    has divergent defaults (max-model-len 4096 vs 8192) and lacks KV cache
+    hardening features (KEDA, QoS Guaranteed, swapoff DaemonSet). It will be
+    removed in a future release."
