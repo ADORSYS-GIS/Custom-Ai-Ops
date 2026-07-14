@@ -15,7 +15,7 @@ This document provides complete, step-by-step configuration instructions for eve
 | 4 | External Secrets Operator + AWS Secrets Manager | Sync external secrets → K8s Secrets | `apps/external-secrets.yaml` |
 | 5 | SaaS LLM Fallback Providers (7) | Fallback inference when self-hosted models are unavailable | `charts/ai-gateway/values.yaml` |
 | 6 | Container Registries (ghcr.io + Docker Hub) | Private image pulls | `apps/external-secrets.yaml` (registry-pull-secret) |
-| 7 | PagerDuty + Slack | Alert routing and on-call notifications | `observability/alertmanager-routes/`, `apps/argocd-notifications.yaml` |
+| 7 | PagerDuty + Slack | Alert routing and on-call notifications | `observability/alertmanager-routes.yaml`, `apps/argocd-notifications.yaml` |
 | 8 | Prometheus + Grafana + Alertmanager | Observability stack (18 panels, 13 KV cache alerts) | `observability/`, `addons/prometheus-stack/` |
 | 9 | Longhorn | Distributed storage (RWO + RWX) | `addons/longhorn/` |
 | 10 | NVIDIA GPU Operator + DCGM | GPU driver + metrics + device plugin | `addons/nvidia-gpu-operator/` |
@@ -914,12 +914,12 @@ This creates a `PrometheusRule` with 7 alert groups:
 The dashboard is bundled in the prometheus-stack addon via Helm values. To import manually:
 
 ```bash
-kubectl create configmap model-serving-dashboard \
-  --from-file=model-serving-dashboard.json=observability/grafana-dashboards/model-serving-dashboard.json \
+kubectl create configmap vllm-dashboard \
+  --from-file=vllm-dashboard.json=observability/grafana-dashboards/vllm-dashboard.json \
   -n monitoring \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl label configmap model-serving-dashboard \
+kubectl label configmap vllm-dashboard \
   grafana_dashboard=1 -n monitoring
 ```
 
@@ -1554,7 +1554,7 @@ kubectl get scaledobject -n model-serving-prod -w
 *Cross-references*:
 - `docs/integration-report.md` — higher-level architecture context for each integration
 - `docs/explain/kv-cache.md` — Master guide to KV cache management (Bible details)
-- `docs/explain/bible-kv-cache.md` — KV cache reference (ROI formulas, architecture gaps)
+- `docs/explain/vllm-kv-cache.md` — KV cache reference (ROI formulas, architecture gaps)
 - `docs/architecture/05-observability.md` — Observability architecture detail
 - `docs/architecture/04-gitops-deployment.md` — GitOps deployment flow with sync waves
 - `docs/runbooks/latency-spike.md` — Operational runbook for latency/failover incidents

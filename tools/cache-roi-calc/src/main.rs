@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// ROI calculator for KV cache management.
 ///
-/// Implements the formulas from docs/explain/bible-kv-cache.md §9
+/// Implements the formulas from docs/explain/vllm-kv-cache.md §9
 /// and kv-cache.md §11.  The cache breaks the equation
 /// cost = users × requests; with good cache hit rate, cost becomes
 /// proportional to the *novelty* of requests, not their volume.
@@ -331,7 +331,7 @@ fn main() -> Result<()> {
 
         println!();
         println!(
-            "Reference: bible-kv-cache.md §9 (ROI = (GPU_saved - storage_cost) / storage_cost)"
+            "Reference: vllm-kv-cache.md §9 (ROI = (GPU_saved - storage_cost) / storage_cost)"
         );
     }
 

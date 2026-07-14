@@ -12,7 +12,7 @@ data:
   invalidation-policy.md: |
     # KV Cache Invalidation Policy
     
-    Reference: docs/explain/bible-kv-cache.md §11.5 "Cache freshness"
+    Reference: docs/explain/vllm-kv-cache.md §11.5 "Cache freshness"
     and §13 "Audit periodically".
     
     ## When to invalidate the KV cache
@@ -37,7 +37,7 @@ data:
        header automatically handles this — a new prompt produces a
        new hash → new affinity key → new cache entries.
     
-    4. **Scheduled periodic audit**: per bible-kv-cache.md §12.2,
+    4. **Scheduled periodic audit**: per vllm-kv-cache.md §12.2,
        re-evaluate cache hit rate quarterly. If hit rate drops below
        target (e.g. <20% for 10m), trigger a manual cache flush:
        `kubectl rollout restart statefulset <name> -n <ns>`

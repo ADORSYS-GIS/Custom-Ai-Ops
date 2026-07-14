@@ -577,7 +577,7 @@
           "x": 0,
           "y": 60
         },
-        "description": "Requests per backend pod. With consistent-hash routing (bible-kv-cache.md \u00a710.3), similar prefixes concentrate on the same pod. Unequal distribution is EXPECTED and desired.",
+        "description": "Requests per backend pod. With consistent-hash routing (vllm-kv-cache.md \u00a710.3), similar prefixes concentrate on the same pod. Unequal distribution is EXPECTED and desired.",
         "targets": [
           {
             "expr": "sum by (destination_pod) (rate(envoy_cluster_upstream_rq_total[5m]))",

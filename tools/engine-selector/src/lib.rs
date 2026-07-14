@@ -225,7 +225,7 @@ pub fn select_engine(fmt: ModelFormat) -> (Engine, f64, String, String) {
 }
 
 /// Detect the model architecture family from config.json.
-/// See docs/explain/bible-kv-cache.md §5 and kv-cache.md §5 for the
+/// See docs/explain/vllm-kv-cache.md §5 and kv-cache.md §5 for the
 /// distinction between Transformer (paginable KV cache), MoE
 /// (dense KV + expert cache), SSM/Mamba (fixed-size recurrent state,
 /// NOT paginable), and Hybrid (mixed memory profiles).
@@ -278,7 +278,7 @@ pub fn detect_family(path: &str) -> Result<ModelFamily> {
 
 /// Returns the recommended KV cache strategy for a model family.
 /// SSM/Mamba models do NOT use a pagable KV cache — their recurrent
-/// state is fixed-size and cannot be paged or evicted (bible-kv-cache.md §5.3).
+/// state is fixed-size and cannot be paged or evicted (vllm-kv-cache.md §5.3).
 pub fn cache_strategy_for(family: ModelFamily) -> &'static str {
     match family {
         ModelFamily::Transformer => "PagedAttention + APC + LMCache (hierarchical L0/L1/L2/L3)",

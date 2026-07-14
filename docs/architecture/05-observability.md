@@ -13,8 +13,8 @@
 
 ## Dashboards
 
-- `observability/grafana-dashboards/dcgm-dashboard.json` — GPU health
-- `observability/grafana-dashboards/model-serving-dashboard.json` — **18 panels**:
+- `observability/grafana-dashboards/nvidia-dcgm-dashboard.json` — GPU health
+- `observability/grafana-dashboards/vllm-dashboard.json` — **18 panels**:
   - Request rate, P95 latency, error rate, tokens/s, active models, OOM kills
   - **KV cache usage (%)** — `vllm:gpu_cache_usage_perc * 100`
   - **Prefix cache hit rate (%)** — `vllm:gpu_prefix_cache_hits_total / queries_total`
@@ -81,7 +81,7 @@ The SSM alert catches a critical anti-pattern (Bible §14): Mamba/SSM models use
 
 ## Alert Routing
 
-`observability/alertmanager-routes/config.yaml`:
+`observability/alertmanager-routes.yaml`:
 
 - **Critical** → PagerDuty + Slack `#ml-incidents`
 - **Warning** → Slack `#ml-ops`
@@ -138,4 +138,4 @@ Templates: `lmcache-daemonset.yaml`, `lmcache-configmap.yaml`, `lmcache-service.
 | `cachePersistence.storageClass` | longhorn | longhorn | — |
 | `cachePersistence.size` | 50Gi | 30Gi | — |
 
-See [`docs/explain/bible-kv-cache.md`](../explain/bible-kv-cache.md) for the theoretical foundation and ROI analysis.
+See [`docs/explain/vllm-kv-cache.md`](../explain/vllm-kv-cache.md) for the theoretical foundation and ROI analysis.

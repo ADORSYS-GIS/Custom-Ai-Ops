@@ -495,7 +495,7 @@ Custom-Ai-Ops/
 │   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
 │   ├── prometheus-anomaly-rules.yaml # 6 rule groups: latency, errors, GPU, pods, anomaly, kv-cache
 │   ├── llm-d-alert-rules.yaml        # llm-d alerts: EPP routing, KV-Cache Indexer, disaggregation, InferencePool
-│   ├── alertmanager-routes/         # Alert routing: critical→PagerDuty+Slack, warning→Slack
+│   ├── alertmanager-routes.yaml         # Alert routing: critical→PagerDuty+Slack, warning→Slack
 │   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard + llm-d dashboard
 │
 ├── models/                          # Model registry and per-model documentation
@@ -504,7 +504,7 @@ Custom-Ai-Ops/
 │
 ├── tests/                           # Test suites
 │   ├── smoke/                       # Post-deployment smoke tests (bash: health, auth, chat, cost, llm-d routing)
-│   │   ├── smoke-test.sh            #  Standard smoke tests
+│   │   ├── vllm-smoke-test.sh       #  vLLM standard smoke tests
 │   │   └── llm-d-smoke-test.sh      #  llm-d routing + EPP + KV-Cache Indexer tests
 │   ├── load/                        # k6 load tests (staged ramp-up, p95 < 2000ms)
 │   └── chaos/                        # LitmusChaos GPU chaos (pod-delete, network-latency, node-drain)
@@ -521,7 +521,7 @@ Custom-Ai-Ops/
 │   │   └── 07-capacity-forecasting.md # Holt-Winters, KEDA predictive, recording rules
 │   ├── explain/                     # Deep-dive technical references
 │   │   ├── kv-cache.md              #   6-layer KV cache management architecture
-│   │   ├── bible-kv-cache.md        #   KV Cache Bible (13 sections)
+│   │   ├── vllm-kv-cache.md        #   KV Cache Bible (13 sections)
 │   │   ├── gpu.md                   #   In-depth GPU reference guide (332 lines)
 │   │   └── llm-d.md                 #   llm-d complete reference (665 lines)
 │   ├── adr/                         # Architecture Decision Records
@@ -716,8 +716,8 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 
 | Dashboard | Panels |
 |---|---|
-| `dcgm-dashboard.json` | GPU health (temperature, utilization, memory, ECC) |
-| `model-serving-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)**, **LMCache L1/L2/L3 hit rates**, **prefill skip rate**, **cache ROI estimate ($/h)**, **cache affinity routing distribution** — **18 panels total** |
+| `nvidia-dcgm-dashboard.json` | GPU health (temperature, utilization, memory, ECC) |
+| `vllm-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)**, **LMCache L1/L2/L3 hit rates**, **prefill skip rate**, **cache ROI estimate ($/h)**, **cache affinity routing distribution** — **18 panels total** |
 
 ### Alerting Rules
 
@@ -760,7 +760,7 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 
 ## KV Cache Management
 
-The platform implements an **8-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/bible-kv-cache.md`](docs/explain/bible-kv-cache.md). Each layer protects the KV cache from a different failure mode.
+The platform implements an **8-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/vllm-kv-cache.md`](docs/explain/vllm-kv-cache.md). Each layer protects the KV cache from a different failure mode.
 
 ### Layer 1 — API Gateway (Edge Protection)
 
@@ -1023,7 +1023,7 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | Doc | Description |
 |---|---|
 | [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps, distributed cache middleware, cache-aware routing) |
-| [bible-kv-cache.md](docs/explain/bible-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
+| [vllm-kv-cache.md](docs/explain/vllm-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
 | [gpu.md](docs/explain/gpu.md) | In-depth GPU reference: 3 families (consumer/workstation/datacenter), prefill vs decode, CUDA gap, per-GPU datasheets, microarchitecture comparison, infrastructure constraints |
 
 ### Integration & External Tools (`docs/`)

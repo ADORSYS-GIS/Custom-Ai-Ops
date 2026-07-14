@@ -1,5 +1,5 @@
 apiVersion: v2
-name: model-serving-onnx-rust
+name: model-serving-onnxruntime-genai
 description: Helm chart for serving ONNX models with ONNX Runtime GenAI
 type: application
 version: 0.1.0

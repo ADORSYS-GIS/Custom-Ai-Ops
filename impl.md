@@ -78,7 +78,7 @@ ai-platform/
 ├── observability/
 │   ├── grafana-dashboards/
 │   ├── prometheus-rules/
-│   └── alertmanager-routes/
+│   └── alertmanager-routes.yaml
 └── tests/
     ├── smoke/                         # automatic post-deployment tests per model
     ├── load/                          # k6/Locust load test scripts

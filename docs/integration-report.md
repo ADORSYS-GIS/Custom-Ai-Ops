@@ -37,7 +37,7 @@
 | CI pipeline | `.github/workflows/ci.yaml` | Rust build+test, helm lint (4), registry consistency, VRAM validation |
 | Observability rules | `observability/prometheus-anomaly-rules.yaml` | 6 groups incl. KV cache alerts |
 | Grafana dashboards | `observability/grafana-dashboards/` | 12 panels incl. KV cache |
-| Alertmanager routes | `observability/alertmanager-routes/config.yaml` | critical→PagerDuty+Slack, warning→Slack, gpu→#gpu-ops |
+| Alertmanager routes | `observability/alertmanager-routes.yaml` | critical→PagerDuty+Slack, warning→Slack, gpu→#gpu-ops |
 | Model registry | `models/registry.yaml` | 3 models (mistral-7b, phi-3-mini, llama-3-70b) |
 | Rust tools | `tools/` | engine-selector, vram-budget-calc, model-onboarding |
 | Tests | `tests/` | smoke (bash), load (k6), chaos (litmus) |
@@ -673,7 +673,7 @@ The `charts/model-serving-engine/templates/servicemonitor.yaml` configures Prome
 |-------------|---------------|
 | Grafana OSS | Helm chart `grafana/grafana`, deployed via ArgoCD |
 | Grafana Cloud | Remote write to Grafana Cloud Mimir + Loki + Tempo |
-| Dashboard provisioning | `observability/grafana-dashboards/model-serving-dashboard.json` mounted via ConfigMap |
+| Dashboard provisioning | `observability/grafana-dashboards/vllm-dashboard.json` mounted via ConfigMap |
 | Data sources | Prometheus (metrics), Loki (logs), Tempo (traces) |
 | Alerting | Grafana Alerting → Alertmanager → PagerDuty/Slack |
 
@@ -713,7 +713,7 @@ For teams using managed observability:
 
 ### 7.1 Alertmanager Routing (Existing)
 
-The existing `observability/alertmanager-routes/config.yaml` defines:
+The existing `observability/alertmanager-routes.yaml` defines:
 
 | Severity | Receiver | Channel | Repeat |
 |----------|----------|---------|--------|
@@ -1240,7 +1240,7 @@ flowchart TB
 
 ### 13.9 Validation
 
-- [ ] Run smoke tests post-deploy (`tests/smoke/smoke-test.sh`)
+- [ ] Run smoke tests post-deploy (`tests/smoke/vllm-smoke-test.sh`)
 - [ ] Run load tests (`tests/load/load-test.js` with k6)
 - [ ] Verify Grafana dashboards show data
 - [ ] Trigger test alert and verify PagerDuty/Slack delivery

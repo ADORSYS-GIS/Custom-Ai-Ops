@@ -19,6 +19,6 @@
 
 ## Recommendation
 PENDING — awaiting evaluation results. Model is staged but not yet deployed.
-Once GPU quota is allocated, run the smoke test suite (`tests/smoke/smoke-test.sh`)
+Once GPU quota is allocated, run the smoke test suite (`tests/smoke/vllm-smoke-test.sh`)
 and the load test (`tests/load/load-test.js`) to validate latency and throughput
 before promoting to LIVE.

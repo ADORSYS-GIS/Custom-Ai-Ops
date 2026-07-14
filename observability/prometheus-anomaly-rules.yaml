@@ -259,7 +259,7 @@ spec:
             description: "Prefill skip rate is {{ $value | humanizePercentage }} while requests are queued. This means most requests are doing full prefill — check if prefix caching and LMCache are working."
 
         # --- SSM/Mamba-specific: recurrent state allocation failure ---
-        # bible-kv-cache.md §5.3: SSM models use fixed-size recurrent
+        # vllm-kv-cache.md §5.3: SSM models use fixed-size recurrent
         # state, NOT paginable KV cache. PagedAttention args must NOT
         # be passed to SSM models — detect misconfiguration.
         - alert: SSMModelPagedAttentionMisconfigured
@@ -270,7 +270,7 @@ spec:
             component: kv-cache
           annotations:
             summary: "SSM/Mamba model deployed with PagedAttention args (mismatch)"
-            description: "Pod {{ $labels.pod }} runs an SSM/Mamba model. SSM models do not use paginable KV cache (bible-kv-cache.md §5.3). Remove --enable-prefix-caching, --block-size, --kv-cache-dtype from engine args and switch to contiguous allocation."
+            description: "Pod {{ $labels.pod }} runs an SSM/Mamba model. SSM models do not use paginable KV cache (vllm-kv-cache.md §5.3). Remove --enable-prefix-caching, --block-size, --kv-cache-dtype from engine args and switch to contiguous allocation."
 
         # --- Cache-aware routing header missing (sticky routing disabled) ---
         - alert: CacheRoutingHeaderAbsent
@@ -281,7 +281,7 @@ spec:
             component: gateway
           annotations:
             summary: "Cache affinity header absent on requests"
-            description: "Requests are reaching the gateway without x-cache-affinity-key header. Cache-aware routing (bible-kv-cache.md §10.3) is not active — prefix hash routing will not be effective."
+            description: "Requests are reaching the gateway without x-cache-affinity-key header. Cache-aware routing (vllm-kv-cache.md §10.3) is not active — prefix hash routing will not be effective."
 
     - name: model-serving.pods
       rules:

@@ -406,7 +406,7 @@ Slack → Apps → Incoming Webhooks → Add to Slack → Choose channel → Cop
 | Parameter | Value | Where Configured |
 |---|---|---|
 | Admin password | `admin123` | `addons/prometheus-stack/Chart.yaml` → `grafana.adminPassword` |
-| Dashboard file | `model-serving-dashboard.json` | `observability/grafana-dashboards/` (18 panels) |
+| Dashboard file | `vllm-dashboard.json` | `observability/grafana-dashboards/` (18 panels) |
 | Grafana host | `grafana.example.com` | `addons/prometheus-stack/Chart.yaml` → `grafana.ingress.hosts` |
 
 **Change the admin password for production**:
@@ -576,7 +576,7 @@ EOF
 <a id="14-tests"></a>
 ## 14. Test Scripts — Environment Variables
 
-### 14.1 Smoke Test (`tests/smoke/smoke-test.sh`)
+### 14.1 Smoke Test (`tests/smoke/vllm-smoke-test.sh`)
 
 | Variable | How Passed | Default | Description |
 |---|---|---|---|
@@ -585,7 +585,7 @@ EOF
 
 **Usage**:
 ```bash
-./tests/smoke/smoke-test.sh http://localhost:8000 your-api-key
+./tests/smoke/vllm-smoke-test.sh http://localhost:8000 your-api-key
 ```
 
 ### 14.2 Load Test (`tests/load/load-test.js`)

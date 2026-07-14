@@ -110,7 +110,7 @@ spec:
             {{- if .Values.lmcache.enabled }}
             # --- LMCache integration (vllm+lmcache.md §2) ---
             # Enables distributed KV cache sharing across pods/nodes.
-            # See docs/explain/bible-kv-cache.md §4.3 for architecture overview.
+            # See docs/explain/vllm-kv-cache.md §4.3 for architecture overview.
             - name: LMCACHE_HOST
               valueFrom:
                 fieldRef:

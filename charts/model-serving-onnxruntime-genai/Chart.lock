@@ -1,0 +1,6 @@
+dependencies:
+- name: bjw-template
+  repository: file://../bjw-template
+  version: 0.1.0
+digest: sha256:2c240b71b858267a62529c1f748def5568cdac698112046e98169d1b9c9387d8
+generated: "2026-07-14T13:07:53.280001477+01:00"

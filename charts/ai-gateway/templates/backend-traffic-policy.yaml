@@ -75,7 +75,7 @@ spec:
   # Ensures requests sharing a common prefix (system prompt, RAG context)
   # are routed to the same backend pod, maximizing KV cache hit rate.
   # Without this, round-robin LB disperses similar requests and destroys
-  # the prefix cache benefit (bible-kv-cache.md §12.3).
+  # the prefix cache benefit (vllm-kv-cache.md §12.3).
   loadBalancer:
     type: ConsistentHash
     consistentHash:

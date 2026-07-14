@@ -21,6 +21,6 @@
 PENDING — awaiting evaluation results. Model is on standby and not yet deployed.
 Requires multi-GPU tensor parallelism (2x H100 80 GB) and RDMA fabric for
 disaggregated P/D mode. Once infrastructure is provisioned, run the smoke test
-suite (`tests/smoke/smoke-test.sh`), the llm-d smoke test (`tests/smoke/llm-d-smoke-test.sh`),
+suite (`tests/smoke/vllm-smoke-test.sh`), the llm-d smoke test (`tests/smoke/llm-d-smoke-test.sh`),
 and the load test (`tests/load/load-test.js`) to validate latency, throughput,
 and KV cache affinity before promoting to LIVE.

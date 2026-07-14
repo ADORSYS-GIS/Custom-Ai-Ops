@@ -47,12 +47,12 @@
 #   kubectl apply -f observability/prometheus-anomaly-rules.yaml
 #
 # --- Grafana Dashboards ---
-# The file observability/grafana-dashboards/model-serving-dashboard.json defines
+# The file observability/grafana-dashboards/vllm-dashboard.json defines
 # 12 panels including 6 KV cache panels.
 # Import via ConfigMap or Grafana UI.
 #
 # --- Alertmanager ---
-# The file observability/alertmanager-routes/config.yaml defines routing:
+# The file observability/alertmanager-routes.yaml defines routing:
 #   - critical → PagerDuty + Slack #ml-incidents
 #   - warning → Slack #ml-ops
 #   - gpu → Slack #gpu-ops
@@ -60,7 +60,7 @@
 #
 # Apply the config:
 #   kubectl create secret generic alertmanager-config \
-#     --from-file=config.yaml=observability/alertmanager-routes/config.yaml \
+#     --from-file=config.yaml=observability/alertmanager-routes.yaml \
 #     -n monitoring
 #
 # --- Verification ---
@@ -135,8 +135,8 @@ spec:
             size: 10Gi
           dashboards:
             default:
-              model-serving:
-                file: model-serving-dashboard.json
+              vllm:
+                file: vllm-dashboard.json
           dashboardProviders:
             default:
               orgId: 1

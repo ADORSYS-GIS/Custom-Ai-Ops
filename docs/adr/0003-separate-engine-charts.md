@@ -4,11 +4,11 @@
 
 ## Context
 
-Previously, separate Helm charts were maintained per engine type (e.g. `model-serving-vllm`, `model-serving-onnx-rust`). With the consolidation to vLLM as the sole inference engine, maintaining multiple engine-specific charts is no longer justified.
+Previously, separate Helm charts were maintained per engine type (e.g. `model-serving-vllm`, `model-serving-onnxruntime-genai`). With the consolidation to vLLM as the sole inference engine, maintaining multiple engine-specific charts is no longer justified.
 
 ## Decision
 
-Consolidate into a single Helm chart, `model-serving-engine`, which serves all vLLM-compatible formats (Safetensors, AWQ, GPTQ). The deprecated `model-serving-vllm` and deleted `model-serving-onnx-rust` charts are replaced by `model-serving-engine`.
+Consolidate into a single Helm chart, `model-serving-engine`, which serves all vLLM-compatible formats (Safetensors, AWQ, GPTQ). The deprecated `model-serving-vllm` and deleted `model-serving-onnxruntime-genai` charts are replaced by `model-serving-engine`.
 
 All charts depend on `bjw-template` library chart for common StatefulSet/PVC/probe patterns.
 

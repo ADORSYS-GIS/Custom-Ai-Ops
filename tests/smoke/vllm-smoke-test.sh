@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-MODEL_URL="${1:?Usage: smoke-test.sh <model_url> [api_key]}"
+MODEL_URL="${1:?Usage: vllm-smoke-test.sh <model_url> [api_key]}"
 API_KEY="${2:-}"
 
 echo "=== Model Serving Smoke Test ==="

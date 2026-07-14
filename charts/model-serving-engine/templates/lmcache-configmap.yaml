@@ -12,7 +12,7 @@ data:
   lmcache.toml: |
     # LMCache configuration — distributed KV cache middleware
     # Turns the KV cache from a per-instance silo into a persistent,
-    # shareable, cluster-wide resource. See docs/explain/bible-kv-cache.md §4.3.
+    # shareable, cluster-wide resource. See docs/explain/vllm-kv-cache.md §4.3.
 
     [lmcache]
     # Engine-independent daemon: survives inference engine restarts.
