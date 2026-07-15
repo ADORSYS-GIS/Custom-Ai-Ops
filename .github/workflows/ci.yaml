@@ -11,7 +11,7 @@ jobs:
     name: Build & Test Rust Tools
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Build engine-selector
         run: cargo build --release -p engine-selector
@@ -38,9 +38,9 @@ jobs:
     name: Helm Lint All Charts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: "3.14"
       - name: Lint bjw-template
@@ -127,7 +127,7 @@ jobs:
     name: Registry Consistency Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate registry.yaml
         run: |
           python3 -c "
@@ -156,7 +156,7 @@ jobs:
     name: VRAM Budget Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Build vram-budget-calc
         run: cargo build --release -p vram-budget-calc
