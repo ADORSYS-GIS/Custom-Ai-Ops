@@ -6,18 +6,12 @@
 
 A highly resilient, long-term, multi-format ML model serving platform with triple-layer separation, designed to serve millions of users with auto-repair, capacity forecasting, and multi-year durability.
 
-> **⚠️ Note**: This repository is a **template/reference architecture**. ArgoCD integration manifests have been removed for public release. See [`REMOVED_ARGOCD.md`](REMOVED_ARGOCD.md) for details and [`apps/README.md`](apps/README.md) for integration instructions.
 
-> **✅ llm-d MVP IMPLEMENTED**: The repository now includes a **production-ready llm-d MVP implementation** (Option 1: Router + InferencePool + Gateway API). This provides cache-aware, intelligent routing for LLM inference workloads. See [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) for the complete implementation guide. Advanced features (KV-Cache Indexer, Disaggregated Serving, SLO-aware autoscaling) are documented but not yet implemented. For architectural context, see [`docs/explain/llm-d.md`](docs/explain/llm-d.md) and [`docs/adr/0004-llm-d-not-implemented.md`](docs/adr/0004-llm-d-not-implemented.md).
-
----
 
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
-<<<<<<< Updated upstream
 ![Tests](https://img.shields.io/badge/Tests-76%20passing-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Helm%20Charts-5-blue.svg?logo=helm)
-=======
 ![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Helm%20Charts-2-blue.svg?logo=helm)
 >>>>>>> Stashed changes
