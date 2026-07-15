@@ -1,7 +1,7 @@
 # NVIDIA GPU Operator
 #
 # The NVIDIA GPU Operator automates the lifecycle management of NVIDIA
-# software components (drivers, container toolkit, DCGM exporter, device plugin)
+# software components (drivers, container toolkit, device plugin)
 # required to run GPU workloads on Kubernetes.
 #
 # --- Installation ---
@@ -17,20 +17,11 @@
 #     --namespace gpu-operator \
 #     --create-namespace \
 #     --set driver.enabled=true \
-#     --set toolkit.enabled=true \
-#     --set dcgmExporter.enabled=true
+#     --set toolkit.enabled=true
 #
 # --- Verification ---
 #   kubectl get pods -n gpu-operator
 #   kubectl get nodes -o custom-columns="NAME:.metadata.name,GPU:.status.capacity.nvidia\.com/gpu"
-#
-# --- DCGM Exporter ---
-# The DCGM exporter exposes GPU metrics on port 9400 at /metrics.
-# These metrics are scraped by Prometheus and used by:
-#   - GPUThermalThrottle alert (>85°C)
-#   - GPUUtilizationLow alert (<10% for 30m)
-#   - GPUMemoryNearExhaustion alert (>95% for 2m)
-#   - Grafana "GPU VRAM Usage (DCGM)" panel
 #
 # --- Node Labels ---
 # After GPU Operator installs drivers, label your GPU nodes:
@@ -65,10 +56,6 @@ spec:
           enabled: true
         toolkit:
           enabled: true
-        dcgmExporter:
-          enabled: true
-          serviceMonitor:
-            enabled: true
         devicePlugin:
           enabled: true
         node-feature-discovery:

@@ -1,0 +1,141 @@
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferencePool
+metadata:
+  name: vllm-prod-pool
+  namespace: model-serving-prod
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: inferencepool
+    app.kubernetes.io/part-of: model-serving-prod
+    environment: prod
+spec:
+  # Target port where vLLM serves inference requests
+  targetPortNumber: 8000
+  
+  # Selector to discover vLLM pods in this pool
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: model-serving-engine
+      app.kubernetes.io/instance: vllm-prod
+  
+  # Reference to llm-d Endpoint Picker (EPP) for cache-aware routing
+  endpointPickerConfig:
+    extensionRef:
+      group: inference.networking.x-k8s.io
+      kind: EndpointPicker
+      name: llm-d-epp
+      namespace: llm-d-system
+    
+    # EPP configuration specific to this pool
+    config:
+      # Cache-aware routing enabled (LMCache distributed 3-tier, 2-4 replicas)
+      cacheAwareRouting: true
+      
+      # Scoring algorithms for production (optimized for performance)
+      scoringAlgorithms:
+        - name: prefix-match
+          weight: 0.7
+          enabled: true
+          config:
+            # Heuristic cache-aware routing (no KV-Cache Indexer in MVP)
+            mode: heuristic
+            prefixLength: 1024  # tokens (longer context in prod)
+            # Future: mode: precise (requires KV-Cache Indexer)
+        
+        - name: load-balancing
+          weight: 0.2
+          enabled: true
+          config:
+            queueDepthWeight: 0.6
+            gpuUtilizationWeight: 0.4
+        
+        - name: latency
+          weight: 0.1
+          enabled: true
+          config:
+            recentWindowSeconds: 120
+            targetP99Ms: 500  # SLO target
+      
+      # Weighted selection strategy with fallback
+      selectionStrategy: weighted
+      topN: 2  # Consider top 2 endpoints for weighted selection
+      
+      # Strict filters for production stability
+      filters:
+        - name: model-compatibility
+          enabled: true
+          config:
+            enforceExactMatch: true
+        
+        - name: capacity-check
+          enabled: true
+          config:
+            maxQueueDepth: 30
+            maxGpuUtilization: 0.95
+            minAvailableMemoryBytes: 1073741824  # 1GB minimum
+        
+        - name: health-check
+          enabled: true
+          config:
+            consecutiveSuccesses: 2
+        
+        - name: version-check
+          enabled: true
+          config:
+            allowedVersions: ["v0.6.0", "v0.6.1", "v0.6.2"]
+      
+      # Circuit breaker for failing backends
+      circuitBreaker:
+        enabled: true
+        maxFailures: 5
+        resetTimeoutSeconds: 60
+  
+  # Health check configuration
+  healthCheck:
+    path: /health
+    intervalSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 2
+  
+  # Model metadata
+  modelMetadata:
+    modelName: "meta-llama/Llama-3.1-8B"
+    modelVersion: "main"
+    maxModelLen: 8192
+    cachingEnabled: true
+    cacheBlockSize: 16
+    tensorParallelSize: 1
+    
+    # LMCache configuration reference (3-tier: CPU + NVMe + Redis)
+    lmcacheEnabled: true
+    lmcacheTiers:
+      - name: cpu
+        enabled: true
+        size: "16Gi"
+        priority: 1  # Highest priority (hot)
+      - name: nvme
+        enabled: true
+        size: "200Gi"
+        priority: 2  # Medium priority (warm)
+      - name: redis
+        enabled: true
+        host: "redis-cache.model-serving-prod.svc.cluster.local"
+        port: 6379
+        priority: 3  # Lowest priority (cold, but shared across cluster)
+  
+  # Performance SLO targets
+  performanceTargets:
+    ttftP50Ms: 200   # Time-to-first-token P50
+    ttftP99Ms: 500   # Time-to-first-token P99
+    throughputTokensPerSecond: 2000
+    cacheHitRateMin: 0.6  # Minimum 60% cache hit rate expected
+  
+  # Autoscaling hints for KEDA
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetQueueDepth: 5
+    targetCacheUtilization: 0.85

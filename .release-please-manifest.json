@@ -1,0 +1,4 @@
+{
+  "charts/model-serving-engine": "0.1.0",
+  "charts/model-serving-vllm": "0.1.0"
+}

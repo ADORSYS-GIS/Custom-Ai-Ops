@@ -15,9 +15,6 @@ spec:
     - Egress
   ingress:
     - from:
-        - namespaceSelector:
-            matchLabels:
-              name: envoy-gateway
         {{- range .Values.networkPolicy.ingressFrom }}
         - {{ toYaml . | nindent 10 }}
         {{- end }}
@@ -33,12 +30,5 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              name: monitoring
-      ports:
-        - port: 9090
           protocol: TCP
 {{- end }}

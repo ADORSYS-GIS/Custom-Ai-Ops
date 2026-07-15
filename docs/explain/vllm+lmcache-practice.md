@@ -45,16 +45,9 @@ flowchart TB
         subgraph CACHE["Cache Layer"]
             LMCSVC["LMCache Service (separate deployment, MP mode)"]
         end
-        subgraph OBS["Observability"]
-            PROM["Prometheus"]
-            GRAF["Grafana"]
-            OTEL["OpenTelemetry traces"]
-        end
         CLIENT["Incoming traffic"] --> ROUTER
         ROUTER --> E1 & E2 & E3
         E1 & E2 & E3 <--> LMCSVC
-        E1 & E2 & E3 -.metrics.-> PROM --> GRAF
-        E1 & E2 & E3 -.traces.-> OTEL
         OP -.manages.-> ROUTER
         OP -.manages.-> ENGINES
         OP -.manages.-> LMCSVC
@@ -74,8 +67,7 @@ flowchart TB
 1. **Separate deployment**: LMCache (in MP mode) is deployed as its own Kubernetes service, with its own resources (RAM sized for L1, PVC or network access for L2), independent of the vLLM pod lifecycle.
 2. **Service discovery**: each vLLM pod connects to the LMCache service via its internal Kubernetes DNS name, without static IP configuration. In Kubernetes, the LMCache operator can create a **ConfigMap** (`<name>-connection`) containing the server address, mounted by vLLM pods.
 3. **Independent scaling**: the number of LMCache replicas (for P2P mode) and the number of vLLM replicas evolve independently according to their respective bottlenecks (cache memory vs GPU compute).
-4. **Unified observability**: KV cache-specific metrics (per-token hit rate, request lifecycle, per-level L1/L2 utilization) are exposed alongside standard Kubernetes metrics, consolidated in the same Grafana dashboards.
-5. **`hostIPC: true`**: when CUDA IPC transport is used between pods (manual DaemonSet deployment without the operator), this parameter is **mandatory** on LMCache and vLLM pods to enable CUDA IPC communication. The LMCache operator handles this automatically when used.
+4. **`hostIPC: true`**: when CUDA IPC transport is used between pods (manual DaemonSet deployment without the operator), this parameter is **mandatory** on LMCache and vLLM pods to enable CUDA IPC communication. The LMCache operator handles this automatically when used.
 
 ### 1.4 Helm Deployment — Values File
 
@@ -171,7 +163,7 @@ servingEngineSpec:
 | `vllmConfig.gpuMemoryUtilization` | 0.80 - 0.90 | GPU memory headroom for cache growth |
 | `vllmConfig.enablePrefixCaching` | **Disabled** when LMCache is active | Avoids conflicts between the two cache systems |
 | `vllmConfig.enableChunkedPrefill` | **Disabled** | Not compatible with LMCache |
-| `replicaCount` | Adjusted to load, driven by HPA/KEDA on Prometheus metrics (`vllm:num_requests_waiting`) | Horizontal scalability |
+| `replicaCount` | Adjusted to load, driven by HPA/KEDA on queue depth metrics (`vllm:num_requests_waiting`) | Horizontal scalability |
 
 ### 1.7 Key Production Considerations
 
@@ -210,7 +202,6 @@ servingEngineSpec:
 | `LMCACHE_BLEND_RECOMPUTE_RATIOS` | Fraction of tokens recomputed in blending | 0.15 |
 | `NO_GPU_EXT` | Disables GPU dependencies (useful in CPU-only environments, e.g. Apple Silicon) | — |
 | `PYTHONHASHSEED` | Set to `0` to ensure deterministic hashes across processes | — |
-| `PROMETHEUS_MULTIPROC_DIR` | Shared directory for multi-process metric aggregation | — |
 
 ### 2.3 `lmcache server` Options (MP Mode)
 
@@ -412,7 +403,7 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 | **Basic LMCache config** | `lmcacheConfig.enabled: true` and `cpuOffloadingBufferSize: "20"` |
 | **Remote cache config** | `cacheserverSpec` section in `values.yaml` |
 | **Verification logs** | `kubectl logs -f <vllm-pod>` (search for `LMCacheConfig`) |
-| **Prometheus metrics** | `/metrics` endpoint on vLLM pods |
+| **Metrics endpoint** | `/metrics` endpoint on vLLM pods |
 | **KServe alternative** | Dedicated manifests for HuggingFace vLLM backend with LMCache mounted as config volume (support added via KServe PR #4320) |
 
 ---
@@ -447,8 +438,7 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 - [ ] KV-aware routing enabled beyond a handful of replicas
 - [ ] Request migration configured to tolerate instance crashes
 - [ ] `hostIPC: true` configured if CUDA IPC is used between pods (handled automatically by operator)
-- [ ] Monitoring of per-token hit rate, per storage level, and overall HBM pressure
-- [ ] `PROMETHEUS_MULTIPROC_DIR` consistent between vLLM process and LMCache process
+- [ ] Tracking of per-token hit rate, per storage level, and overall HBM pressure
 - [ ] Net benefit validation via A/B test before/after LMCache activation on real workload (gain is significant only if GPU memory pressure is real — rule of thumb: ≥ 50% of tokens in shared prefixes)
 - [ ] Versioned Docker tags (not `latest`) in production
 

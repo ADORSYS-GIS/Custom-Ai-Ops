@@ -1,0 +1,248 @@
+# llm-d Router Configuration (Proxy + Endpoint Picker)
+
+# Global settings
+global:
+  namespace: llm-d-system
+
+# Proxy (Gateway data-plane)
+proxy:
+  enabled: true
+  
+  # Image
+  image:
+    repository: ghcr.io/llm-d/gateway-proxy
+    tag: "v0.3.0"
+    pullPolicy: IfNotPresent
+  
+  # Replicas
+  replicaCount: 2
+  
+  # Resources
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: 1Gi
+    requests:
+      cpu: "500m"
+      memory: 512Mi
+  
+  # Service
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations: {}
+  
+  # ext-proc configuration for EPP callback
+  extProc:
+    enabled: true
+    # EPP endpoint for scheduling decisions
+    endpoint: "llm-d-epp:9000"
+    timeout: "1000ms"
+  
+  # Health probes
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# Endpoint Picker (EPP - scheduling brain)
+epp:
+  enabled: true
+  
+  # Image
+  image:
+    repository: ghcr.io/llm-d/endpoint-picker
+    tag: "v0.3.0"
+    pullPolicy: IfNotPresent
+  
+  # Replicas
+  replicaCount: 2
+  
+  # Resources
+  resources:
+    limits:
+      cpu: "500m"
+      memory: 512Mi
+    requests:
+      cpu: "250m"
+      memory: 256Mi
+  
+  # Service
+  service:
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+    name: llm-d-epp
+  
+  # Scheduling configuration
+  scheduling:
+    # 4-stage pipeline: Discover → Filter → Score → Select
+    
+    # Discovery: How to find InferencePool members
+    discovery:
+      # Watch InferencePool resources
+      watchInferencePools: true
+      # Collect metrics from pods
+      metricsInterval: 5s
+    
+    # Filters: Exclude pods that don't meet criteria
+    filters:
+      # Drop pods with queue depth > threshold
+      - name: queue-depth-filter
+        enabled: true
+        config:
+          maxQueueDepth: 10
+      
+      # Drop pods with insufficient memory
+      - name: memory-filter
+        enabled: true
+        config:
+          minAvailableMemoryGB: 2
+      
+      # Drop unhealthy pods
+      - name: health-filter
+        enabled: true
+    
+    # Scorers: Rank pods by multiple criteria
+    scorers:
+      # Cache-aware routing (heuristic mode - no Indexer required)
+      - name: heuristic-prefix-cache-scorer
+        enabled: true
+        weight: 0.5
+        config:
+          # Use consistent hashing of prompt prefix
+          hashLength: 128
+          # Recent routing history
+          historySize: 1000
+      
+      # Session affinity for multi-turn conversations
+      - name: session-affinity-scorer
+        enabled: true
+        weight: 0.3
+        config:
+          # Cookie or header-based session ID
+          sessionHeader: "X-Session-ID"
+          # TTL for session affinity
+          sessionTTL: "1h"
+      
+      # Load-based routing
+      - name: load-scorer
+        enabled: true
+        weight: 0.2
+        config:
+          # Prefer pods with lower queue depth
+          queueDepthWeight: 0.6
+          # Prefer pods with lower GPU utilization
+          gpuUtilWeight: 0.4
+    
+    # Selector: How to pick final pod
+    selector:
+      # Use max-score (highest scoring pod wins)
+      strategy: max-score
+      # Tie-breaker: random if multiple pods have same score
+      tieBreaker: random
+  
+  # KV-Cache Indexer integration (optional - for precise routing)
+  indexer:
+    enabled: false  # Disabled in MVP - heuristic routing only
+    url: "http://llm-d-indexer:8080"
+  
+  # Health probes
+  livenessProbe:
+    grpc:
+      port: 9000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    grpc:
+      port: 9000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# ServiceAccount for Router
+serviceAccount:
+  create: true
+  name: llm-d-router
+  annotations: {}
+
+# RBAC permissions
+rbac:
+  create: true
+  # Permissions needed:
+  # - Watch InferencePool resources
+  # - Get/List pods and services
+  # - Read pod metrics
+
+# Pod Security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+# Pod annotations
+podAnnotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity - prefer spreading across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - llm-d-router
+          topologyKey: kubernetes.io/hostname
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Set true if Prometheus Operator installed
+    interval: 30s
+  
+  # Metrics exposed by Router/EPP
+  metrics:
+    # Router metrics
+    - name: llm_d_router_requests_total
+      help: Total requests routed
+    - name: llm_d_router_request_duration_seconds
+      help: Request routing latency
+    # EPP metrics
+    - name: llm_d_epp_scheduling_decisions_total
+      help: Total scheduling decisions
+    - name: llm_d_epp_scheduling_duration_seconds
+      help: Scheduling decision latency
+    - name: llm_d_epp_cache_hits_total
+      help: Cache-aware routing hits (heuristic)
+
+# Logging
+logging:
+  level: info  # debug, info, warn, error
+  format: json

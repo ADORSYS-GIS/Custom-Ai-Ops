@@ -1,0 +1,60 @@
+{{- if .Values.epp.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "llm-d-router.fullname" . }}-epp-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d-router.eppLabels" . | nindent 4 }}
+data:
+  epp-config.yaml: |
+    # Endpoint Picker Protocol Configuration
+    apiVersion: inference.networking.x-k8s.io/v1alpha2
+    kind: EndpointPickerConfig
+    
+    # Logging
+    logging:
+      level: {{ .Values.logging.level }}
+      format: {{ .Values.logging.format }}
+    
+    # Discovery
+    discovery:
+      watchInferencePools: {{ .Values.epp.scheduling.discovery.watchInferencePools }}
+      metricsInterval: {{ .Values.epp.scheduling.discovery.metricsInterval }}
+    
+    # Filters
+    filters:
+    {{- range .Values.epp.scheduling.filters }}
+    {{- if .enabled }}
+      - name: {{ .name }}
+        config:
+          {{- toYaml .config | nindent 10 }}
+    {{- end }}
+    {{- end }}
+    
+    # Scorers
+    scorers:
+    {{- range .Values.epp.scheduling.scorers }}
+    {{- if .enabled }}
+      - name: {{ .name }}
+        weight: {{ .weight }}
+        config:
+          {{- toYaml .config | nindent 10 }}
+    {{- end }}
+    {{- end }}
+    
+    # Selector
+    selector:
+      strategy: {{ .Values.epp.scheduling.selector.strategy }}
+      tieBreaker: {{ .Values.epp.scheduling.selector.tieBreaker }}
+    
+    # KV-Cache Indexer (optional)
+    {{- if .Values.epp.indexer.enabled }}
+    indexer:
+      enabled: true
+      url: {{ .Values.epp.indexer.url }}
+    {{- else }}
+    indexer:
+      enabled: false
+    {{- end }}
+{{- end }}

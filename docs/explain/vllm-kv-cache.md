@@ -235,7 +235,6 @@ LMCache has established itself as the open-source reference for transforming the
 **Advanced features**:
 - **Non-prefix KV reuse**: cache reuse beyond simple prefix matching, via **CacheBlend**, which selectively recomputes only the necessary tokens to preserve quality.
 - **PD disaggregation**: cache transfer between prefill and decode workers via NVLink, RDMA, or TCP (via NIXL).
-- **Production observability**: standard Kubernetes metrics, cache-specific metrics (hit rate per request/per token, lifecycle), per-user management metrics.
 - **Multi-process architecture (MP)**, released in April 2026, allowing LMCache to run as a shared service across multiple engines.
 
 **Measured results**: up to **15x throughput improvement** combined with vLLM on multi-turn question-answering and document analysis workloads. A quantified case study on a 4xH100 cluster shows a 69% reduction in prefill cost for 1,000 requests sharing a 128K-token system prompt, with TTFT reduced from 11 seconds to 1.5 seconds at 80% hit rate. LMCache reached production maturity in January 2026 and is now used by Google Cloud GKE Inference, CoreWeave, and Cohere, and joined the PyTorch Foundation in fall 2025.
@@ -415,7 +414,6 @@ flowchart LR
         D5["Persistent storage\n(Redis/S3/Mooncake)"]
     end
     subgraph Ops["3. Continuous Operations"]
-        O1["Observability\n(Prometheus/Grafana)"]
         O2["Autoscaling\n(KEDA)"]
         O3["GitOps\n(Helm/ArgoCD)"]
     end
@@ -425,7 +423,7 @@ flowchart LR
 
 - **Development phase**: prompt iteration, with lightweight API-side caching to accelerate tests and limit costs.
 - **Deployment phase**: the core of the system — orchestration, local cache, distributed cache, storage, exactly as described in Parts 4 and 6.
-- **Continuous operations phase**: observability, autoscaling, GitOps deployment — this is what transforms a correct cache architecture into a **system managed over time** (see Part 12).
+- **Continuous operations phase**: autoscaling, GitOps deployment — this is what transforms a correct cache architecture into a **system managed over time** (see Part 12).
 
 The cache is therefore never an "isolated brick": it is a transversal layer that spans the entire MLOps lifecycle, from prompt engineering to production rollback.
 
@@ -509,7 +507,7 @@ Mooncake introduces a valuable principle at this scale: rather than accepting ev
 - [ ] Cache-aware routing in place (minimal sticky routing, or dedicated solution like llm-d)
 - [ ] Complete storage hierarchy (GPU to CPU to NVMe to remote) configured and sized
 - [ ] Early rejection / load shedding policy under overload
-- [ ] Continuous hit rate monitoring, with alert if hit rate drops below a target threshold
+- [ ] Continuous hit rate tracking, with alert if hit rate drops below a target threshold
 - [ ] Regular load tests reproducing real traffic (proportion of shared prefixes, context length)
 
 ---
@@ -542,9 +540,7 @@ flowchart TB
     MW --> TIER2["L2: Local NVMe"]
     MW --> TIER3["L3: Distributed storage\n(Mooncake / Redis / S3)"]
 
-    ENGINE -.metrics.-> OBS["Observability\n(Prometheus + Grafana)"]
-    OBS --> AS["KEDA Autoscaling"]
-    OBS --> AM["Alertmanager"]
+    ENGINE -.metrics.-> AS["KEDA Autoscaling"]
     AS -.scale.-> ORCH
 
     GIT["Git (Helm values.yaml)"] --> ARGO["ArgoCD"]
@@ -555,7 +551,7 @@ flowchart TB
 
 - The **inference engine** is interchangeable thanks to the standardized cache connector — migrating from vLLM to SGLang or TensorRT-LLM does not break the distributed cache layer.
 - The **cache middleware** (LMCache or Dynamo KVBM) is itself decoupled from the storage backend — one can switch from Redis to Mooncake without rewriting application logic.
-- **Observability and autoscaling** are connected to standardized metrics (Prometheus), independent of the chosen engine.
+- **Autoscaling** is connected to standardized metrics, independent of the chosen engine.
 
 ### 11.2 Why It Is Flexible
 
@@ -570,9 +566,9 @@ flowchart TB
 
 Managing the cache is not a one-time project but a **continuous operational discipline**. Four dimensions to maintain over time:
 
-### 12.1 Continuous Observability
+### 12.1 Continuous Metric Tracking
 
-Continuously monitor: `gpu_cache_usage_perc`, `num_requests_waiting`, the hit rate per level (L0/L1/L2/L3), and TTFT. A cache that worked well at 100 requests/s can silently degrade at 10,000 requests/s if the hit rate drops without an associated alert.
+Continuously track: `gpu_cache_usage_perc`, `num_requests_waiting`, the hit rate per level (L0/L1/L2/L3), and TTFT. A cache that worked well at 100 requests/s can silently degrade at 10,000 requests/s if the hit rate drops without an associated alert.
 
 ### 12.2 Periodic Resizing
 
@@ -591,8 +587,8 @@ Cache behavior strongly depends on the underlying hardware (GPU architecture, NV
 ```mermaid
 flowchart LR
     A["Size\n(formulas from 1.4)"] --> B["Deploy\n(GitOps)"]
-    B --> C["Observe\n(Prometheus/Grafana)"]
-    C --> D["Alert & Scale\n(Alertmanager/KEDA)"]
+    B --> C["Observe\n(metrics)"]
+    C --> D["Alert & Scale\n(KEDA)"]
     D --> E["Analyze trends\n(hit rate, cost)"]
     E --> F["Readjust config"]
     F --> B
@@ -611,7 +607,7 @@ flowchart LR
 - [ ] A distributed cache middleware is deployed if the cluster exceeds a handful of nodes (LMCache, Dynamo KVBM, or Mooncake depending on scale)
 - [ ] The storage hierarchy (GPU to CPU to NVMe to remote) is sized according to the formulas in Part 1
 - [ ] Routing is cache-aware (minimal sticky routing, or dedicated solution at large scale)
-- [ ] Observability covers the hit rate at each level, not just VRAM
+- [ ] Hit rate tracking covers each cache level, not just VRAM
 - [ ] Autoscaling reacts to cache metrics (`num_requests_waiting`, `gpu_cache_usage_perc`), not to classic CPU/RAM
 - [ ] Configuration is versioned and deployed via GitOps, with tested rollback
 - [ ] An ROI calculation is documented (hit rate vs additional storage cost)

@@ -10,21 +10,21 @@
 - Alert: `VLLMPrefillSkipRateLow` (prefill not skipped despite cache hit opportunity)
 - Alert: `CacheRoutingHeaderAbsent` (`x-cache-affinity-key` header missing — cache-aware routing degraded)
 - Alert: `SSMModelPagedAttentionMisconfigured` (SSM/Mamba model deployed with PagedAttention — anti-pattern, see Bible §14)
-- Envoy Gateway may have activated SaaS fallback
 
 ## Steps
 
 1. **Check current latency**:
    ```bash
-   kubectl logs -n envoy-gateway-system deploy/envoy-gateway | grep "failover"
+   kubectl get pods -n model-serving-prod -o wide
+   kubectl logs -n model-serving-prod -l app.kubernetes.io/name=model-serving-engine | tail -50
    ```
 
 2. **Identify bottleneck**:
-   - GPU utilisation: Grafana DCGM dashboard
-   - **KV cache usage**: Grafana model-serving dashboard → "KV Cache Usage (%)" panel
-   - **Request queue depth**: Grafana model-serving dashboard → "Request Queue Depth" panel
-   - **Prefix cache hit rate**: Grafana model-serving dashboard → "Prefix Cache Hit Rate (%)" panel
-   - **KV cache swap-out**: Grafana model-serving dashboard → "KV Cache Swap-Out Blocks" panel
+   - GPU utilisation: `nvidia-smi` on GPU nodes
+   - **KV cache usage**: `kubectl logs` vLLM pod → check `gpu_cache_usage_perc`
+   - **Request queue depth**: `kubectl logs` vLLM pod → check `num_requests_waiting`
+   - **Prefix cache hit rate**: `kubectl logs` vLLM pod → check prefix cache metrics
+   - **KV cache swap-out**: `kubectl logs` vLLM pod → check `swap_out_blocks`
    - Network: Check for pod network latency in chaos test results
 
 3. **Check if GPU is throttled**:
@@ -40,7 +40,7 @@
      kubectl get ds -n model-serving-prod -l app.kubernetes.io/name=model-serving-engine
      kubectl logs -n model-serving-prod ds/<swapoff-daemonset> | grep "swap"
      ```
-   - If `VLLMPrefixCacheHitRateLow` (< 20%): sticky routing may not be working → verify `x-sticky-session-key` header in gateway logs
+   - If `VLLMPrefixCacheHitRateLow` (< 20%): prefix caching may not be effective → verify `--enable-prefix-caching` is set
    - If `LMCacheL1HitRateLow` (< 30%): CPU tier cache not effective → verify LMCache daemon health and CPU workers:
      ```bash
      kubectl get pods -n model-serving-prod -l app.kubernetes.io/name=lmcache
@@ -49,10 +49,10 @@
    - If `LMCacheL2HitRateLow` (< 20%): NVMe tier not effective → check disk usage and path
    - If `LMCacheL3HitRateLow` (< 10%): Redis/S3 tier not effective → verify Redis connectivity (prod only):
      ```bash
-     kubectl exec -n model-serving-prod ds/lmcache -- redis-cli -h redis-cache.monitoring.svc.cluster.local ping
+     kubectl exec -n model-serving-prod ds/lmcache -- redis-cli -h redis-cache.model-serving-prod.svc.cluster.local ping
      ```
    - If `VLLMPrefillSkipRateLow` (< 10%): cache hits not being leveraged for prefill skip → verify vLLM has `--enable-prefix-caching`
-   - If `CacheRoutingHeaderAbsent`: Envoy Lua filter not adding `x-cache-affinity-key` → verify cache-routing-policy ConfigMap is mounted
+   - If `CacheRoutingHeaderAbsent`: cache-aware routing not configured → verify cache-routing-policy ConfigMap is mounted
    - If `SSMModelPagedAttentionMisconfigured`: SSM/Mamba model deployed with PagedAttention args (anti-pattern, see Bible §14) → remove `--enable-prefix-caching`, `--kv-cache-dtype`, `--block-size` for SSM models (use engine-selector to detect family)
    - If `VLLMRequestsWaitingHigh` (> 10): KEDA should be scaling out → check ScaledObject status:
      ```bash
@@ -72,24 +72,24 @@
      ```bash
      kubectl rollout restart ds/lmcache -n model-serving-prod
      ```
-   - If cache-aware routing broken: re-apply cache-routing-policy ConfigMap and restart gateway pods
+   - If cache-aware routing broken: re-apply cache-routing-policy ConfigMap
    - If SSM model misconfigured: remove PagedAttention args and run `cargo run --bin engine-selector -- <model-path>` to verify family detection
    - If traffic spike is predictable: pre-warm with KEDA cron scaler
 
 6. **Verify recovery**:
-   - P95 latency < 2s on Grafana dashboard
+   - P95 latency < 2s
    - KV cache usage < 85%
    - Request queue depth < 5
    - No swap-out blocks detected
-   - LMCache L1 hit rate > 30% (prod/staging) — check Grafana "LMCache L1 (CPU) Hit Rate (%)" panel
-   - LMCache L2 hit rate > 20% (prod only) — check Grafana "LMCache L2 (NVMe) Hit Rate (%)" panel
-   - LMCache L3 hit rate > 10% (prod only) — check Grafana "LMCache L3 (Redis/S3) Hit Rate (%)" panel
-   - Prefill skip rate > 10% under load — check Grafana "Prefill Skip Rate (%)" panel
-   - Cache ROI estimate positive on Grafana "Cache ROI Estimate ($/hour saved)" panel
-   - Fallback route deactivated (priority 0 receiving 100% traffic)
+   - LMCache L1 hit rate > 30% (prod/staging)
+   - LMCache L2 hit rate > 20% (prod only)
+   - LMCache L3 hit rate > 10% (prod only)
+   - Prefill skip rate > 10% under load
+   - Cache ROI estimate positive
+   - Traffic restored to normal levels
 
 7. **Post-incident**:
-   - Add capacity forecast recording rule if traffic pattern is new
+   - Add capacity forecast tracking if traffic pattern is new
    - Update model serving runbook with the specific cause
    - If KV cache was the root cause: review `--max-num-seqs` and `--gpu-memory-utilization` tuning
    - If LMCache tier was the root cause: review `tools/cache-roi-calc` to verify the storage tier cost is justified by GPU savings (Bible §9 ROI formula)

@@ -19,6 +19,12 @@ engine:
       - --enable-prefix-caching
       - --block-size
       - "16"
+      # Note: --enable-chunked-prefill is DISABLED when LMCache is enabled
+      # (StatefulSet template forces it to false for LMCache cache coherence)
+      # llm-d cache-aware routing works with LMCache's prefix cache management
+      # Future: add --kv-cache-event-endpoint when KV-Cache Indexer is deployed
+      # - --kv-cache-event-endpoint
+      # - "http://llm-d-kv-cache-indexer.llm-d-system.svc.cluster.local:8080/events"
     resources:
       # QoS Guaranteed: requests == limits for all resources.
       limits:
@@ -46,7 +52,6 @@ autoscaling:
   maxReplicas: 2
   keda:
     enabled: true
-    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
     pollingInterval: 15
     cooldownPeriod: 60
     queueDepthThreshold: "5"
@@ -85,12 +90,6 @@ lmcache:
     disableHybridKvCacheManager: false
   env:
     PYTHONHASHSEED: "0"
-    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-  serviceMonitor:
-    enabled: true
-    interval: 10s
-    scrapeTimeout: 5s
-    releaseLabel: prometheus
   disk:
     enabled: true
     path: /var/lib/lmcache
@@ -111,14 +110,6 @@ cachePersistence:
   enabled: true
   storageClass: longhorn
   size: 30Gi
-
-# --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
-serviceMonitor:
-  enabled: true
-  path: /metrics
-  interval: 10s
-  scrapeTimeout: 5s
-  releaseLabel: prometheus
 
 tolerations:
   - key: nvidia.com/gpu

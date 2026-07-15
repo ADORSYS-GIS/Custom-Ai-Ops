@@ -2,8 +2,6 @@
 #
 # ESO synchronizes secrets from external secret stores (Vault, AWS SM,
 # GCP SM, Azure KV) into Kubernetes Secrets. Used for:
-#   - SaaS fallback API keys (OpenAI, Anthropic, etc.)
-#   - Alertmanager credentials (PagerDuty, Slack)
 #   - Container registry pull secrets
 #   - ArgoCD Image Updater GitHub PAT
 #
@@ -33,7 +31,7 @@
 #   kubectl get pods -n external-secrets
 #   kubectl get secretstore -A
 #   kubectl get externalsecret -A
-#   kubectl describe externalsecret saas-api-keys -n envoy-gateway-system
+#   kubectl describe externalsecret registry-pull-secret -n model-serving-prod
 #
 # --- IRSA (IAM Roles for Service Accounts) ---
 # For AWS, use IRSA instead of static credentials:

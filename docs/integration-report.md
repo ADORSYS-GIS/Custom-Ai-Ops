@@ -2,7 +2,7 @@
 
 > **Status:** Architecture & Integration Plan
 > **Date:** 2026-07-06
-> **Scope:** Complete integration strategy for the Custom-Ai-Ops repository with ArgoCD, CI/CD, external Git providers, container registries, secret managers, observability platforms, alerting channels, and SaaS fallback providers.
+> **Scope:** Complete integration strategy for the Custom-Ai-Ops repository with ArgoCD, CI/CD, external Git providers, container registries, and secret managers.
 
 ---
 
@@ -13,14 +13,11 @@
 3. [ArgoCD Integration — Complete Configuration](#3-argocd-integration--complete-configuration)
 4. [Container Registry Integration](#4-container-registry-integration)
 5. [Secret Management Integration](#5-secret-management-integration)
-6. [Observability Platform Integration](#6-observability-platform-integration)
-7. [Alerting & Notification Integration](#7-alerting--notification-integration)
-8. [SaaS Fallback Provider Integration](#8-saas-fallback-provider-integration)
-9. [CI/CD Pipeline Integration](#9-cicd-pipeline-integration)
-10. [Multi-Cluster & Multi-Region Integration](#10-multi-cluster--multi-region-integration)
-11. [Security Hardening — End-to-End](#11-security-hardening--end-to-end)
-12. [Integration Topology Diagram](#12-integration-topology-diagram)
-13. [Integration Checklist](#13-integration-checklist)
+6. [CI/CD Pipeline Integration](#6cicd-pipeline-integration)
+7. [Multi-Cluster & Multi-Region Integration](#7-multi-cluster--multi-region-integration)
+8. [Security Hardening — End-to-End](#8-security-hardening--end-to-end)
+9. [Integration Topology Diagram](#9-integration-topology-diagram)
+10. [Integration Checklist](#10-integration-checklist)
 
 ---
 
@@ -30,14 +27,17 @@
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| Helm charts (4) | `charts/` | model-serving-engine (active, vLLM-only), ai-gateway, model-serving-vllm (deprecated), bjw-template |
-| Environment values | `environments/{dev,staging,prod}/values.yaml` | QoS Guaranteed, KEDA, swapoff, ServiceMonitor, nodeSelector |
+| Helm charts (3) | `charts/` | model-serving-engine (active, vLLM-only), model-serving-vllm (deprecated), bjw-template |
+| Environment values | `environments/{dev,staging,prod}/values.yaml` | QoS Guaranteed, KEDA, swapoff, nodeSelector |
 | ArgoCD ApplicationSets | `apps/argocd-appset-{dev,staging,prod}.yaml` | 3 envs, sync waves -3→2, selfHeal+prune, ServerSideApply |
 | ArgoCD health checks | `apps/argocd-health-checks.yaml` | Lua: StatefulSet + InferenceService |
 | CI pipeline | `.github/workflows/ci.yaml` | Rust build+test, helm lint (4), registry consistency, VRAM validation |
+<<<<<<< Updated upstream
 | Observability rules | `observability/prometheus-anomaly-rules.yaml` | 6 groups incl. KV cache alerts |
 | Grafana dashboards | `observability/grafana-dashboards/` | 12 panels incl. KV cache |
 | Alertmanager routes | `observability/alertmanager-routes.yaml` | critical→PagerDuty+Slack, warning→Slack, gpu→#gpu-ops |
+=======
+>>>>>>> Stashed changes
 | Model registry | `models/registry.yaml` | 3 models (mistral-7b, phi-3-mini, llama-3-70b) |
 | Rust tools | `tools/` | engine-selector, vram-budget-calc, model-onboarding |
 | Tests | `tests/` | smoke (bash), load (k6), chaos (litmus) |
@@ -60,11 +60,10 @@ The repository is currently on GitHub under the `rustnew` account. All ArgoCD Ap
 | No repo credential secret in ArgoCD | Cannot authenticate to private repo | §3.4 |
 | No External Secrets Operator manifest | Secrets referenced but not provisioned | §5 |
 | No container registry credentials secret | Pods cannot pull images | §4 |
-| No Notification CRDs (argocd-notifications) | No Slack/Teams sync alerts | §7 |
-| No multi-cluster destination config | All AppSets target `kubernetes.default.svc` only | §10 |
+| No multi-cluster destination config | All AppSets target `kubernetes.default.svc` only | §7 |
 | No image update automation (ArgoCD Image Updater) | Image tags pinned manually | §4.3 |
-| No signed Helm charts (Cosign) | Supply chain unverified | §11.4 |
-| No network policies | No east-west traffic isolation | §11.5 |
+| No signed Helm charts (Cosign) | Supply chain unverified | §8.4 |
+| No network policies | No east-west traffic isolation | §8.5 |
 
 ---
 
@@ -205,7 +204,7 @@ metadata:
   name: model-serving
   namespace: argocd
 spec:
-  description: Model serving workloads (vLLM, gateway)
+  description: Model serving workloads (vLLM)
   sourceRepos:
     - git@github.com:rustnew/custom-ai-ops.git
   destinations:
@@ -215,8 +214,6 @@ spec:
       namespace: model-serving-staging
     - server: https://kubernetes.default.svc
       namespace: model-serving-prod
-    - server: https://kubernetes.default.svc
-      namespace: envoy-gateway-system
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
@@ -230,12 +227,6 @@ spec:
       kind: DaemonSet
     - group: "autoscaling.keda.sh"
       kind: ScaledObject
-    - group: "monitoring.coreos.com"
-      kind: ServiceMonitor
-    - group: "gateway.networking.k8s.io"
-      kind: HTTPRoute
-    - group: "gateway.envoyproxy.io"
-      kind: BackendTrafficPolicy
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"
@@ -251,7 +242,7 @@ metadata:
   name: infrastructure
   namespace: argocd
 spec:
-  description: Cluster infrastructure (GPU operator, Longhorn, Prometheus)
+  description: Cluster infrastructure (GPU operator, Longhorn)
   sourceRepos:
     - git@github.com:rustnew/custom-ai-ops.git
   destinations:
@@ -259,8 +250,6 @@ spec:
       namespace: nvidia-gpu-operator
     - server: https://kubernetes.default.svc
       namespace: longhorn-system
-    - server: https://kubernetes.default.svc
-      namespace: monitoring
   clusterResourceWhitelist:
     - group: "*"
       kind: "*"
@@ -288,7 +277,7 @@ The existing ApplicationSets use two generator types:
 | Generator | Used For | Files |
 |------------|----------|-------|
 | `git` (directory) | Per-environment model serving | `argocd-appset-{dev,staging,prod}.yaml` |
-| `list` | Infrastructure, secrets, gateway | Embedded in prod AppSet |
+| `list` | Infrastructure, secrets | Embedded in prod AppSet |
 
 #### 3.4.1 Sync Wave Strategy (Existing, Validated)
 
@@ -296,9 +285,9 @@ The existing ApplicationSets use two generator types:
 |------|-----------|---------------|
 | -3 | Secrets (ESO ExternalSecrets) | Nothing starts without credentials |
 | -2 | Storage (PVC, Longhorn), swapoff DaemonSet | Volumes + swap off before pods |
-| -1 | NVIDIA GPU Operator, Prometheus stack | Operators must run before workloads |
+| -1 | NVIDIA GPU Operator | Operators must run before workloads |
 | 0 | Model serving StatefulSets | Core inference workloads |
-| 1 | AI Gateway (HTTPRoute, BackendTrafficPolicy), ServiceMonitor, Grafana dashboards | Depends on workloads being up |
+| 1 | NetworkPolicies | Depends on workloads being up |
 | 2 | Smoke tests, notifications | Post-deploy validation |
 
 #### 3.4.2 Sync Policy Configuration
@@ -367,8 +356,6 @@ Additional health checks to add:
 | CRD | Health Logic |
 |-----|-------------|
 | `autoscaling.keda.sh/ScaledObject` | Check `status.conditions` for `Ready=True` |
-| `monitoring.coreos.com/ServiceMonitor` | Always Healthy (no status) |
-| `gateway.networking.k8s.io/HTTPRoute` | Check `status.parents[].conditions` for `Accepted=True` |
 
 ### 3.6 ArgoCD RBAC
 
@@ -589,22 +576,10 @@ spec:
     name: model-serving-secrets
     creationPolicy: Owner
   data:
-    - secretKey: api-key
+    - secretKey: inference-api-key
       remoteRef:
         key: model-serving/prod/api-keys
-        property: gateway
-    - secretKey: openai-api-key
-      remoteRef:
-        key: model-serving/prod/saas-fallback
-        property: openai
-    - secretKey: pagerduty-service-key
-      remoteRef:
-        key: monitoring/prod/pagerduty
-        property: service_key
-    - secretKey: slack-webhook-url
-      remoteRef:
-        key: monitoring/prod/slack
-        property: webhook_url
+        property: inference
 ```
 
 ### 5.2 Supported Secret Backends
@@ -622,10 +597,7 @@ spec:
 
 | Secret | Rotation Frequency | Method |
 |--------|-------------------|--------|
-| API keys (gateway) | 90 days | Vault dynamic secrets + ESO refresh |
-| SaaS provider keys (OpenAI) | 90 days | Manual in vault, ESO syncs |
-| PagerDuty service key | On personnel change | Manual in vault |
-| Slack webhook URL | On channel change | Manual in vault |
+| Inference API key | 90 days | Vault dynamic secrets + ESO refresh |
 | Registry pull token | 30 days (GHCR PAT) | GitHub App auto-rotation |
 | TLS certificates | 90 days | cert-manager + Let's Encrypt |
 | SSH deploy key (ArgoCD) | 180 days | Manual, documented in runbook |
@@ -637,7 +609,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: inference-tls
-  namespace: envoy-gateway-system
+  namespace: model-serving-prod
 spec:
   secretName: inference-tls
   issuerRef:
@@ -648,10 +620,11 @@ spec:
     - api.example.com
 ```
 
-cert-manager auto-renews certificates 30 days before expiry. The `inference-tls` secret is referenced by the gateway's HTTPRoute TLS config.
+cert-manager auto-renews certificates 30 days before expiry. The `inference-tls` secret is referenced by the model-serving service TLS config.
 
 ---
 
+<<<<<<< Updated upstream
 ## 6. Observability Platform Integration
 
 ### 6.1 Metrics Pipeline
@@ -770,74 +743,11 @@ When self-hosted models degrade (latency > 2000ms or error rate > 5%), the Envoy
 ```
 Self-hosted (priority 0) ──degraded──> SaaS fallback (priority 1)
 ```
+=======
+## 6. CI/CD Pipeline Integration
+>>>>>>> Stashed changes
 
-### 8.2 Supported SaaS Providers
-
-| Provider | API | Auth | Use Case |
-|----------|-----|------|----------|
-| OpenAI | `/v1/chat/completions` | Bearer token | GPT-4, GPT-4o |
-| Anthropic | `/v1/messages` | `x-api-key` header | Claude 3.5 Sonnet |
-| Google Vertex AI | `/v1/projects/.../publishers/.../models/...` | OAuth 2.0 | Gemini 1.5 Pro |
-| Azure OpenAI | `/openai/deployments/.../chat/completions` | `api-key` header | GPT-4 on Azure |
-| Mistral AI | `/v1/chat/completions` | Bearer token | Mistral Large |
-| Cohere | `/v1/chat` | Bearer token | Command R+ |
-| AWS Bedrock | `/model/{model-id}/invoke` | AWS SigV4 | Claude, Llama on AWS |
-
-### 8.3 SaaS Backend Configuration
-
-```yaml
-# In charts/ai-gateway/values.yaml
-fallback:
-  enabled: true
-  saasBackends:
-    - name: openai-gpt4
-      endpoint: https://api.openai.com/v1
-      apiKeySecret: openai-api-key
-      priority: 1
-      weight: 100
-    - name: anthropic-claude
-      endpoint: https://api.anthropic.com
-      apiKeySecret: anthropic-api-key
-      priority: 2
-      weight: 0
-```
-
-### 8.4 API Key Management
-
-SaaS API keys are **never** stored in Git. They are provisioned via External Secrets Operator from Vault:
-
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: saas-api-keys
-  namespace: envoy-gateway-system
-spec:
-  data:
-    - secretKey: openai-api-key
-      remoteRef:
-        key: saas/openai/prod
-        property: api_key
-    - secretKey: anthropic-api-key
-      remoteRef:
-        key: saas/anthropic/prod
-        property: api_key
-```
-
-### 8.5 Cost Control
-
-| Mechanism | Configuration |
-|-----------|---------------|
-| Rate limiting on fallback | Gateway rateLimit: 20 req/s (lower than self-hosted 50) |
-| Cost metrics | Envoy AI Gateway emits per-request cost metrics to Prometheus |
-| Budget alerts | Prometheus alert when `saas_cost_usd_total` > daily budget |
-| Circuit breaker back | When self-hosted recovers, traffic returns to priority 0 |
-
----
-
-## 9. CI/CD Pipeline Integration
-
-### 9.1 Existing CI (GitHub Actions)
+### 6.1 Existing CI (GitHub Actions)
 
 The pipeline in `.github/workflows/ci.yaml` has 4 jobs:
 
@@ -848,7 +758,7 @@ The pipeline in `.github/workflows/ci.yaml` has 4 jobs:
 | `registry-consistency` | push/PR to main | Validate models/registry.yaml ↔ charts/ ↔ models/ |
 | `vram-budget-validation` | push/PR to main | Run vram-budget-calc on all LIVE/STAGED models |
 
-### 9.2 CI → ArgoCD Handoff
+### 6.2 CI → ArgoCD Handoff
 
 ```
 Developer ──git push──> GitHub
@@ -868,7 +778,7 @@ Developer ──git push──> GitHub
                 └──> Sync waves: -3 → -2 → -1 → 0 → 1 → 2
 ```
 
-### 9.3 CI Secrets
+### 6.3 CI Secrets
 
 | Secret | Used By | Stored In |
 |--------|---------|-----------|
@@ -876,7 +786,7 @@ Developer ──git push──> GitHub
 | `CARGO_REGISTRY_TOKEN` | rust-tools (if private crates) | GitHub Actions secrets |
 | `KUBECONFIG_STAGING` | Post-merge smoke tests | GitHub Actions secrets (OIDC) |
 
-### 9.4 GitHub OIDC → Cloud Auth
+### 6.4 GitHub OIDC → Cloud Auth
 
 For cloud deployments, GitHub Actions uses OIDC to assume cloud roles — no long-lived credentials:
 
@@ -894,7 +804,7 @@ jobs:
           aws-region: us-east-1
 ```
 
-### 9.5 Alternative CI Platforms
+### 6.5 Alternative CI Platforms
 
 | Platform | Migration Effort | Notes |
 |----------|-----------------|-------|
@@ -906,13 +816,13 @@ jobs:
 
 ---
 
-## 10. Multi-Cluster & Multi-Region Integration
+## 7. Multi-Cluster & Multi-Region Integration
 
-### 10.1 Current State
+### 7.1 Current State
 
 All ApplicationSets target `server: https://kubernetes.default.svc` — the cluster where ArgoCD runs. For multi-cluster:
 
-### 10.2 Cluster Registration
+### 7.2 Cluster Registration
 
 ```bash
 # Register production cluster
@@ -925,7 +835,7 @@ argocd cluster add staging-context --name staging-cluster --label environment=st
 argocd cluster add dr-context --name dr-cluster --label environment=dr
 ```
 
-### 10.3 Multi-Cluster ApplicationSet
+### 7.3 Multi-Cluster ApplicationSet
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -957,7 +867,7 @@ spec:
         namespace: model-serving-prod
 ```
 
-### 10.4 Multi-Region DR
+### 7.4 Multi-Region DR
 
 | Strategy | RPO | RTO | Method |
 |----------|-----|-----|--------|
@@ -966,7 +876,7 @@ spec:
 | Pilot Light | 1h | 1h | Minimal services in DR, scale up on failover |
 | Backup-Restore | 24h | 4h | Git + Longhorn backups restored manually |
 
-### 10.5 ApplicationSet Destination Override
+### 7.5 ApplicationSet Destination Override
 
 For multi-region, the destination server is parameterized:
 
@@ -987,9 +897,9 @@ template:
 
 ---
 
-## 11. Security Hardening — End-to-End
+## 8. Security Hardening — End-to-End
 
-### 11.1 Git Access Security
+### 8.1 Git Access Security
 
 | Control | Configuration |
 |---------|---------------|
@@ -999,7 +909,7 @@ template:
 | Webhook secret | HMAC verified, stored in GitHub secrets |
 | Commit signing | GPG or SSH signing required on main |
 
-### 11.2 ArgoCD Security
+### 8.2 ArgoCD Security
 
 | Control | Configuration |
 |---------|---------------|
@@ -1011,7 +921,7 @@ template:
 | Audit logging | `argocd-server` logs to Loki, 1-year retention |
 | Pod security | `runAsNonRoot: true`, `readOnlyRootFilesystem: true` |
 
-### 11.3 Cluster Security
+### 8.3 Cluster Security
 
 | Control | Tool | Configuration |
 |---------|------|---------------|
@@ -1023,7 +933,7 @@ template:
 | Supply chain | Sigstore Cosign | Sign + verify images (§4.4) |
 | Secrets encryption | etcd encryption at rest | KMS-backed |
 
-### 11.4 Supply Chain Security (SLSA Level 3)
+### 8.4 Supply Chain Security (SLSA Level 3)
 
 | Step | Tool | Output |
 |------|------|--------|
@@ -1034,7 +944,7 @@ template:
 | SBOM | Syft in CI | SBOM artifact per image |
 | Vulnerability scan | Grype in CI | Fail build on CRITICAL CVEs |
 
-### 11.5 Network Policies
+### 8.5 Network Policies
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -1047,49 +957,9 @@ spec:
   policyTypes:
     - Ingress
     - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: model-serving-allow-gateway
-  namespace: model-serving-prod
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: model-serving-engine
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              name: envoy-gateway-system
-      ports:
-        - protocol: TCP
-          port: 8000
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: model-serving-allow-prometheus
-  namespace: model-serving-prod
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: model-serving-engine
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              name: monitoring
-      ports:
-        - protocol: TCP
-          port: http
 ```
 
-### 11.6 Secret Encryption in Transit
+### 8.6 Secret Encryption in Transit
 
 | Path | Encryption |
 |------|-----------|
@@ -1097,12 +967,10 @@ spec:
 | ArgoCD ↔ K8s API | TLS 1.3 |
 | Vault ↔ ESO | TLS 1.3 + Kubernetes auth (short-lived token) |
 | ESO ↔ K8s Secret | etcd encryption at rest (AES-CBC) |
-| Gateway ↔ SaaS | TLS 1.3 (HTTPS) |
-| Prometheus ↔ vLLM | TLS (optional, mTLS for strict mode) |
 
 ---
 
-## 12. Integration Topology Diagram
+## 9. Integration Topology Diagram
 
 ```mermaid
 flowchart TB
@@ -1121,24 +989,15 @@ flowchart TB
         subgraph Infra["Infrastructure (wave -2/-1)"]
             GPU["NVIDIA GPU Operator"]
             LH["Longhorn Storage"]
-            PROM["Prometheus + Alertmanager"]
             SWAPOFF["swapoff DaemonSet"]
         end
         subgraph Serving["Model Serving (wave 0)"]
             VLLM["vLLM Pods<br/>QoS Guaranteed"]
         end
-        subgraph Gateway["Gateway (wave 1)"]
-            EG["Envoy AI Gateway<br/>rate limit + circuit breaker"]
-            SM["ServiceMonitor"]
-        end
     end
 
     subgraph External["External Platforms"]
-        SAAS["SaaS Fallback<br/>OpenAI / Anthropic"]
-        PD["PagerDuty"]
-        SLACK["Slack"]
         REG["Container Registry<br/>GHCR / Harbor"]
-        GRAF["Grafana Cloud<br/>(optional)"]
     end
 
     REPO -->|webhook| ARGOCD
@@ -1146,19 +1005,14 @@ flowchart TB
     ARGOCD -->|sync waves| Worker
     ESO -->|sync secrets| VAULT
     ESO -->|creates K8s Secrets| Worker
-    VLLM -->|scrape /metrics| PROM
-    PROM -->|alerts| PD
-    PROM -->|alerts| SLACK
-    EG -->|failover| SAAS
     REG -->|pull images| Worker
-    PROM -->|remote_write| GRAF
 ```
 
 ---
 
-## 13. Integration Checklist
+## 10. Integration Checklist
 
-### 13.1 Pre-Integration (Repository)
+### 10.1 Pre-Integration (Repository)
 
 - [ ] Fix repoURL in all ApplicationSets to match actual Git remote
 - [ ] Create ArgoCD AppProject manifests (`apps/argocd-projects.yaml`)
@@ -1173,7 +1027,7 @@ flowchart TB
 - [ ] Add ClusterImagePolicy for Cosign verification
 - [ ] Add cert-manager Certificate manifests for TLS
 
-### 13.2 ArgoCD Installation
+### 10.2 ArgoCD Installation
 
 - [ ] Install ArgoCD on Control Cluster
 - [ ] Configure SSO (OIDC) for ArgoCD
@@ -1186,15 +1040,15 @@ flowchart TB
 - [ ] Verify sync waves execute in order
 - [ ] Verify all resources reach Healthy state
 
-### 13.3 External Secrets
+### 10.3 External Secrets
 
 - [ ] Install External Secrets Operator
 - [ ] Create SecretStore pointing to Vault/AWS SM
-- [ ] Create ExternalSecret for each secret (API keys, SaaS keys, PagerDuty, Slack)
+- [ ] Create ExternalSecret for each secret (API keys)
 - [ ] Verify secrets sync to Kubernetes
 - [ ] Verify pods can mount secrets
 
-### 13.4 Container Registry
+### 10.4 Container Registry
 
 - [ ] Create registry pull secret
 - [ ] Configure imagePullSecrets in environment values
@@ -1202,24 +1056,7 @@ flowchart TB
 - [ ] (Optional) Configure Cosign image signing in CI
 - [ ] (Optional) Install Sigstore Policy Controller
 
-### 13.5 Observability
-
-- [ ] Install Prometheus stack (via ArgoCD, wave -1)
-- [ ] Verify ServiceMonitor scrapes vLLM /metrics
-- [ ] Install Grafana + provision dashboards
-- [ ] Configure Alertmanager with PagerDuty + Slack receivers
-- [ ] Verify alert routing (test alert → correct channel)
-- [ ] (Optional) Configure remote_write to Grafana Cloud
-
-### 13.6 SaaS Fallback
-
-- [ ] Provision SaaS API keys in Vault
-- [ ] Create ExternalSecret for SaaS keys
-- [ ] Configure fallback backends in ai-gateway values
-- [ ] Test circuit breaker failover (simulate latency > 2000ms)
-- [ ] Test recovery (traffic returns to self-hosted)
-
-### 13.7 Security
+### 10.5 Security
 
 - [ ] Enable branch protection on main (2 approvers, CI required, signed commits)
 - [ ] Configure ArgoCD SSO
@@ -1230,7 +1067,7 @@ flowchart TB
 - [ ] Enable etcd encryption at rest
 - [ ] Verify all secrets come from Vault (no secrets in Git)
 
-### 13.8 Multi-Cluster (If Applicable)
+### 10.6 Multi-Cluster (If Applicable)
 
 - [ ] Register worker clusters with ArgoCD
 - [ ] Update ApplicationSets with cluster generator
@@ -1238,12 +1075,10 @@ flowchart TB
 - [ ] Test DR failover procedure
 - [ ] Document DR runbook
 
-### 13.9 Validation
+### 10.7 Validation
 
 - [ ] Run smoke tests post-deploy (`tests/smoke/vllm-smoke-test.sh`)
 - [ ] Run load tests (`tests/load/load-test.js` with k6)
-- [ ] Verify Grafana dashboards show data
-- [ ] Trigger test alert and verify PagerDuty/Slack delivery
 - [ ] Test ArgoCD rollback (revert commit → auto-sync)
 - [ ] Test self-heal (manual kubectl edit → ArgoCD re-syncs)
 - [ ] Test prune (delete resource in Git → ArgoCD removes from cluster)
@@ -1252,22 +1087,16 @@ flowchart TB
 
 ## Appendix A: External Platform Compatibility Matrix
 
-| Platform | Integration Type | Auth | ArgoCD | CI | Registry | Secrets | Observability |
-|----------|-----------------|------|--------|-----|----------|---------|---------------|
-| GitHub | Git provider | PAT/SSH/Deploy Key | ✅ | GitHub Actions | GHCR | — | — |
-| GitLab | Git provider | PAT/Deploy Token | ✅ | GitLab CI | Built-in | — | — |
-| Bitbucket | Git provider | App Password | ✅ | Bitbucket Pipelines | — | — | — |
-| Azure DevOps | Git provider | PAT | ✅ | Azure Pipelines | ACR | Key Vault | Azure Monitor |
-| AWS | Cloud | IRSA | ✅ | CodeBuild | ECR | Secrets Manager | CloudWatch |
-| GCP | Cloud | Workload Identity | ✅ | Cloud Build | GCR/Artifact Registry | Secret Manager | Cloud Operations |
-| Azure | Cloud | Managed Identity | ✅ | Azure Pipelines | ACR | Key Vault | Azure Monitor |
-| Vault | Secrets | K8s Auth / AppRole | — | — | — | ✅ | — |
-| PagerDuty | Alerting | Events API v2 | — | — | — | — | ✅ |
-| Slack | Alerting | Webhook | — | — | — | — | ✅ |
-| Datadog | Observability | API Key | — | — | — | — | ✅ |
-| Grafana Cloud | Observability | API Key | — | — | — | — | ✅ |
-| OpenAI | SaaS fallback | Bearer token | — | — | — | ✅ | — |
-| Anthropic | SaaS fallback | x-api-key | — | — | — | ✅ | — |
+| Platform | Integration Type | Auth | ArgoCD | CI | Registry | Secrets |
+|----------|-----------------|------|--------|-----|----------|---------|
+| GitHub | Git provider | PAT/SSH/Deploy Key | ✅ | GitHub Actions | GHCR | — |
+| GitLab | Git provider | PAT/Deploy Token | ✅ | GitLab CI | Built-in | — |
+| Bitbucket | Git provider | App Password | ✅ | Bitbucket Pipelines | — | — |
+| Azure DevOps | Git provider | PAT | ✅ | Azure Pipelines | ACR | Key Vault |
+| AWS | Cloud | IRSA | ✅ | CodeBuild | ECR | Secrets Manager |
+| GCP | Cloud | Workload Identity | ✅ | Cloud Build | GCR/Artifact Registry | Secret Manager |
+| Azure | Cloud | Managed Identity | ✅ | Azure Pipelines | ACR | Key Vault |
+| Vault | Secrets | K8s Auth / AppRole | — | — | — | ✅ |
 
 ---
 
@@ -1277,12 +1106,8 @@ flowchart TB
 |-------------|----------|--------|---------|-----------|
 | `custom-ai-ops-repo` | argocd | Manual (SSH key) | ArgoCD repo connection | Bootstrap |
 | `registry-pull-secret` | model-serving-* | ESO (Vault) | Pod image pulls | -3 |
-| `model-serving-secrets` | model-serving-* | ESO (Vault) | Gateway API keys | -3 |
-| `saas-api-keys` | envoy-gateway-system | ESO (Vault) | SaaS fallback | -3 |
-| `inference-tls` | envoy-gateway-system | cert-manager | Gateway TLS | -2 |
-| `pagerduty-service-key` | monitoring | ESO (Vault) | Alertmanager | -3 |
-| `slack-webhook-url` | monitoring | ESO (Vault) | Alertmanager | -3 |
-| `prometheus-additional-scrape-configs` | monitoring | ESO (Vault) | Prometheus | -1 |
+| `model-serving-secrets` | model-serving-* | ESO (Vault) | Inference API keys | -3 |
+| `inference-tls` | model-serving-prod | cert-manager | Model serving TLS | -2 |
 
 ---
 
@@ -1293,22 +1118,13 @@ flowchart TB
 | -3 | SecretStore | model-serving-* | model-serving-engine | ESO |
 | -3 | ExternalSecret | model-serving-* | model-serving-engine | ESO |
 | -3 | registry-pull-secret | model-serving-* | model-serving-engine | ESO |
-| -3 | saas-api-keys | envoy-gateway-system | ai-gateway | ESO |
-| -3 | alertmanager secrets | monitoring | prometheus-stack | ESO |
 | -2 | Longhorn PVCs | model-serving-* | model-serving-engine | Helm |
 | -2 | swapoff DaemonSet | (all GPU nodes) | model-serving-engine | Helm |
-| -2 | TLS Certificate | envoy-gateway-system | cert-manager | cert-manager |
+| -2 | TLS Certificate | model-serving-prod | cert-manager | cert-manager |
 | -1 | NVIDIA GPU Operator | nvidia-gpu-operator | addons/ | Helm |
-| -1 | Prometheus + Alertmanager | monitoring | addons/ | Helm |
-| -1 | Grafana | monitoring | addons/ | Helm |
 | 0 | vLLM StatefulSet | model-serving-* | model-serving-engine | Helm |
 | 0 | KEDA ScaledObject | model-serving-* | model-serving-engine | Helm |
 | 0 | PDB | model-serving-* | model-serving-engine | Helm |
-| 1 | HTTPRoute | envoy-gateway-system | ai-gateway | Helm |
-| 1 | BackendTrafficPolicy | envoy-gateway-system | ai-gateway | Helm |
-| 1 | ServiceMonitor | model-serving-* | model-serving-engine | Helm |
-| 1 | Grafana dashboards ConfigMap | monitoring | addons/ | Helm |
-| 1 | Prometheus rules ConfigMap | monitoring | addons/ | Helm |
 | 1 | NetworkPolicies | model-serving-* | model-serving-engine | Helm |
 | 2 | Smoke test Job | model-serving-* | model-serving-engine | Helm |
 | 2 | ArgoCD notification | argocd | — | argocd-notifications |

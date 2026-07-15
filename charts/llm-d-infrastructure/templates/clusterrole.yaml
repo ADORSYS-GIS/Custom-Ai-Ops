@@ -1,0 +1,28 @@
+{{- if .Values.job.enabled -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "llm-d-infrastructure.fullname" . }}-installer
+  labels:
+    {{- include "llm-d-infrastructure.labels" . | nindent 4 }}
+rules:
+  # Allow creating/updating/deleting CRDs
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  
+  # Allow creating/updating Gateway API resources
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  
+  # Allow creating/updating GAIE resources
+  - apiGroups: ["inference.networking.x-k8s.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  
+  # Allow validating webhooks configuration
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+{{- end }}

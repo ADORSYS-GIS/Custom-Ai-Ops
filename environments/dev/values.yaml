@@ -73,24 +73,10 @@ lmcache:
     modulePath: lmcache.integration.vllm
   env:
     PYTHONHASHSEED: "0"
-    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
-  serviceMonitor:
-    enabled: false
-    interval: 10s
-    scrapeTimeout: 5s
-    releaseLabel: prometheus
 
 # --- SafeTensors cache persistence: disabled in dev ---
 cachePersistence:
   enabled: false
-
-# --- Layer 4: Prometheus scrape of vLLM /metrics (5-10s interval) ---
-serviceMonitor:
-  enabled: true
-  path: /metrics
-  interval: 10s          # dev: 10s is fine for non-critical env
-  scrapeTimeout: 5s
-  releaseLabel: prometheus
 
 tolerations:
   - key: nvidia.com/gpu

@@ -22,9 +22,8 @@
 11. [Fault Tolerance and Resilience](#11-fault-tolerance)
 12. [Cache Coherence: The Critical Watchpoint](#12-cache-coherence)
 13. [Cache-Aware Routing (KV-aware routing)](#13-cache-aware-routing)
-14. [Observability and Metrics](#14-observability-and-metrics)
-15. [Technical Glossary](#15-glossary)
-16. [Sources](#16-sources)
+14. [Technical Glossary](#14-glossary)
+15. [Sources](#15-sources)
 
 ---
 
@@ -190,7 +189,7 @@ lmcache server \
 ```
 
 - Port **5555** (ZMQ): control channel, listens for incoming vLLM connections.
-- Port **8080** (HTTP): health checks, Prometheus metrics, management endpoints.
+- Port **8080** (HTTP): health checks, management endpoints.
 
 **Starting vLLM connected to the server**:
 
@@ -802,53 +801,10 @@ KV-aware and prefix-aware routing, initially available on the application router
 
 ---
 
-<a id="14-observability-and-metrics"></a>
-## 14. Observability and Metrics
-
-### 14.1 LMCache Metrics Exposed
-
-LMCache exposes detailed metrics via vLLM's `/metrics` endpoint (prefix `lmcache:`).
-
-| Category | Metric | Description |
-|---|---|---|
-| **Requests** | `lmcache:num_retrieve_requests` | Total number of retrieval requests |
-| | `lmcache:num_store_requests` | Total number of store requests |
-| **Tokens** | `lmcache:num_requested_tokens` | Tokens requested for retrieval |
-| | `lmcache:num_hit_tokens` | Tokens found in cache |
-| **Hit Rate** | `lmcache:retrieve_hit_rate` | Hit rate for retrievals |
-| | `lmcache:lookup_hit_rate` | Hit rate for lookups |
-| **Utilization** | `lmcache:local_cache_usage` | Local cache (RAM) utilization |
-| | `lmcache:remote_cache_usage` | Remote cache utilization |
-| **Performance** | `lmcache:time_to_retrieve` | Cache retrieval time |
-
-### 14.2 Prometheus Configuration
-
-```yaml
-scrape_configs:
-  - job_name: 'lmcache'
-    static_configs:
-      - targets: ['<vllm-worker-ip>:8000']
-    scrape_interval: 15s
-```
-
-**Important note**: in v1 mode, vLLM and LMCache run in separate processes. The `PROMETHEUS_MULTIPROC_DIR` variable must be identical in both processes for correct metric aggregation.
-
-### 14.3 What to Monitor Continuously
-
-- The **cache hit rate**, measured **per token** (not just per request), to detect progressive degradation.
-- The **per-level utilization rate** (L1 vs L2) to adjust RAM/disk sizing.
-- **Overall HBM pressure**: LMCache provides a net benefit only when the KV cache footprint exceeds available VRAM capacity; under low memory pressure, the additional layer can represent a net cost on the order of a few percent.
-- **Latency (TTFT)** and **throughput**.
-- **Memory utilization** (GPU, CPU, disk).
-
-### 14.4 Observed Resilience in Logs
-
-LMCache logs constitute direct, measurable proof of proper routing and reuse operation, by precisely detailing the number of tokens retrieved from cache relative to the request total (see examples in section 5.3).
-
 ---
 
-<a id="15-glossary"></a>
-## 15. Technical Glossary
+<a id="14-glossary"></a>
+## 14. Technical Glossary
 
 | Term | Definition |
 |---|---|
@@ -870,12 +826,12 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 | **kv_producer / kv_consumer** (or kv_sender / kv_retriever) | Roles declared by vLLM instances in a disaggregated prefill/decode architecture |
 | **No fate-sharing** | Property whereby the KV cache survives independently of the inference engine's lifecycle |
 | **KV-aware routing** | Routing strategy directing a request to the instance with the best expected cache hit rate |
-| **vLLM Production Stack** | Official reference Kubernetes deployment, integrating vLLM + LMCache + router + observability |
+| **vLLM Production Stack** | Official reference Kubernetes deployment, integrating vLLM + LMCache + router |
 
 ---
 
-<a id="16-sources"></a>
-## 16. Sources
+<a id="15-sources"></a>
+## 15. Sources
 
 This document consolidates all technical explanations previously exchanged on this subject, completed and verified by the following sources (consulted in July 2026):
 

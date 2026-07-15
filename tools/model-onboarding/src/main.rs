@@ -29,7 +29,7 @@ struct RegistryEntry {
     gpu_pool: String,
     context_length: u32,
     quantisation: String,
-    gateway_backend: String,
+    backend: String,
     notes: String,
 }
 
@@ -109,7 +109,7 @@ fn main() -> Result<()> {
     let fmt = parse_format(&cli.format)?;
     let chart = format_to_chart(fmt);
     let engine = format_to_engine(fmt);
-    let gateway_backend = format!("{}-local", cli.name);
+    let backend = format!("{}-local", cli.name);
 
     let usable_vram = cli.vram * 0.90;
     let fixed_overhead = 1.0;
@@ -143,7 +143,11 @@ fn main() -> Result<()> {
             .quantisation
             .clone()
             .unwrap_or_else(|| "unknown".to_string()),
+<<<<<<< Updated upstream
         gateway_backend: gateway_backend.clone(),
+=======
+        backend: backend.clone(),
+>>>>>>> Stashed changes
         notes,
     };
 
@@ -161,7 +165,7 @@ fn main() -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&registry_entry)?);
         println!();
         println!("Helm chart to use: charts/{}/", chart);
-        println!("Gateway backend: {}", gateway_backend);
+        println!("Backend: {}", backend);
         return Ok(());
     }
 
@@ -201,7 +205,7 @@ fn main() -> Result<()> {
         model_size = cli.model_size,
         usable = usable_vram,
         remaining = remaining,
-        backend = gateway_backend,
+        backend = backend,
         chart = chart,
         date = chrono_like_date(),
     );
@@ -272,7 +276,7 @@ fn main() -> Result<()> {
     );
     println!("  2. Add entry to models/registry.yaml:");
     println!("{}", serde_json::to_string_pretty(&registry_entry)?);
-    println!("  3. Add gateway backend in charts/ai-gateway/values.yaml");
+    println!("  3. Add backend in charts/model-serving-engine/values.yaml");
     println!("  4. Deploy with chart: charts/{}/", chart);
     println!("  5. Run smoke tests: tests/smoke/");
     println!("  6. Fill evaluation report: {}/eval-report.md", model_dir);

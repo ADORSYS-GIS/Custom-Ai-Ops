@@ -67,7 +67,11 @@ spec:
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
+<<<<<<< Updated upstream
 {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
+=======
+          {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
+>>>>>>> Stashed changes
           {{- $command := list }}
           {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- end }}
           securityContext:
@@ -126,9 +130,6 @@ spec:
             # mismatches across vLLM workers when keys hash to different orders.
             - name: PYTHONHASHSEED
               value: {{ .Values.lmcache.env.PYTHONHASHSEED | default "0" | quote }}
-            # Multi-process Prometheus metric aggregation directory.
-            - name: PROMETHEUS_MULTIPROC_DIR
-              value: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" | quote }}
             # KV transfer role — kv_both (unified pool) | kv_producer (prefill pool, PD disaggregation) | kv_consumer (decode pool).
             # Bible §10.
             - name: VLLM_KV_ROLE
@@ -199,9 +200,6 @@ spec:
             - name: lmcache-config
               mountPath: /etc/lmcache
               readOnly: true
-            # Multi-process Prometheus metric aggregation directory (shared emptyDir).
-            - name: prometheus-multiproc
-              mountPath: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" }}
             {{- end }}
             {{- if .Values.cachePersistence.enabled }}
             - name: cache-persistence
@@ -237,9 +235,6 @@ spec:
         - name: lmcache-config
           configMap:
             name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
-        # Multi-process Prometheus metric aggregation (shared emptyDir).
-        - name: prometheus-multiproc
-          emptyDir: {}
         {{- end }}
         {{- range .Values.extraVolumes }}
         - name: {{ .name }}

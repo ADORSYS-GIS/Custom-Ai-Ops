@@ -1,8 +1,8 @@
 # cert-manager
 #
-# cert-manager provides automatic TLS certificate provisioning for the
-# AI Gateway (inference.example.com). It uses Let's Encrypt (production)
-# or a self-signed CA (dev/staging).
+# cert-manager provides automatic TLS certificate provisioning for
+# internal services. It uses Let's Encrypt (production) or a self-signed
+# CA (dev/staging).
 #
 # --- Installation ---
 # Add the Helm repository:
@@ -35,18 +35,13 @@
 #       solvers:
 #         - http01:
 #             ingress:
-#               class: envoy-gateway
+#               class: nginx
 #   EOF
-#
-# --- Certificate ---
-# The AI Gateway chart creates a Certificate resource that cert-manager
-# reconciles to produce the TLS secret (inference-tls).
 #
 # --- Verification ---
 #   kubectl get pods -n cert-manager
 #   kubectl get clusterissuer
 #   kubectl get certificate -A
-#   kubectl describe certificate inference-tls -n envoy-gateway-system
 ---
 apiVersion: v1
 kind: Namespace
@@ -105,7 +100,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: envoy-gateway
+            class: nginx
 ---
 # ClusterIssuer for Let's Encrypt staging (use for dev/staging)
 apiVersion: cert-manager.io/v1
@@ -121,4 +116,4 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: envoy-gateway
+            class: nginx

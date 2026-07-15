@@ -10,9 +10,10 @@ This document provides complete, step-by-step configuration instructions for eve
 | # | Platform | Role | File in Project |
 |---|----------|------|-----------------|
 | 1 | GitHub | Git hosting + CI/CD + Container Registry | `.github/workflows/ci.yaml`, `apps/argocd-repo-credentials.yaml` |
-| 2 | ArgoCD | GitOps controller (sync waves, AppProjects, notifications) | `apps/argocd-*.yaml` |
-| 3 | Helm Repositories | Addon distribution (6 repos) | `addons/*/Chart.yaml` |
+| 2 | ArgoCD | GitOps controller (sync waves, AppProjects) | `apps/argocd-*.yaml` |
+| 3 | Helm Repositories | Addon distribution (5 repos) | `addons/*/Chart.yaml` |
 | 4 | External Secrets Operator + AWS Secrets Manager | Sync external secrets → K8s Secrets | `apps/external-secrets.yaml` |
+<<<<<<< Updated upstream
 | 5 | SaaS LLM Fallback Providers (7) | Fallback inference when self-hosted models are unavailable | `charts/ai-gateway/values.yaml` |
 | 6 | Container Registries (ghcr.io + Docker Hub) | Private image pulls | `apps/external-secrets.yaml` (registry-pull-secret) |
 | 7 | PagerDuty + Slack | Alert routing and on-call notifications | `observability/alertmanager-routes.yaml`, `apps/argocd-notifications.yaml` |
@@ -21,6 +22,13 @@ This document provides complete, step-by-step configuration instructions for eve
 | 10 | NVIDIA GPU Operator + DCGM | GPU driver + metrics + device plugin | `addons/nvidia-gpu-operator/` |
 | 11 | cert-manager + Let's Encrypt | TLS certificates for AI Gateway | `addons/cert-manager/` |
 | 12 | KEDA | Autoscaling on vLLM metrics (not CPU/RAM) | `addons/keda/`, `charts/model-serving-engine/templates/hpa.yaml` |
+=======
+| 5 | Container Registries (ghcr.io + Docker Hub) | Private image pulls | `apps/external-secrets.yaml` (registry-pull-secret) |
+| 6 | Longhorn | Distributed storage (RWO + RWX) | `addons/longhorn/` |
+| 7 | NVIDIA GPU Operator | GPU driver + device plugin | `addons/nvidia-gpu-operator/` |
+| 8 | cert-manager + Let's Encrypt | TLS certificates for inference endpoint | `addons/cert-manager/` |
+| 9 | KEDA | Autoscaling on vLLM metrics (not CPU/RAM) | `addons/keda/`, `charts/model-serving-engine/templates/hpa.yaml` |
+>>>>>>> Stashed changes
 
 ---
 
@@ -30,16 +38,13 @@ This document provides complete, step-by-step configuration instructions for eve
 2. [ArgoCD](#2-argocd)
 3. [Helm Repositories](#3-helm-repositories)
 4. [External Secrets Operator + AWS Secrets Manager](#4-external-secrets-operator--aws-secrets-manager)
-5. [SaaS LLM Fallback Providers](#5-saas-llm-fallback-providers)
-6. [Container Registries](#6-container-registries)
-7. [PagerDuty + Slack](#7-pagerduty--slack)
-8. [Prometheus + Grafana + Alertmanager](#8-prometheus--grafana--alertmanager)
-9. [Longhorn](#9-longhorn)
-10. [NVIDIA GPU Operator + DCGM](#10-nvidia-gpu-operator--dcgm)
-11. [cert-manager + Let's Encrypt](#11-cert-manager--lets-encrypt)
-12. [KEDA](#12-keda)
-13. [Bootstrap Order](#13-bootstrap-order)
-14. [Troubleshooting Quick Reference](#14-troubleshooting-quick-reference)
+5. [Container Registries](#5-container-registries)
+6. [Longhorn](#6-longhorn)
+7. [NVIDIA GPU Operator](#7-nvidia-gpu-operator)
+8. [cert-manager + Let's Encrypt](#8-cert-manager--lets-encrypt)
+9. [KEDA](#9-keda)
+10. [Bootstrap Order](#10-bootstrap-order)
+11. [Troubleshooting Quick Reference](#11-troubleshooting-quick-reference)
 
 ---
 
@@ -162,7 +167,7 @@ gh run list --limit 5
 
 ## 2. ArgoCD
 
-**Role**: GitOps controller. Syncs Git state → cluster state via ApplicationSets, AppProjects, sync waves, health checks, and notifications.
+**Role**: GitOps controller. Syncs Git state → cluster state via ApplicationSets, AppProjects, sync waves, and health checks.
 
 ### 2.1 Prerequisites
 
@@ -175,8 +180,8 @@ The file `apps/argocd-appprojects.yaml` defines two AppProjects at sync-wave `-1
 
 | Project | Source Repos | Destinations | Use |
 |---------|-------------|--------------|-----|
-| `model-serving` | `github.com/rustnew/custom-ai-ops` | `model-serving-*`, `envoy-gateway-system` | All serving workloads |
-| `infrastructure` | `custom-ai-ops` + Helm repos | `gpu-operator`, `longhorn-system`, `monitoring`, `keda-system`, `cert-manager`, `external-secrets` | Cluster infrastructure |
+| `model-serving` | `github.com/rustnew/custom-ai-ops` | `model-serving-*` | All serving workloads |
+| `infrastructure` | `custom-ai-ops` + Helm repos | `gpu-operator`, `longhorn-system`, `keda-system`, `cert-manager`, `external-secrets` | Cluster infrastructure |
 
 #### Apply
 
@@ -190,9 +195,9 @@ Three AppSets deploy applications per environment:
 
 | File | Environments | Apps |
 |------|-------------|------|
-| `apps/argocd-appset-dev.yaml` | dev | model-serving, secrets, gateway |
-| `apps/argocd-appset-staging.yaml` | staging | model-serving, secrets, gateway |
-| `apps/argocd-appset-prod.yaml` | prod | 6 addons + model-serving + secrets + gateway |
+| `apps/argocd-appset-dev.yaml` | dev | model-serving, secrets |
+| `apps/argocd-appset-staging.yaml` | staging | model-serving, secrets |
+| `apps/argocd-appset-prod.yaml` | prod | 5 addons + model-serving + secrets |
 
 Each AppSet uses `git://` (HTTPS) source with `repoURL: https://github.com/rustnew/custom-ai-ops.git`.
 
@@ -204,27 +209,7 @@ kubectl apply -f apps/argocd-appset-staging.yaml
 kubectl apply -f apps/argocd-appset-prod.yaml
 ```
 
-### 2.4 Notifications
-
-The file `apps/argocd-notifications.yaml` configures Slack + PagerDuty notifications:
-
-- **Secret** `argocd-notifications-secret` (sync-wave `-11`) with `slack-webhook-url` and `pagerduty-integration-key`
-- **ConfigMap** `argocd-notifications-cm` with 4 triggers, 5 templates, 2 subscriptions
-
-The Secret has placeholder values (`<SLACK_WEBHOOK_URL>`, `<PAGERDUTY_INTEGRATION_KEY>`). Replace with real values:
-
-```bash
-kubectl create secret generic argocd-notifications-secret \
-  --namespace argocd \
-  --from-literal=slack-webhook-url="https://hooks.slack.com/services/Txxx/Bxxx/xxxxxxx" \
-  --from-literal=pagerduty-integration-key="xxxxxxx" \
-  --type=Opaque \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Or use ExternalSecrets to pull these from AWS Secrets Manager.
-
-### 2.5 Health Checks
+### 2.4 Health Checks
 
 The file `apps/argocd-health-checks.yaml` defines custom health checks for resources like `ScaledObject` (KEDA) and `ExternalSecret` (ESO).
 
@@ -232,7 +217,7 @@ The file `apps/argocd-health-checks.yaml` defines custom health checks for resou
 kubectl apply -f apps/argocd-health-checks.yaml
 ```
 
-### 2.6 Verification
+### 2.5 Verification
 
 ```bash
 # List all Applications
@@ -243,12 +228,9 @@ argocd app get model-serving-prod
 
 # Check sync waves are progressing
 kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,PHASE:.status.operationState.phase,WAVE:.metadata.annotations.argocd\*sync-wave
-
-# Check notifications are firing
-kubectl logs -n argocd deploy/argocd-notifications-controller
 ```
 
-### 2.7 Troubleshooting
+### 2.6 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -261,7 +243,7 @@ kubectl logs -n argocd deploy/argocd-notifications-controller
 
 ## 3. Helm Repositories
 
-**Role**: Six external Helm repositories provide cluster add-ons (GPU operator, storage, observability, autoscaling, secrets, TLS).
+**Role**: Five external Helm repositories provide cluster add-ons (GPU operator, storage, autoscaling, secrets, TLS).
 
 ### 3.1 Repository List
 
@@ -269,7 +251,6 @@ kubectl logs -n argocd deploy/argocd-notifications-controller
 |-------|-------------|-------|---------|-----------------|
 | NVIDIA GPU Operator | `https://nvidia.github.io/gpu-operator` | `gpu-operator` | v24.9.0 | `helm repo add nvidia https://nvidia.github.io/gpu-operator` |
 | Longhorn | `https://charts.longhorn.io` | `longhorn` | 1.7.2 | `helm repo add longhorn https://charts.longhorn.io` |
-| Prometheus Stack | `https://prometheus-community.github.io/helm-charts` | `kube-prometheus-stack` | 65.5.0 | `helm repo add prometheus-community https://prometheus-community.github.io/helm-charts` |
 | KEDA | `https://kedacore.github.io/charts` | `keda` | 2.16.0 | `helm repo add kedacore https://kedacore.github.io/charts` |
 | External Secrets | `https://charts.external-secrets.io` | `external-secrets` | 0.10.0 | `helm repo add external-secrets https://charts.external-secrets.io` |
 | cert-manager | `https://charts.jetstack.io` | `cert-manager` | v1.16.0 | `helm repo add jetstack https://charts.jetstack.io` |
@@ -280,7 +261,6 @@ kubectl logs -n argocd deploy/argocd-notifications-controller
 # Add all repositories
 helm repo add nvidia https://nvidia.github.io/gpu-operator
 helm repo add longhorn https://charts.longhorn.io
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add kedacore https://kedacore.github.io/charts
 helm repo add external-secrets https://charts.external-secrets.io
 helm repo add jetstack https://charts.jetstack.io
@@ -295,14 +275,13 @@ helm install keda kedacore/keda \
 
 ### 3.3 ArgoCD Auto-Deployment
 
-Each addon has a `Chart.yaml` defining an ArgoCD `Application` resource. The prod AppSet includes all 6 addons:
+Each addon has a `Chart.yaml` defining an ArgoCD `Application` resource. The prod AppSet includes all 5 addons:
 
 ```yaml
 # apps/argocd-appset-prod.yaml — infrastructure AppSet
 list:
   - path: addons/nvidia-gpu-operator      # sync-wave: -1
   - path: addons/longhorn                  # sync-wave: -2
-  - path: addons/prometheus-stack          # sync-wave: -1
   - path: addons/keda                      # sync-wave: -1
   - path: addons/external-secrets          # sync-wave: -1
   - path: addons/cert-manager              # sync-wave: -1
@@ -315,12 +294,11 @@ list:
 helm repo list
 
 # Verify addon Apps are synced in ArgoCD
-argocd app list | grep -E "nvidia|longhorn|prometheus|keda|external-secrets|cert-manager"
+argocd app list | grep -E "nvidia|longhorn|keda|external-secrets|cert-manager"
 
 # Verify addons are running
 kubectl get pods -n gpu-operator
 kubectl get pods -n longhorn-system
-kubectl get pods -n monitoring
 kubectl get pods -n keda-system
 kubectl get pods -n external-secrets
 kubectl get pods -n cert-manager
@@ -330,7 +308,6 @@ kubectl get pods -n cert-manager
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `chart kube-prometheus-stack not found` | Helm repo not added on ArgoCD | ArgoCD fetches from HTTP Helm repos directly — verify the repoURL in Chart.yaml |
 | `CRD already exists` | Manual Helm install conflicts with ArgoCD | Use `ServerSideApply=true` (already set in syncOptions) or `helm uninstall` the manual one |
 | `failed to download chart` | Network/firewall blocking Helm repo | Add egress firewall rule to allow HTTP/HTTPS to the Helm repo URLs |
 
@@ -338,7 +315,7 @@ kubectl get pods -n cert-manager
 
 ## 4. External Secrets Operator + AWS Secrets Manager
 
-**Role**: Pulls secrets from AWS Secrets Manager and creates Kubernetes Secrets automatically. Used for SaaS API keys, alerting credentials, and registry credentials.
+**Role**: Pulls secrets from AWS Secrets Manager and creates Kubernetes Secrets automatically. Used for registry and CI credentials.
 
 ### 4.1 Prerequisites
 
@@ -371,16 +348,6 @@ aws iam create-policy \
   --policy-document '{
     "Version": "2012-10-17",
     "Statement": [
-      {
-        "Effect": "Allow",
-        "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:saas/*"
-      },
-      {
-        "Effect": "Allow",
-        "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:alerting/*"
-      },
       {
         "Effect": "Allow",
         "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
@@ -427,28 +394,6 @@ serviceAccount:
 ### 4.3 Create Secrets in AWS Secrets Manager
 
 ```bash
-# SaaS LLM API keys
-aws secretsmanager create-secret --name saas/openai-api-key \
-  --secret-string "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name saas/anthropic-api-key \
-  --secret-string "sk-ant-xxxxxxxxxxxxxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name saas/google-vertex-ai-key \
-  --secret-string '{"type":"service_account","project_id":"..."}' --region us-east-1
-aws secretsmanager create-secret --name saas/azure-openai-key \
-  --secret-string "xxxxxxxxxxxxxxxxxxxxxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name saas/mistral-api-key \
-  --secret-string "xxxxxxxxxxxxxxxxxxxxxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name saas/cohere-api-key \
-  --secret-string "xxxxxxxxxxxxxxxxxxxxxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name saas/aws-bedrock-key \
-  --secret-string "AKIAIOSFODNN7EXAMPLE" --region us-east-1
-
-# Alerting credentials
-aws secretsmanager create-secret --name alerting/pagerduty-service-key \
-  --secret-string "pd_integration_key_xxxxxxxx" --region us-east-1
-aws secretsmanager create-secret --name alerting/slack-webhook-url \
-  --secret-string "https://hooks.slack.com/services/Txxx/Bxxx/xxxxxxx" --region us-east-1
-
 # Registry credentials
 aws secretsmanager create-secret --name registry/github-pat \
   --secret-string "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" --region us-east-1
@@ -469,8 +414,6 @@ The manifest defines:
 | Resource | Name | Namespace | Target Secret | Purpose |
 |----------|------|-----------|----------------|---------|
 | ClusterSecretStore | `aws-secrets-manager` | (cluster-scoped) | — | Points ESO to AWS Secrets Manager |
-| ExternalSecret | `saas-api-keys` | `envoy-gateway-system` | `ai-gateway-saas-keys` | 7 SaaS LLM API keys |
-| ExternalSecret | `alertmanager-config` | `monitoring` | `alertmanager-config` | Alertmanager config templated with PagerDuty + Slack |
 | ExternalSecret | `argocd-image-updater-token` | `argocd` | `argocd-image-updater-git` | GitHub PAT for Image Updater |
 | ExternalSecret | `registry-pull-secret` | `model-serving-prod` | `registry-credentials` | Docker registry pull secret (ghcr.io + docker.io) |
 
@@ -540,13 +483,11 @@ kubectl get clustersecretstore
 
 # Verify ExternalSecrets are synced
 kubectl get externalsecrets -A
-# → NAME               STORE               STATUS    READY
-#   saas-api-keys      aws-secrets-manager Secret    True
-#   alertmanager-config aws-secrets-manager Secret    True
+# → NAME                        STORE               STATUS    READY
+#   argocd-image-updater-token  aws-secrets-manager Secret    True
+#   registry-pull-secret        aws-secrets-manager Secret    True
 
 # Verify Kubernetes Secrets are created
-kubectl get secret ai-gateway-saas-keys -n envoy-gateway-system
-kubectl get secret alertmanager-config -n monitoring
 kubectl get secret argocd-image-updater-git -n argocd
 kubectl get secret registry-credentials -n model-serving-prod
 
@@ -566,113 +507,16 @@ kubectl logs -n external-secrets deploy/external-secrets-controller
 
 ---
 
-## 5. SaaS LLM Fallback Providers
-
-**Role**: Seven external LLM providers used as fallback when self-hosted models are unavailable or latency exceeds 2000ms. The AI Gateway's `BackendTrafficPolicy` uses circuit breaker with `Prioritized` strategy: priority 0 (self-hosted) and priority 1 (SaaS fallback).
-
-### 5.1 Prerequisites
-
-You must have API keys for each provider you want to use. This section documents only the project-side configuration (ExternalSecret + ai-gateway values). Account creation and key retrieval is out of scope — see each provider's documentation:
-
-| Provider | API Key URL | Key Format |
-|----------|------------|------------|
-| OpenAI | https://platform.openai.com/api-keys | `sk-...` |
-| Anthropic Claude | https://console.anthropic.com/settings/keys | `sk-ant-...` |
-| Google Vertex AI | https://console.cloud.google.com/iam-admin/serviceaccounts | Service Account JSON |
-| Azure OpenAI | https://portal.azure.com → Azure OpenAI | String key |
-| Mistral AI | https://console.mistral.ai/api-keys/ | String key |
-| Cohere | https://dashboard.cohere.com/api-keys | String key |
-| AWS Bedrock | AWS Console → IAM → Users → Security credentials | Access key ID + secret key |
-
-### 5.2 Store Keys in AWS Secrets Manager
-
-See [§4.3](#43-create-secrets-in-aws-secrets-manager) — create secrets with keys `saas/openai-api-key`, `saas/anthropic-api-key`, etc.
-
-### 5.3 ExternalSecret Configuration
-
-The ExternalSecret `saas-api-keys` in `apps/external-secrets.yaml` pulls all 7 keys and creates a single Kubernetes Secret `ai-gateway-saas-keys` in `envoy-gateway-system`:
-
-```yaml
-target:
-  name: ai-gateway-saas-keys
-  template:
-    data:
-      openai-gpt4-api-key: "{{ .openai_api_key }}"
-      anthropic-claude-api-key: "{{ .anthropic_api_key }}"
-      google-vertex-ai-key: "{{ .google_vertex_ai_key }}"
-      azure-openai-api-key: "{{ .azure_openai_key }}"
-      mistral-api-key: "{{ .mistral_api_key }}"
-      cohere-api-key: "{{ .cohere_api_key }}"
-      aws-bedrock-api-key: "{{ .aws_bedrock_key }}"
-```
-
-### 5.4 AI Gateway Configuration
-
-In `charts/ai-gateway/values.yaml`, define SaaS fallback backends:
-
-```yaml
-fallback:
-  enabled: true
-  saasBackends:
-    - name: openai-gpt4
-      endpoint: https://api.openai.com/v1
-      apiKeySecret: ai-gateway-saas-keys
-      apiKeyKey: openai-gpt4-api-key
-      priority: 1
-    - name: anthropic-claude
-      endpoint: https://api.anthropic.com/v1
-      apiKeySecret: ai-gateway-saas-keys
-      apiKeyKey: anthropic-claude-api-key
-      priority: 1
-    # ... add other providers similarly
-```
-
-### 5.5 Verification
-
-```bash
-# Verify the SaaS keys secret exists
-kubectl get secret ai-gateway-saas-keys -n envoy-gateway-system
-# → NAME                   TYPE     DATA   AGE
-#   ai-gateway-saas-keys   Opaque   7       5m
-
-# Verify all 7 keys are present
-kubectl get secret ai-gateway-saas-keys -n envoy-gateway-system \
-  -o jsonpath='{.data}' | jq 'keys'
-
-# Test fallback by stopping self-hosted model
-kubectl scale statefulset/model-serving-engine -n model-serving-prod --replicas=0
-
-# Send a request — should get 200 from SaaS fallback
-curl -X POST https://inference.example.com/v1/chat/completions \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "x-model: mistral-7b-local" \
-  -d '{"model":"mistral-7b-local","messages":[{"role":"user","content":"hello"}]}'
-
-# Check gateway logs for failover
-kubectl logs -n envoy-gateway-system deploy/envoy-gateway | grep "failover"
-```
-
-### 5.6 Troubleshooting
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `401 Unauthorized` from SaaS provider | API key expired or wrong format | Verify key in AWS Secrets Manager matches the provider's current key |
-| Fallback not triggering | `fallback.enabled` is false or priority not configured | Set `fallback.enabled: true` and verify `priority: 1` on SaaS backends |
-| `Secret ai-gateway-saas-keys not found` | ExternalSecret not synced | Verify ExternalSecret status: `kubectl get externalsecret saas-api-keys -n envoy-gateway-system` |
-| Only OpenAI fallback works | Other backends not defined in values.yaml | Add all providers to `fallback.saasBackends` in ai-gateway values |
-
----
-
-## 6. Container Registries
+## 5. Container Registries
 
 **Role**: Pull private images from GHCR (GitHub Container Registry) and Docker Hub. Used for vLLM and LMCache images.
 
-### 6.1 Prerequisites
+### 5.1 Prerequisites
 
 - GitHub account with access to `ghcr.io` packages
 - Docker Hub account (for public images that may hit rate limits)
 
-### 6.2 Registry Credentials
+### 5.2 Registry Credentials
 
 Store the credentials in AWS Secrets Manager:
 
@@ -688,7 +532,7 @@ aws secretsmanager create-secret --name registry/docker-password \
   --secret-string "your-dockerhub-password-or-token" --region us-east-1
 ```
 
-### 6.3 Pull Secret
+### 5.3 Pull Secret
 
 The ExternalSecret `registry-pull-secret` in `apps/external-secrets.yaml` creates a `kubernetes.io/dockerconfigjson` Secret in `model-serving-prod`:
 
@@ -707,7 +551,7 @@ The ExternalSecret `registry-pull-secret` in `apps/external-secrets.yaml` create
 }
 ```
 
-### 6.4 Reference in Helm Values
+### 5.4 Reference in Helm Values
 
 In `environments/prod/values.yaml` or `charts/model-serving-engine/values.yaml`:
 
@@ -718,7 +562,7 @@ global:
     - name: registry-credentials
 ```
 
-### 6.5 ArgoCD Image Updater
+### 5.5 ArgoCD Image Updater
 
 ArgoCD Image Updater can automatically update image tags in Git when new images are pushed to the registry. The Secret `argocd-image-updater-git` (ExternalSecret `argocd-image-updater-token`) provides a GitHub PAT with `contents:write` permission for write-back:
 
@@ -740,7 +584,7 @@ metadata:
     argocd-image-updater.argoproj.io/write-back-method: git
 ```
 
-### 6.6 Verification
+### 5.6 Verification
 
 ```bash
 # Verify pull secret exists
@@ -757,7 +601,7 @@ kubectl run test-pull --image=vllm/vllm-openai:v0.6.3 \
 kubectl logs -n argocd deploy/argocd-image-updater
 ```
 
-### 6.7 Troubleshooting
+### 5.7 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -768,6 +612,7 @@ kubectl logs -n argocd deploy/argocd-image-updater
 
 ---
 
+<<<<<<< Updated upstream
 ## 7. PagerDuty + Slack
 
 **Role**: Two alerting platforms — PagerDuty for critical alerts (on-call paging), Slack for team notifications (warnings, info, sync status).
@@ -993,17 +838,20 @@ kubectl get servicemonitor -A | grep model-serving
 ---
 
 ## 9. Longhorn
+=======
+## 6. Longhorn
+>>>>>>> Stashed changes
 
 **Role**: Distributed block storage for Kubernetes. Provides two StorageClasses:
 - `longhorn` (RWO) — used for model weights PVC and cache persistence PVC
 - `longhorn-rwx` (RWX) — used for shared model storage across pods
 
-### 9.1 Prerequisites
+### 6.1 Prerequisites
 
 - At least 3 worker nodes with local disks (SSD recommended)
 - Each node should have at least 200 GiB free disk space
 
-### 9.2 Installation
+### 6.2 Installation
 
 #### ArgoCD auto-installs Longhorn at sync-wave `-2`
 
@@ -1024,7 +872,7 @@ helm install longhorn longhorn/longhorn \
   --version 1.7.2
 ```
 
-### 9.3 Create the RWX StorageClass
+### 6.3 Create the RWX StorageClass
 
 After Longhorn is installed, create the RWX storage class:
 
@@ -1049,7 +897,7 @@ parameters:
 EOF
 ```
 
-### 9.4 Helm Values Using Longhorn
+### 6.4 Helm Values Using Longhorn
 
 In `environments/prod/values.yaml`:
 ```yaml
@@ -1067,7 +915,7 @@ cachePersistence:
   size: 50Gi
 ```
 
-### 9.5 GPU Node Tolerations
+### 6.5 GPU Node Tolerations
 
 The addon Chart.yaml adds tolerations so Longhorn pods run on GPU nodes:
 
@@ -1078,7 +926,7 @@ tolerations:
     effect: NoSchedule
 ```
 
-### 9.6 Verification
+### 6.6 Verification
 
 ```bash
 # Verify Longhorn pods are running
@@ -1099,7 +947,7 @@ kubectl port-forward svc/longhorn-frontend 8080:80 -n longhorn-system
 # → http://localhost:8080
 ```
 
-### 9.7 Troubleshooting
+### 6.7 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -1110,21 +958,21 @@ kubectl port-forward svc/longhorn-frontend 8080:80 -n longhorn-system
 
 ---
 
-## 10. NVIDIA GPU Operator + DCGM
+## 7. NVIDIA GPU Operator
 
-**Role**: Automates installation and management of NVIDIA GPU driver, Container Toolkit, DCGM exporter, Device Plugin, and Node Feature Discovery.
+**Role**: Automates installation and management of NVIDIA GPU driver, Container Toolkit, Device Plugin, and Node Feature Discovery.
 
-### 10.1 Prerequisites
+### 7.1 Prerequisites
 
 - Cluster nodes have NVIDIA GPUs (e.g., A100, H100, L4)
 - Ubuntu 22.04 or RHEL 9 with kernel headers (for driver building)
 - For driver pre-installed clusters: disable driver installation (`driver.enabled: false`)
 
-### 10.2 Installation
+### 7.2 Installation
 
 #### ArgoCD auto-installs at sync-wave `-1`
 
-`]deployed via the prod AppSet:
+`deployed via the prod AppSet:
 ```yaml
 - path: addons/nvidia-gpu-operator    # sync-wave: -1
 ```
@@ -1139,7 +987,7 @@ helm install gpu-operator nvidia/gpu-operator \
   --version v24.9.0
 ```
 
-### 10.3 Node Labelling
+### 7.3 Node Labelling
 
 After GPU Operator installs, label your GPU nodes:
 
@@ -1152,36 +1000,14 @@ This label is used by:
 - `swapoff` DaemonSet
 - `lmcache` DaemonSet
 
-### 10.4 DCGM Exporter
-
-DCGM exporter is deployed as part of the GPU Operator. It exposes GPU metrics on port `9400/metrics`. The GPU Operator creates its own ServiceMonitor, so Prometheus auto-discovers it (when `serviceMonitorSelectorNilUsesHelmValues: false`).
-
-Key DCGM metrics used:
-- `DCGM_FI_DEV_GPU_TEMP` — GPU temperature
-- `DCGM_FI_DEV_GPU_UTIL` — GPU utilization (%)
-- `DCGM_FI_DEV_FB_USED` — Frame buffer (VRAM) used
-- `DCGM_FI_DEV_FB_TOTAL` — Total VRAM
-
-### 10.5 Verification
+### 7.4 Verification
 
 ```bash
 # Verify GPU Operator pods
 kubectl get pods -n gpu-operator
 # → gpu-driver-daemonset-xxx     Running
 #   gpu-operator-xxx             Running
-#   nvidia-dcgm-exporter-xxx      Running
 #   nvidia-device-plugin-xxx     Running
-
-# Verify DCGM exporter metrics
-kubectl port-forward svc/nvidia-dcgm-exporter 9400:9400 -n gpu-operator
-curl http://localhost:9400/metrics | grep DC
-# → DCGM_FI_DEV_GPU_TEMP 45
-#   DCGM_FI_DEV_GPU_UTIL 0
-#   DCGM_FI_DEV_FB_USED 1024
-
-# Verify Prometheus is scraping DCGM
-kubectl port-forward svc/prometheus-server 9090:9090 -n monitoring
-# → http://localhost:9090/targets — nvidia-dcgm-exporter should be up
 
 # Verify GPUs are available to pods
 kubectl run gpu-test --image=nvidia/cuda:12.2.2-base-ubuntu22.04 \
@@ -1189,29 +1015,28 @@ kubectl run gpu-test --image=nvidia/cuda:12.2.2-base-ubuntu22.04 \
   --rm -it
 ```
 
-### 10.6 Troubleshooting
+### 7.5 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `nvidia-smi: command not found` in pods | Driver not loaded | Verify `kubectl get pods -n gpu-operator` shows `gpu-driver-daemonset` as Running |
 | `0/6 nodes are available: 6 Insufficient nvidia.com/gpu` | Device plugin not running | Verify `nvidia-device-plugin` DaemonSet is Running on all GPU nodes |
-| DCGM metrics not in Prometheus | DCGM ServiceMonitor missing or lb mismatch | Check `serviceMonitorSelectorNilUsesHelmValues: false` in prometheus-stack |
 | GPU node label missing | NodeFeatureDiscovery (NFD) not labelling | Add `nvidia.com/gpu.present=true` label manually: `kubectl label node <name> nvidia.com/gpu.present=true` |
 | Driver installation fails | Kernel headers missing | Install `linux-headers-$(uname -r)` on the node or switch to driver pre-installed mode |
 
 ---
 
-## 11. cert-manager + Let's Encrypt
+## 8. cert-manager + Let's Encrypt
 
-**Role**: Automatic TLS certificate provisioning for the AI Gateway (inference.example.com). Uses Let's Encrypt ACME with HTTP01 challenge via Envoy Gateway.
+**Role**: Automatic TLS certificate provisioning for the inference endpoint (inference.example.com). Uses Let's Encrypt ACME with HTTP01 challenge.
 
-### 11.1 Prerequisites
+### 8.1 Prerequisites
 
 - A domain name (e.g., `inference.example.com`) with DNS pointing to your cluster's LoadBalancer
 - An email address for Let's Encrypt account registration
-- Envoy Gateway installed and configured as ingress
+- An ingress controller installed and configured
 
-### 11.2 Installation
+### 8.2 Installation
 
 #### ArgoCD auto-installs at sync-wave `-1`
 
@@ -1231,7 +1056,7 @@ helm install cert-manager jetstack/cert-manager \
   --set featureGates.additionalCertificateOutputFormats=true
 ```
 
-### 11.3 ClusterIssuers
+### 8.3 ClusterIssuers
 
 The `addons/cert-manager/Chart.yaml` defines two ClusterIssuers at the end of the file:
 
@@ -1240,7 +1065,7 @@ The `addons/cert-manager/Chart.yaml` defines two ClusterIssuers at the end of th
 | `letsencrypt-prod` | `https://acme-v02.api.letsencrypt.org/directory` | Production TLS |
 | `letsencrypt-staging` | `https://acme-staging-v02.api.letsencrypt.org/directory` | Testing (rate limit friendly) |
 
-Both use HTTP01 solver via `ingress.class: envoy-gateway`.
+Both use HTTP01 solver via your ingress controller.
 
 Update the email in `addons/cert-manager/Chart.yaml`:
 
@@ -1250,18 +1075,18 @@ spec:
     email: ops@example.com    # ← Change to your email
 ```
 
-### 11.4 Certificate for AI Gateway
+### 8.4 Certificate for Inference Endpoint
 
-The ai-gateway chart creates a Certificate resource:
+The gateway chart creates a Certificate resource:
 
 ```bash
-# After deploying ai-gateway
-kubectl get certificate -n envoy-gateway-system
+# After deploying the gateway
+kubectl get certificate -n gateway-system
 # → NAME             READY   SECRET           AGE
 #   inference-tls     True    inference-tls    5m
 ```
 
-### 11.5 Verification
+### 8.5 Verification
 
 ```bash
 # Verify cert-manager pods
@@ -1281,7 +1106,7 @@ kubectl get certificate -A
 # → inference-tls   True    inference-tls   10m
 
 # Describe the certificate for details
-kubectl describe certificate inference-tls -n envoy-gateway-system
+kubectl describe certificate inference-tls -n gateway-system
 # → Conditions: Ready=True, Message: Certificate is up to date
 
 # Verify TLS is working
@@ -1290,28 +1115,27 @@ curl -vI https://inference.example.com 2>&1 | grep -E "SSL|issuer|subject"
 #   issuer: C=US, O=Let's Encrypt, CN=R3
 ```
 
-### 11.6 Troubleshooting
+### 8.6 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | ClusterIssuer `Ready=False` | ACME account not registered | Check cert-manager logs: `kubectl logs -n cert-manager deploy/cert-manager` |
 | Certificate stuck in `Ready=False` | HTTP01 challenge can't reach gateway | Verify DNS `inference.example.com` points to your cluster's external IP |
-| `failed to solve challenge: 404` | Ingress class mismatch | Verify `ingress.class: envoy-gateway` matches your gateway class |
+| `failed to solve challenge: 404` | Ingress class mismatch | Verify `ingress.class` matches your ingress controller |
 | Using staging issuer in prod | Wrong ClusterIssuer in Certificate | Verify Certificate references `letsencrypt-prod` not `letsencrypt-staging` |
 | Rate limited by Let's Encrypt | Too many cert requests | Use staging issuer until ready, check failure logs |
 
 ---
 
-## 12. KEDA
+## 9. KEDA
 
-**Role**: Autoscaling on vLLM-specific metrics (NOT CPU/RAM). Classic HPA is inoperant for GPU-bound LLM workloads. KEDA uses two Prometheus triggers: `vllm:num_requests_waiting` and `vllm:gpu_cache_usage_perc`.
+**Role**: Autoscaling on vLLM-specific metrics (NOT CPU/RAM). Classic HPA is inoperant for GPU-bound LLM workloads. KEDA uses two metric triggers: `vllm:num_requests_waiting` and `vllm:gpu_cache_usage_perc`.
 
-### 12.1 Prerequisites
+### 9.1 Prerequisites
 
-- Prometheus installed and scraping vLLM metrics (see [§8](#8-prometheus--grafana--alertmanager))
 - Helm `kedacore` repo added (ArgoCD will do this, but verify)
 
-### 12.2 Installation
+### 9.2 Installation
 
 #### ArgoCD auto-installs at sync-wave `-1`
 
@@ -1332,7 +1156,7 @@ helm install keda kedacore/keda \
   --set watchNamespace=model-serving-prod,model-serving-staging
 ```
 
-### 12.3 ScaledObject Configuration
+### 9.3 ScaledObject Configuration
 
 Set the following in your environment values:
 
@@ -1343,14 +1167,13 @@ autoscaling:
   maxReplicas: 4
   keda:
     enabled: true
-    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
-    pollingInterval: 15         # KEDA polls Prometheus every 15s
+    pollingInterval: 15         # KEDA polls the metrics source every 15s
     cooldownPeriod: 60          # Wait 60s before scaling down
     queueDepthThreshold: "5"
     cacheUsageThreshold: "0.85"
 ```
 
-### 12.4 ScaledObject Rendering
+### 9.4 ScaledObject Rendering
 
 Check the rendered template:
 
@@ -1376,21 +1199,19 @@ spec:
   pollingInterval: 15
   cooldownPeriod: 60
   triggers:
-    - type: prometheus
+    - type: metrics-api
       metadata:
-        serverAddress: http://prometheus-server.monitoring.svc.cluster.local:9090
         metricName: vllm_num_requests_waiting
         threshold: "5"
         query: vllm:num_requests_waiting
-    - type: prometheus
+    - type: metrics-api
       metadata:
-        serverAddress: http://prometheus-server.monitoring.svc.cluster.local:9090
         metricName: vllm_gpu_cache_usage_perc
         threshold: "0.85"
         query: vllm:gpu_cache_usage_perc
 ```
 
-### 12.5 Verification
+### 9.5 Verification
 
 ```bash
 # Verify KEDA pods
@@ -1406,44 +1227,37 @@ kubectl get scaledobject -n model-serving-prod
 # Describe to see current replica count and trigger status
 kubectl describe scaledobject model-serving-engine-prod -n model-serving-prod
 
-# Verify KEDA can reach Prometheus
-kubectl exec -n keda-system deploy/keda-operator -- \
-  wget -qO- http://prometheus-server.monitoring.svc.cluster.local:9090/api/v1/query?query=up
-
 # Send load to trigger scaling
 # (k6 load test will trigger vllm:num_requests_waiting > 5)
 k6 run tests/load/load-test.js --env MODEL_URL=https://inference.example.com
 ```
 
-### 12.6 Troubleshooting
+### 9.6 Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| ScaledObject shows `Active=False` | KEDA can't reach Prometheus | Verify `prometheusAddress` in values matches your Prometheus service URL |
 | ScaledObject shows `Ready=False` | KEDA not installed or wrong namespace | Verify KEDA in `keda-system` and `watchNamespace` includes `model-serving-prod` |
-| No scaling observed despite high queue | Trigger threshold too high or metric absent | Lower `queueDepthThreshold` to `2` temporarily and verify Prometheus has `vllm:num_requests_waiting` data |
+| No scaling observed despite high queue | Trigger threshold too high or metric absent | Lower `queueDepthThreshold` to `2` temporarily and verify the metrics source has `vllm:num_requests_waiting` data |
 | Scaling back to minReplicas too fast | `cooldownPeriod` too short | Increase from 60 to 300 (5 min) for stable scale-down |
 | Both CPU HPA and KEDA active | Conflict in chart values | Ensure `autoscaling.keda.enabled: true` and the legacy HPA path is not rendered (verify with `helm template -s templates/hpa.yaml`) |
 
 ---
 
-## 13. Bootstrap Order
+## 10. Bootstrap Order
 
 The complete bootstrap order, from empty cluster to fully operational model serving:
 
 ```
 Phase 1: ArgoCD prerequisites (sync-wave -11 to -10)
     -11: argocd-repo-credentials         Secret + ConfigMap (GitHub PAT + SSH known_hosts)
-    -11: argocd-notifications-secret     Slack + PagerDuty credentials
     -10: argocd-appprojects              model-serving + infrastructure AppProjects
     -10: argocd-health-checks            Custom health checks for ScaledObject, ExternalSecret
 
 Phase 2: Cluster infrastructure (sync-wave -3 to -1)
-    -3:  external-secrets                ClusterSecretStore + 4 ExternalSecrets
-    -2:  longhorn                        Longhorn storage + SW storage classes created
+    -3:  external-secrets                ClusterSecretStore + ExternalSecrets
+    -2:  longhorn                        Longhorn storage + RWX storage classes created
     -2:  swapoff DaemonSet               Disable swap on GPU nodes
-    -1:  nvidia-gpu-operator             NVIDIA driver + DCGM + device plugin + NFD
-    -1:  prometheus-stack                Prometheus + Grafana + Alertmanager
+    -1:  nvidia-gpu-operator             NVIDIA driver + device plugin + NFD
     -1:  keda                            KEDA autoscaler
     -1:  external-secrets-operator       ESO operator itself
     -1:  cert-manager                    cert-manager + Let's Encrypt ClusterIssuers
@@ -1451,14 +1265,10 @@ Phase 2: Cluster infrastructure (sync-wave -3 to -1)
 Phase 3: Model serving (sync-wave 0)
      0:  model-serving-engine            StatefulSet + Service + PDB + NetworkPolicy
      0:  model-seeding                    Model download/init Job
-     0:  ai-gateway                       HTTPRoute + BackendTrafficPolicy + payload validation
 
-Phase 4: Observability + tests (sync-wave 1-2+)
-     1:  ServiceMonitor                   vLLM /metrics scrape every 10s
+Phase 4: Tests + post-deploy (sync-wave 1-2+)
      1:  lmcache                          (prod/staging) Distributed cache DaemonSet
-     2:  PrometheusRule                    7 alert groups (35+ alert rules)
-     2:  Grafana dashboard                18 panels
-     3:  argo-notifications               Slack/PagerDuty notify on sync events
+     2:  smoke/load tests                 Post-deploy validation
 ```
 
 ### Manual bootstrap commands (one-time setup)
@@ -1471,7 +1281,6 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2
 # 2. Apply AppProjects + repo credentials
 kubectl apply -f apps/argocd-repo-credentials.yaml
 kubectl apply -f apps/argocd-appprojects.yaml
-kubectl apply -f apps/argocd-notifications.yaml
 kubectl apply -f apps/argocd-health-checks.yaml
 
 # 3. Apply ExternalSecrets (after ESO is installed by addon)
@@ -1489,7 +1298,7 @@ kubectl label nodes <gpu-node-2> nvidia.com/gpu.present=true
 # 6. Create AWS Secrets Manager secrets (see §4.3)
 # ...
 
-# 7. Create Longhorn RWX StorageClass (see §9.3)
+# 7. Create Longhorn RWX StorageClass (see §6.3)
 # ...
 
 # 8. Wait for all apps to sync
@@ -1499,7 +1308,7 @@ argocd app wait model-serving-prod --timeout 600
 
 ---
 
-## 14. Troubleshooting Quick Reference
+## 11. Troubleshooting Quick Reference
 
 ### Cross-source issues
 
@@ -1509,15 +1318,13 @@ argocd app wait model-serving-prod --timeout 600
 | `0/3 pods pending: Insufficient nvidia.com/gpu` | `kubectl get nodes -o wide` + `nvidia-smi` | Driver not loaded or device plugin not running |
 | `ImagePullBackOff` | `kubectl get secret registry-credentials -n model-serving-prod` | Pull secret missing, wrong credentials |
 | `CrashLoopBackOff` after Deploy | `kubectl logs <pod>` | vLLM args wrong (e.g., model path not found, no KV cache dtype supported) |
-| `OOMKilled` | `kubectl describe pod <name>` + Grafana "OOM Kills" panel | QoS Burstable (requests < limits) — verify requests == limits for ALL resources |
-| High TTFT (11s) | Grafana "TTFT (ms)" + "LMCache L1/L2/L3 Hit Rate" panels | No distributed cache (LMCache disabled) or sticky routing not working |
-| KV cache > 100% | Grafana "KV Cache Usage (%)" | `--max-num-seqs` too high for model size, reduce or scale out |
-| Alertmanager config has `{{ .pagerduty_key }}` literal | `kubectl get secret alertmanager-config -n monitoring` | ExternalSecret didn't substitute template — verify ESO is running |
+| `OOMKilled` | `kubectl describe pod <name>` | QoS Burstable (requests < limits) — verify requests == limits for ALL resources |
+| High TTFT (11s) | `kubectl logs <pod>` + verify LMCache hit rates | No distributed cache (LMCache disabled) or sticky routing not working |
+| KV cache > 100% | `kubectl describe pod` / vLLM logs | `--max-num-seqs` too high for model size, reduce or scale out |
 | ArgoCD `Unknown project "model-serving"` | `kubectl get appproject model-serving` | AppProject not applied or wrong namespace |
-| ArgoCD can't clone repo | `argocd repo list` | repoURL casing orPAT expired |
+| ArgoCD can't clone repo | `argocd repo list` | repoURL casing or PAT expired |
 | ExternalSecrets status Failed | `kubectl get externalsecrets -A` | IAM role missing permissions, secret not in AWS, wrong region |
-| KEDA ScaledObject stuck on minReplicas | `kubectl describe scaledobject <name>` | Prometheus metric absent or threshold too high |
-| Prometheus not scraping vLLM | `kubectl get targets` (in Prometheus UI) | ServiceMonitor label mismatch or serviceMonitorSelectorNilUsesHelmValues: true |
+| KEDA ScaledObject stuck on minReplicas | `kubectl describe scaledobject <name>` | metric absent or threshold too high |
 
 ### Verification — end-to-end smoke test
 
@@ -1525,7 +1332,6 @@ argocd app wait model-serving-prod --timeout 600
 # 1. All cluster addons are Ready
 kubectl get pods -n gpu-operator | grep -v RUNNING | wc -l    # → 0
 kubectl get pods -n longhorn-system | grep -v RUNNING | wc -l # → 0
-kubectl get pods -n monitoring | grep -v RUNNING | wc -l      # → 0
 kubectl get pods -n keda-system | grep -v RUNNING | wc -l     # → 0
 kubectl get pods -n external-secrets | grep -v RUNNING | wc -l # → 0
 kubectl get pods -n cert-manager | grep -v RUNNING | wc -l    # → 0
@@ -1533,18 +1339,14 @@ kubectl get pods -n cert-manager | grep -v RUNNING | wc -l    # → 0
 # 2. Model serving pods are Ready
 kubectl get pods -n model-serving-prod | grep -v RUNNING | grep -v COMPLETED | wc -l  # → 0
 
-# 3. End-to-end request through AI Gateway
+# 3. End-to-end request
 curl -X POST https://inference.example.com/v1/chat/completions \
   -H "Authorization: Bearer $API_KEY" \
   -H "x-model: mistral-7b-local" \
   -d '{"model":"mistral-7b-local","messages":[{"role":"user","content":"hello"}]}' \
   | jq '.choices[0].message.content'
 
-# 4. Alerts are firing correctly (manually trigger one)
-kubectl scale statefulset/model-serving-engine-prod -n model-serving-prod --replicas=1  # reduce capacity
-# Watch for VLLMRequestsWaitingHigh alert within 1-2 minutes
-
-# 5. KEDA scales up
+# 4. KEDA scales up
 kubectl get scaledobject -n model-serving-prod -w
 # → Should show replicas increasing from 1 to 2+ when queue depth > 5
 ```
@@ -1554,7 +1356,11 @@ kubectl get scaledobject -n model-serving-prod -w
 *Cross-references*:
 - `docs/integration-report.md` — higher-level architecture context for each integration
 - `docs/explain/kv-cache.md` — Master guide to KV cache management (Bible details)
+<<<<<<< Updated upstream
 - `docs/explain/vllm-kv-cache.md` — KV cache reference (ROI formulas, architecture gaps)
 - `docs/architecture/05-observability.md` — Observability architecture detail
+=======
+- `docs/explain/bible-kv-cache.md` — KV cache reference (ROI formulas, architecture gaps)
+>>>>>>> Stashed changes
 - `docs/architecture/04-gitops-deployment.md` — GitOps deployment flow with sync waves
 - `docs/runbooks/latency-spike.md` — Operational runbook for latency/failover incidents

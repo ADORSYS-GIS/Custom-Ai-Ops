@@ -236,6 +236,7 @@ fn calculate_kv_cache_gb(
     2.0 * b * s * l * h * byt / (1024.0 * 1024.0 * 1024.0)
 }
 
+<<<<<<< Updated upstream
 #[allow(clippy::too_many_arguments)]
 fn compute_unified_budget(
     total_vram: f64,
@@ -247,6 +248,26 @@ fn compute_unified_budget(
     layers: u32,
     heads: u32,
 ) -> VramBudget {
+=======
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    if cli.total_vram <= 0.0 {
+        return Err(anyhow!("total VRAM must be positive"));
+    }
+
+    if cli.model_size < 0.0 {
+        return Err(anyhow!("model size cannot be negative"));
+    }
+
+    let quant = QuantFormat::from_str(&cli.quant)?;
+    let gpu_arch = cli
+        .gpu
+        .as_deref()
+        .map(GpuArch::from_gpu_name)
+        .unwrap_or(GpuArch::Other);
+
+>>>>>>> Stashed changes
     let mut warnings = Vec::new();
 
     if quant == QuantFormat::Fp8 && !gpu_arch.supports_fp8() {
@@ -258,8 +279,19 @@ fn compute_unified_budget(
 
     let usable_vram = total_vram * VRAM_UTILIZATION_FACTOR;
     let bytes_per_elem = quant.bytes_per_weight();
+<<<<<<< Updated upstream
     let kv_cache = if layers > 0 && heads > 0 {
         calculate_kv_cache_gb(batch, context, layers, heads, bytes_per_elem)
+=======
+    let kv_cache = if cli.layers > 0 && cli.heads > 0 {
+        calculate_kv_cache_gb(
+            cli.batch,
+            cli.context,
+            cli.layers,
+            cli.heads,
+            bytes_per_elem,
+        )
+>>>>>>> Stashed changes
     } else {
         0.0
     };
@@ -372,12 +404,35 @@ fn compute_disaggregated_budget(
             prefill_gpus, total_vram, decode_gpus, total_vram, total_gpu_count
         )
     } else {
+<<<<<<< Updated upstream
         let mut issues = Vec::new();
         if !prefill.fits {
             issues.push("prefill pool OOM");
         }
         if !decode.fits {
             issues.push("decode pool OOM");
+=======
+        println!("VRAM Budget Analysis");
+        println!("─────────────────────");
+        println!("Total VRAM        : {:.2} GB", budget.total_vram_gb);
+        println!("Usable VRAM (90%) : {:.2} GB", budget.usable_vram_gb);
+        println!(
+            "Model size ({:>4}) : {:.2} GB",
+            budget.quantization, budget.model_size_gb
+        );
+        println!("Fixed overhead    : {:.2} GB", budget.fixed_overhead_gb);
+        if budget.kv_cache_budget_gb > 0.0 {
+            println!("KV cache budget   : {:.2} GB", budget.kv_cache_budget_gb);
+        }
+        println!("─────────────────────");
+        println!("Remaining         : {:.2} GB", budget.remaining_gb);
+        println!(
+            "Fits on GPU       : {}",
+            if budget.fits { "YES" } else { "NO" }
+        );
+        for w in &budget.warnings {
+            println!("WARNING: {}", w);
+>>>>>>> Stashed changes
         }
         format!(
             "P/D disaggregation NOT viable: {} — increase GPU count or reduce model size",
@@ -686,6 +741,7 @@ mod tests {
     fn test_fp8_supported_on_hopper() {
         assert!(GpuArch::Hopper.supports_fp8());
     }
+<<<<<<< Updated upstream
 
     // --- Disaggregated mode tests ---
 
@@ -872,4 +928,6 @@ mod tests {
             "Should have plenty of remaining VRAM"
         );
     }
+=======
+>>>>>>> Stashed changes
 }

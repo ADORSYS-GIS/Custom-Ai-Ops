@@ -75,10 +75,4 @@ data:
     check_layers = {{ .Values.lmcache.cacheBlend.checkLayers | default 1 }}
     recompute_ratios = {{ .Values.lmcache.cacheBlend.recomputeRatios | default 0.15 }}
     {{- end }}
-
-    # --- Observability: enable Prometheus metrics on :8330/metrics ---
-    [observability]
-    enable = true
-    metrics_host = "0.0.0.0"
-    metrics_port = 8330
 {{- end }}

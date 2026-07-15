@@ -12,6 +12,7 @@
 2. [Why llm-d Exists — The Problem Space](#2-why-llm-d-exists--the-problem-space)
 3. [Project Identity, Governance, and Timeline](#3-project-identity-governance-and-timeline)
 4. [Architecture Overview](#4-architecture-overview)
+<<<<<<< Updated upstream
 5. [The llm-d Router: Proxy + Endpoint Picker (EPP)](#5-the-llm-d-router--proxy--endpoint-picker-epp)
 6. [The KV-Cache Indexer — Internal Anatomy](#6-the-kv-cache-indexer--internal-anatomy)
 7. [How llm-d Actually Communicates: The Two Planes](#7-how-llm-d-actually-communicates--the-two-planes)
@@ -33,6 +34,24 @@
 23. [Decision Framework: When to Adopt llm-d](#23-decision-framework--when-to-adopt-llm-d)
 24. [Glossary](#24-glossary)
 25. [Primary Sources](#25-primary-sources)
+=======
+5. [The llm-d Router: Proxy + Endpoint Picker (EPP)](#5-the-llm-d-router-proxy--endpoint-picker-epp)
+6. [KV-Cache Management and Prefix-Cache-Aware Routing](#6-kv-cache-management-and-prefix-cache-aware-routing)
+7. [Disaggregated Prefill/Decode (P/D Disaggregation)](#7-disaggregated-prefilldecode-pd-disaggregation)
+8. [Wide Expert Parallelism (for MoE models)](#8-wide-expert-parallelism-for-moe-models)
+9. [SLO-Aware Autoscaling](#9-slo-aware-autoscaling)
+10. [How llm-d Integrates With vLLM](#10-how-llm-d-integrates-with-vllm)
+11. [How llm-d Integrates With LMCache](#11-how-llm-d-integrates-with-lmcache)
+12. [The Full Data Path, End to End](#12-the-full-data-path-end-to-end)
+13. [Relationship to Kubernetes, KServe, Gateway API, and LeaderWorkerSet](#13-relationship-to-kubernetes-kserve-gateway-api-and-leaderworkerset)
+14. [Concrete Implementation: Prerequisites and Cluster Preparation](#14-concrete-implementation-prerequisites-and-cluster-preparation)
+15. [Concrete Implementation: Deploying the "Well-Lit Paths"](#15-concrete-implementation-deploying-the-well-lit-paths)
+16. [Concrete Implementation: Configuring Disaggregated Serving with LMCache + NIXL](#16-concrete-implementation-configuring-disaggregated-serving-with-lmcache--nixl)
+17. [Operational Considerations, Limitations, and Risks](#17-operational-considerations-limitations-and-risks)
+18. [Decision Framework: When to Adopt llm-d](#18-decision-framework-when-to-adopt-llm-d)
+19. [Glossary](#19-glossary)
+20. [Primary Sources](#20-primary-sources)
+>>>>>>> Stashed changes
 
 ---
 
@@ -158,7 +177,11 @@ At the highest level, llm-d transforms a Kubernetes cluster into a coordinated i
 
 ```mermaid
 flowchart TB
+<<<<<<< Updated upstream
     Client([Client request]) --> GW[Gateway<br/>Envoy / Istio / GKE Gateway]
+=======
+    Client([Client Request]) --> GW[Gateway<br/>data-plane proxy]
+>>>>>>> Stashed changes
     GW -->|ext-proc callback| EPP[Endpoint Picker EPP<br/>scheduling brain]
     EPP -->|queries| Indexer[KV-Cache Indexer<br/>global cache block map]
     EPP -->|reads metrics| Pool[InferencePool CRD<br/>discovers replicas]
@@ -185,7 +208,11 @@ The system is designed for **incremental adoption**: a team can start by deployi
 
 ### 5.1 Role of the Proxy
 
+<<<<<<< Updated upstream
 The **Proxy** is the data-plane component (typically Envoy, or an Envoy-based gateway like Istio or the GKE Inference Gateway). It terminates client connections and, for each inference request, calls the Endpoint Picker via Envoy's *external processing* (ext-proc) protocol before deciding where to forward the request.
+=======
+The **Proxy** is the data-plane component (an HTTP gateway or reverse proxy). It terminates client connections and, for every inference request, calls out to the Endpoint Picker via the **external processing (ext-proc)** protocol before deciding where to forward the request.
+>>>>>>> Stashed changes
 
 ### 5.2 Role of the Endpoint Picker (EPP)
 
@@ -193,9 +220,15 @@ The EPP is the actual decision-making "brain." It implements the **Endpoint Pick
 
 ```mermaid
 flowchart LR
+<<<<<<< Updated upstream
     A["1. Discover<br/>Enumerate InferencePool pods,<br/>collect queue depth,<br/>loaded model, KV-cache contents<br/>via Prometheus + KV-Events"] --> B["2. Filter<br/>Eliminate overloaded pods,<br/>out of memory,<br/>wrong model variant"]
     B --> C["3. Score<br/>Run scorers in parallel:<br/>prefix-cache hit score,<br/>session affinity score,<br/>load score"]
     C --> D["4. Select<br/>max-score-picker chooses<br/>the pod with the best score"]
+=======
+    A[1. Discover<br/>Enumerate InferencePool pods,<br/>collect queue depth, loaded model,<br/>KV-cache contents via KV-Events] --> B[2. Filter<br/>Drop overloaded pods,<br/>pods lacking memory,<br/>wrong model variant]
+    B --> C[3. Score<br/>Run pluggable scorers in parallel:<br/>prefix-cache hit score,<br/>session-affinity score,<br/>load score]
+    C --> D[4. Select<br/>max-score-picker chooses<br/>the highest-scoring pod]
+>>>>>>> Stashed changes
 ```
 
 ### 5.3 Internal Anatomy of the Scheduler and Plugins
@@ -757,8 +790,13 @@ The separation of responsibilities is clean:
 
 ### 13.1 What Each vLLM Pod Must Do
 
+<<<<<<< Updated upstream
 1. Expose **Prometheus-compatible metrics** — queue depth, GPU KV-cache utilization percentage, number of running/waiting requests, etc. — consumed by the EPP's scorers.
 2. Emit **KV-cache events** (block creation/eviction) that feed the KV-Cache Indexer for precise prefix-cache routing.
+=======
+1. **Expose metrics** — queue depth, GPU KV-cache usage percentage, running/waiting request counts, etc. — that the EPP's scorers consume.
+2. **Emit KV-cache events** (block creation/eviction) that feed the KV-Cache Indexer for precise prefix-cache routing.
+>>>>>>> Stashed changes
 3. **Register with the InferencePool** so the Router can discover it as a valid candidate.
 4. For disaggregated deployments, start with the correct `--kv-transfer-config` to know whether it acts as a KV producer (prefill) or KV consumer (decode), and via which connector (see Section 14).
 
@@ -875,7 +913,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant GW as Gateway (Envoy/Istio)
+    participant GW as Gateway
     participant EPP as Endpoint Picker
     participant IDX as KV-Cache Indexer
     participant PF as vLLM Prefill Pod (+LMCache)
@@ -1077,6 +1115,7 @@ To share prefix-cache hits between prefill and decode pools (not just within a s
 
 ---
 
+<<<<<<< Updated upstream
 ## 21. Observability: Metrics and Dashboards
 
 llm-d and its dependencies expose Prometheus-compatible metrics at multiple levels.
@@ -1128,10 +1167,17 @@ The project also provides an **Open Benchmarking** framework (`llm-d-benchmark`)
 ---
 
 ## 22. Operational Considerations, Limitations, and Risks
+=======
+## 17. Operational Considerations, Limitations, and Risks
+>>>>>>> Stashed changes
 
 Presented in a balanced way, as this is a genuine architectural trade-off:
 
+<<<<<<< Updated upstream
 - **Complexity cost.** Moving from "Envoy + vLLM" to "Envoy + EPP + KV-Cache Indexer + separate prefill/decode pools + NIXL networking" is a real increase in the number of components to monitor, upgrade, and debug. Expect to invest in new runbooks and increased on-call familiarity.
+=======
+**Complexity cost.** Moving from "vLLM" to "EPP + KV-Cache Indexer + separate prefill/decode pools + NIXL networking" is a real increase in the number of components to manage, upgrade, and debug. Teams should expect to invest in new runbooks and on-call familiarity.
+>>>>>>> Stashed changes
 
 - **Network is a hard barrier for disaggregation and Wide EP.** Without an RDMA-class interconnect (InfiniBand/RoCE), transferring KV-cache between prefill and decode pods — or expert-parallel All-to-All traffic — can be slower than simply recalculating locally, negating the benefit. On a classic cloud network (1/10GbE, no RDMA), stick to the cache-aware routing path only.
 
@@ -1143,7 +1189,11 @@ Presented in a balanced way, as this is a genuine architectural trade-off:
 
 ---
 
+<<<<<<< Updated upstream
 ## 23. Decision Framework: When to Adopt llm-d
+=======
+## 18. Decision Framework: When to Adopt llm-d
+>>>>>>> Stashed changes
 
 | Signal | Favors Adopting llm-d | Favors a Simpler Stack |
 |---|---|---|
@@ -1178,7 +1228,11 @@ flowchart TD
 
 ---
 
+<<<<<<< Updated upstream
 ## 24. Glossary
+=======
+## 19. Glossary
+>>>>>>> Stashed changes
 
 | Term | Definition |
 |---|---|
@@ -1204,7 +1258,11 @@ flowchart TD
 
 ---
 
+<<<<<<< Updated upstream
 ## 25. Primary Sources
+=======
+## 20. Primary Sources
+>>>>>>> Stashed changes
 
 - llm-d project website and documentation — `https://llm-d.ai`
 - llm-d main repository — `https://github.com/llm-d/llm-d`

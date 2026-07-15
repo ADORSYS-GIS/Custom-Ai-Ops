@@ -6,12 +6,21 @@
 
 A highly resilient, long-term, multi-format ML model serving platform with triple-layer separation, designed to serve millions of users with auto-repair, capacity forecasting, and multi-year durability.
 
+> **⚠️ Note**: This repository is a **template/reference architecture**. ArgoCD integration manifests have been removed for public release. See [`REMOVED_ARGOCD.md`](REMOVED_ARGOCD.md) for details and [`apps/README.md`](apps/README.md) for integration instructions.
+
+> **✅ llm-d MVP IMPLEMENTED**: The repository now includes a **production-ready llm-d MVP implementation** (Option 1: Router + InferencePool + Gateway API). This provides cache-aware, intelligent routing for LLM inference workloads. See [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) for the complete implementation guide. Advanced features (KV-Cache Indexer, Disaggregated Serving, SLO-aware autoscaling) are documented but not yet implemented. For architectural context, see [`docs/explain/llm-d.md`](docs/explain/llm-d.md) and [`docs/adr/0004-llm-d-not-implemented.md`](docs/adr/0004-llm-d-not-implemented.md).
+
 ---
 
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust)
+<<<<<<< Updated upstream
 ![Tests](https://img.shields.io/badge/Tests-76%20passing-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Helm%20Charts-5-blue.svg?logo=helm)
+=======
+![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
+![Charts](https://img.shields.io/badge/Helm%20Charts-2-blue.svg?logo=helm)
+>>>>>>> Stashed changes
 
 ---
 
@@ -33,9 +42,9 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 #### GPU & Hardware
 
 ![NVIDIA GPU Operator](https://img.shields.io/badge/NVIDIA%20GPU%20Operator-24.9+-76B900.svg?logo=nvidia)
-![DCGM Exporter](https://img.shields.io/badge/DCGM%20Exporter-3.3+-76B900.svg?logo=nvidia)
 ![CUDA](https://img.shields.io/badge/CUDA-12.4+-76B900.svg?logo=nvidia)
 
+<<<<<<< Updated upstream
 #### Gateway & API
 
 ![Envoy AI Gateway](https://img.shields.io/badge/Envoy%20AI%20Gateway-latest-AC6191.svg?logo=envoy)
@@ -56,6 +65,8 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.0+-425EEA.svg?logo=opentelemetry)
 ![Alertmanager](https://img.shields.io/badge/Alertmanager-0.27+-E6522C.svg?logo=prometheus)
 
+=======
+>>>>>>> Stashed changes
 #### Storage & Registry
 
 ![Longhorn](https://img.shields.io/badge/Longhorn-1.6+-0F1689.svg?logo=helm)
@@ -91,9 +102,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 
 - [Architecture Overview](#architecture-overview)
 - [High-Level Architecture Diagram](#high-level-architecture-diagram)
-- [Request Flow Diagram](#request-flow-diagram)
 - [GitOps Deployment Pipeline](#gitops-deployment-pipeline)
-- [Observability Stack Diagram](#observability-stack-diagram)
 - [Infrastructure Topology](#infrastructure-topology)
 - [Model Onboarding Pipeline](#model-onboarding-pipeline)
 - [Auto-Healing Layers](#auto-healing-layers)
@@ -103,8 +112,12 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 - [Sync Waves](#sync-waves)
 - [Model Registry](#model-registry)
 - [KV Cache Management](#kv-cache-management)
+<<<<<<< Updated upstream
 - [llm-d Integration](#llm-d-integration)
 - [Observability](#observability)
+=======
+- [llm-d: Intelligent Request Routing (MVP)](#llm-d-intelligent-request-routing-mvp)
+>>>>>>> Stashed changes
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Test Suites](#test-suites)
 - [Documentation](#documentation)
@@ -123,11 +136,9 @@ The platform is built on a **triple-layer separation** principle that ensures ma
 ```mermaid
 graph TB
     subgraph Exposure["EXPOSURE PLANE (Uniform API)"]
-        GW["Envoy AI Gateway<br/>OpenAI-Compatible API (/v1/chat/completions)"]
-        GW_FEAT["HTTPRoute · Auth (APIKey) · Rate Limiting<br/>Cost Metrics · SSE Streaming"]
-        GW_RESIL["Priority Routing (0to1) · Circuit Breaker<br/>Retry (502/503/504) · Failover (>2000ms)"]
-        GW --- GW_FEAT
-        GW --- GW_RESIL
+        API["OpenAI-Compatible API<br/>(/v1/chat/completions)"]
+        API_FEAT["Auth (APIKey) · Rate Limiting<br/>Cost Metrics · SSE Streaming"]
+        API --- API_FEAT
     end
 
     subgraph Engine["ENGINE PLANE (vLLM Only)"]
@@ -153,7 +164,7 @@ graph TB
 ```
 
 **Why this matters:**
-- Add a new model → no gateway change needed
+- Add a new model → no API change needed
 - Change engine → no client-side change needed
 - Switch to SaaS fallback → transparent to end users
 - Each plane evolves independently over years
@@ -164,9 +175,9 @@ graph TB
 
 ```mermaid
 graph TB
-    GIT["Git Repository<br/>charts/ environments/ models/ apps/<br/>tools/ observability/ tests/ docs/"]
+    GIT["Git Repository<br/>charts/ environments/ models/ apps/<br/>tools/ tests/ docs/"]
     CI["GitHub Actions CI<br/>Rust build+test · Helm lint (3)<br/>Registry check · VRAM validation"]
-    ARGOCD["ArgoCD Control (Control Cluster)<br/>ApplicationSets: model-serving, ai-gateway,<br/>infrastructure (GPU/LH/Prom), secrets (ESO)<br/>Custom Lua Health: StatefulSet, InferenceService"]
+    ARGOCD["ArgoCD Control (Control Cluster)<br/>ApplicationSets: model-serving,<br/>infrastructure (GPU/LH), secrets (ESO)<br/>Custom Lua Health: StatefulSet, InferenceService"]
 
     GIT -->|push| CI
     CI -->|if pass| ARGOCD
@@ -176,44 +187,19 @@ graph TB
     ARGOCD -->|Sync Waves -3 to 2| WDEV
 
     subgraph WA["Worker Cluster (Region A)"]
-        WA_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
+        WA_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Post-deploy Config to 2 Smoke Tests"]
         WA_POOLS["Node Pools: gpu-h100-pool · gpu-a100-pool<br/>gpu-l4-pool · cpu-pool"]
     end
 
     subgraph WB["Worker Cluster (Region B)"]
-        WB_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
+        WB_WAVES["Waves: -3 Secrets to -2 Longhorn PVC to -1 GPU Operator<br/>to 0 Model Pods to 1 Post-deploy Config to 2 Smoke Tests"]
         WB_POOLS["Node Pools: gpu-h100-pool · gpu-a100-pool<br/>gpu-l4-pool · cpu-pool"]
     end
 
     subgraph WDEV["Worker Cluster (Edge / Dev)"]
-        WDEV_WAVES["Waves: -3 Secrets to -2 local-path to -1 GPU Operator<br/>to 0 Model Pods to 1 Gateway+Dashboards to 2 Smoke Tests"]
+        WDEV_WAVES["Waves: -3 Secrets to -2 local-path to -1 GPU Operator<br/>to 0 Model Pods to 1 Post-deploy Config to 2 Smoke Tests"]
         WDEV_POOLS["Node Pools: gpu-edge-pool (A2000)<br/>gpu-l4-pool (L4) · cpu-pool"]
     end
-```
-
----
-
-## Request Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant C as "Client (SDK / curl)"
-    participant GW as "Envoy AI Gateway"
-    participant CB as "Circuit Breaker (Prioritized)"
-    participant V as "vLLM port 8000"
-    participant S as "models PVC (RWX via Longhorn)"
-
-    C->>GW: POST /v1/chat/completions<br/>Authorization: Bearer key
-    GW->>CB: HTTPRoute to BackendTrafficPolicy
-    CB->>CB: priority 0 to 1, retry 502/503/504
-    CB->>CB: Health Check GET /health (10s interval)
-    CB->>CB: Failover if latency gt 2000ms, priority 1 (SaaS fallback)
-
-    CB->>V: route to vLLM
-    V->>S: load weights
-    V-->>GW: SSE stream
-
-    GW-->>C: SSE stream choices
 ```
 
 ---
@@ -245,59 +231,14 @@ graph LR
     subgraph Waves["Sync Waves"]
         W3["Wave -3: Secrets"]
         W2["Wave -2: PVC / Longhorn"]
-        W1["Wave -1: GPU Operator / Prometheus"]
+        W1["Wave -1: GPU Operator"]
         W0["Wave 0: StatefulSet (Model Pods)"]
-        W1P["Wave 1: Gateway / Dashboards"]
+        W1P["Wave 1: Post-deploy Config"]
         W2P["Wave 2: Smoke Tests"]
         W3 --> W2 --> W1 --> W0 --> W1P --> W2P
     end
 
     K8S --- Waves
-```
-
----
-
-## Observability Stack Diagram
-
-```mermaid
-graph TB
-    subgraph Cluster["Kubernetes Worker Cluster"]
-        MP["Model Pods<br/>/metrics"]
-        DCGM["GPU Nodes<br/>DCGM Exporter"]
-        GW["Envoy GW<br/>/metrics"]
-        GP["Gateway Pods"]
-        NE["Node Exporter"]
-        ALLOY["Grafana Alloy<br/>(agent: metrics + logs + traces)"]
-        MP --> ALLOY
-        DCGM --> ALLOY
-        GW --> ALLOY
-        GP --> ALLOY
-        NE --> ALLOY
-    end
-
-    ALLOY -->|metrics| PROM["Prometheus + Mimir<br/>(2yr retention)"]
-    ALLOY -->|logs| LOKI["Loki<br/>(logs)"]
-    ALLOY -->|traces| TEMPO["Tempo<br/>(traces)"]
-
-    PROM --> GRAFANA["Grafana"]
-    LOKI --> GRAFANA
-    TEMPO --> GRAFANA
-
-    GRAFANA --> DASH1["Dashboard: DCGM (GPU health)"]
-    GRAFANA --> DASH2["Dashboard: Model Serving<br/>(latency/err/throughput)"]
-    GRAFANA --> DASH3["Dashboard: Capacity Forecasting"]
-
-    subgraph Alerting["Alerting"]
-        RULES["PrometheusRule (6 groups)<br/>latency · errors · gpu · pods · anomaly · kv-cache"]
-        AM["Alertmanager Routes"]
-        RULES --> AM
-        AM -->|critical| PD["PagerDuty + Slack #ml-incidents"]
-        AM -->|warning| SL1["Slack #ml-ops"]
-        AM -->|gpu| SL2["Slack #gpu-ops"]
-        AM -->|serving| SL3["Slack #ml-ops"]
-    end
-
-    PROM -.->|alerts| Alerting
 ```
 
 ---
@@ -343,7 +284,7 @@ graph TB
         KUEUE["Kueue (quotas)"]
         VOLCANO["Volcano (gang scheduling)"]
         KARPENTER["Karpenter (node provisioning)"]
-        GPUOP["NVIDIA GPU Operator<br/>(driver + DCGM + device plugin + toolkit)"]
+        GPUOP["NVIDIA GPU Operator<br/>(driver + device plugin + toolkit)"]
         KUEUE --> VOLCANO --> KARPENTER
     end
 ```
@@ -358,17 +299,16 @@ graph LR
     S2["2. engine-selector<br/>Detects format to engine<br/>to chart to confidence"]
     S3["3. vram-budget-calc<br/>VRAM = Total×0.90<br/>− model size − 1GB − KV cache<br/>FP8 check · BLOCK if &lt; 0"]
     S4["4. model-onboarding<br/>Scaffolds models/&lt;name&gt;/<br/>model.md · budget.md · eval-report.md"]
-    S5["5. Generate Gateway Entry<br/>backends + models<br/>in ai-gateway/values.yaml"]
-    S6["6. Open PR<br/>(values repo)"]
-    S7["7. CI Validation<br/>helm lint --strict · helm template<br/>registry consistency · vram validation"]
-    S8["8. ArgoCD Sync<br/>Waves -3 to 2<br/>self-heal ON · prune ON"]
-    S9["9. Smoke Tests<br/>health 200 · auth 401/403<br/>chat completion · cost metric"]
-    S10["10. Canary<br/>gateway priority 0<br/>canary to ramp-up"]
-    S11["11. Full Traffic<br/>normal priority<br/>validate on real traffic"]
-    S12["12. Document ADR<br/>(if new pattern)"]
+    S5["5. Open PR<br/>(values repo)"]
+    S6["6. CI Validation<br/>helm lint --strict · helm template<br/>registry consistency · vram validation"]
+    S7["7. ArgoCD Sync<br/>Waves -3 to 2<br/>self-heal ON · prune ON"]
+    S8["8. Smoke Tests<br/>health 200 · auth 401/403<br/>chat completion · cost metric"]
+    S9["9. Canary<br/>gradual ramp-up<br/>validate on canary traffic"]
+    S10["10. Full Traffic<br/>validate on real traffic"]
+    S11["11. Document ADR<br/>(if new pattern)"]
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6
-    S6 --> S7 --> S8 --> S9 --> S10 --> S11 --> S12
+    S1 --> S2 --> S3 --> S4 --> S5
+    S5 --> S6 --> S7 --> S8 --> S9 --> S10 --> S11
 ```
 
 ---
@@ -392,29 +332,17 @@ graph TB
         L3B["Auto-re-syncs to Git state<br/>Correction in < 3 minutes"]
     end
 
-    subgraph Layer4["Level 4 — Model Quality (Envoy AI Gateway)"]
-        L4A["Latency > 2000ms or errors > 5%<br/>to Gateway circuit breaker triggers"]
-        L4B["Failover to SaaS fallback (priority 1)<br/>to users unaffected"]
-    end
-
-    subgraph Layer5["Level 5 — Cluster Failover (External DNS + Envoy)"]
-        L5A["Worker cluster unavailable<br/>to DNS-based failover to another region"]
-        L5B["Gateway multi-backend with priority routing<br/>handles transparently"]
-    end
-
-    subgraph Layer6["Level 6 — Data Drift (Evidently AI)"]
-        L6A["Model quality degrades silently<br/>to Evidently AI detects distribution shift"]
-        L6B["Alert triggered<br/>to re-evaluation pipeline started"]
+    subgraph Layer4["Level 4 — Data Drift (Evidently AI)"]
+        L4A["Model quality degrades silently<br/>to Evidently AI detects distribution shift"]
+        L4B["Alert triggered<br/>to re-evaluation pipeline started"]
     end
 
     Layer1 -->|"if pod restart doesn't fix it"| Layer2
     Layer2 -->|"if node-level fails"| Layer3
-    Layer3 -->|"if model quality degrades"| Layer4
-    Layer4 -->|"if entire cluster fails"| Layer5
-    Layer5 -->|"if data drift detected"| Layer6
+    Layer3 -->|"if data drift detected"| Layer4
 
     Principle["KEY PRINCIPLE: Every automated action leaves a Git trace for auditability<br/>(so 2 years later, we can understand why a rollback happened without log archaeology)"]
-    Layer6 -.-> Principle
+    Layer4 -.-> Principle
 ```
 
 ---
@@ -456,15 +384,31 @@ Custom-Ai-Ops/
 │   ├── bjw-template/               # Common base library chart
 │   │                               # (security context, probes, volumes, tolerations)
 │   ├── model-serving-engine/       # Unified vLLM engine chart
+<<<<<<< Updated upstream
     │   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
     │   │                               #  PVC, seed-job, swapoff DaemonSet, ServiceMonitor)
     │   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
                                     #  rate limiting, payload validation, sticky routing, secrets)
 │   └── llm-d/                        # llm-d middleware (EPP router, KV-Cache Indexer, InferencePool CRD)
+=======
+│   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
+│   │                               #  PVC, seed-job, swapoff DaemonSet)
+│   ├── llm-d-infrastructure/       # Gateway API + GAIE CRDs installation
+│   │                               # (Job, RBAC, CRD installer for Gateway API v1.2.1
+│   │                               #  and GAIE v0.3.0)
+│   └── llm-d-router/               # llm-d Router (Proxy + Endpoint Picker)
+│                                   # (Deployments, Services, ConfigMap, RBAC,
+│                                   #  cache-aware routing configuration)
+>>>>>>> Stashed changes
 │
 ├── environments/                    # Environment-specific configurations
 │   ├── dev/                         # 1 replica, local-path 30Gi, autoscaling off, PDB off
+│   │   ├── values.yaml              # vLLM configuration for dev
+│   │   ├── llm-d-inferencepool.yaml # InferencePool CRD for dev
+│   │   ├── llm-d-gateway.yaml       # Gateway + HTTPRoute for dev
+│   │   └── llm-d-router-values.yaml # Router configuration for dev
 │   ├── staging/                     # 1-2 replicas, longhorn 50Gi, autoscaling on
+<<<<<<< Updated upstream
 │   ├── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
 │   ├── dev/llm-d/                   # llm-d chart values for dev (disabled)
 │   ├── staging/llm-d/               # llm-d chart values for staging (Phase 1: EPP only)
@@ -472,25 +416,29 @@ Custom-Ai-Ops/
 │   ├── dev/ai-gateway/              # ai-gateway values for dev (llm-d disabled)
 │   ├── staging/ai-gateway/          # ai-gateway values for staging (llm-d enabled, InferencePool)
 │   └── prod/ai-gateway/             # ai-gateway values for prod (llm-d enabled, InferencePool)
+=======
+│   │   ├── values.yaml              # vLLM configuration for staging
+│   │   ├── llm-d-inferencepool.yaml # InferencePool CRD for staging
+│   │   ├── llm-d-gateway.yaml       # Gateway + HTTPRoute + InferenceObjective
+│   │   └── llm-d-router-values.yaml # Router configuration for staging
+│   └── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
+│       ├── values.yaml              # vLLM configuration for production
+│       ├── llm-d-inferencepool.yaml # InferencePool CRD for production
+│       ├── llm-d-gateway.yaml       # Gateway + HTTPRoute + InferenceObjective + NetworkPolicy
+│       └── llm-d-router-values.yaml # Router configuration for production
+>>>>>>> Stashed changes
 │
-├── apps/                            # ArgoCD ApplicationSets + bootstrap manifests
-│   ├── argocd-appset-prod.yaml     # Prod: serving + infrastructure + secrets + gateway
-│   ├── argocd-appset-staging.yaml   # Staging: serving + gateway
-│   ├── argocd-appset-dev.yaml       # Dev: serving + gateway
-│   ├── argocd-appprojects.yaml     # 2 AppProjects (model-serving, infrastructure) — sync-wave -10
-│   ├── argocd-repo-credentials.yaml # Repo credential Secret + known_hosts ConfigMap — sync-wave -11
-│   ├── argocd-notifications.yaml   # Slack + PagerDuty notifications (triggers, templates, subscriptions)
-│   ├── argocd-health-checks.yaml   # Custom Lua health checks (StatefulSet, InferenceService)
-│   └── external-secrets.yaml       # ClusterSecretStore + 4 ExternalSecrets (SaaS keys, alertmanager, registry, image-updater)
+├── apps/                            # GitOps application manifests (empty - see apps/README.md)
+│   └── README.md                    # Instructions for ArgoCD/FluxCD/Helmfile integration
 │
 ├── addons/                          # Cluster infrastructure addons (ArgoCD Applications)
-│   ├── nvidia-gpu-operator/        # NVIDIA GPU Operator (driver, toolkit, DCGM, device plugin) — wave -1
+│   ├── nvidia-gpu-operator/        # NVIDIA GPU Operator (driver, toolkit, device plugin) — wave -1
 │   ├── longhorn/                   # Longhorn distributed storage (RWX PVC) — wave -2
-│   ├── prometheus-stack/           # kube-prometheus-stack (Prometheus, Grafana, Alertmanager) — wave -1
 │   ├── keda/                        # KEDA autoscaler (vLLM queue depth + KV cache triggers) — wave -1
 │   ├── external-secrets/           # External Secrets Operator (CRDs + controller) — wave -1
 │   └── cert-manager/               # cert-manager + 2 ClusterIssuers (Let's Encrypt) — wave -1
 │
+<<<<<<< Updated upstream
 ├── observability/                   # Monitoring and alerting
 │   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
 │   ├── prometheus-anomaly-rules.yaml # 6 rule groups: latency, errors, GPU, pods, anomaly, kv-cache
@@ -498,6 +446,8 @@ Custom-Ai-Ops/
 │   ├── alertmanager-routes.yaml         # Alert routing: critical→PagerDuty+Slack, warning→Slack
 │   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard + llm-d dashboard
 │
+=======
+>>>>>>> Stashed changes
 ├── models/                          # Model registry and per-model documentation
 │   ├── registry.yaml                # Declarative registry (2 models, llm-d integration metadata)
 │   └── registry/                    # Per-model documentation directory
@@ -510,17 +460,16 @@ Custom-Ai-Ops/
 │   └── chaos/                        # LitmusChaos GPU chaos (pod-delete, network-latency, node-drain)
 │
 ├── docs/                            # Documentation
-│   ├── architecture/                # 8 architecture docs (00-07)
+│   ├── architecture/                # 6 architecture docs
 │   │   ├── 00-overview.md           #   Three-plane architecture overview
 │   │   ├── 01-formats-and-engines.md #   Format-to-engine mapping + decision tree
 │   │   ├── 02-gpu-scheduling.md     #   Node pools, VRAM formula, hardware constraints
-│   │   ├── 03-gateway-federation.md #   Priority routing, health checks, failover
 │   │   ├── 04-gitops-deployment.md  #   Sync waves, ArgoCD AppSet, Lua health checks
-│   │   ├── 05-observability.md      #   LGTM stack, dashboards, anomaly detection
 │   │   ├── 06-resilience-and-dr.md  #   Auto-healing layers, rollback strategy
-│   │   └── 07-capacity-forecasting.md # Holt-Winters, KEDA predictive, recording rules
+│   │   └── 07-capacity-forecasting.md # Holt-Winters, KEDA predictive
 │   ├── explain/                     # Deep-dive technical references
 │   │   ├── kv-cache.md              #   6-layer KV cache management architecture
+<<<<<<< Updated upstream
 │   │   ├── vllm-kv-cache.md        #   KV Cache Bible (13 sections)
 │   │   ├── gpu.md                   #   In-depth GPU reference guide (332 lines)
 │   │   └── llm-d.md                 #   llm-d complete reference (665 lines)
@@ -529,10 +478,20 @@ Custom-Ai-Ops/
 │   │   ├── 0002-envoy-ai-gateway.md
 │   │   ├── 0003-separate-engine-charts.md
 │   │   └── 0004-llm-d-integration.md #  llm-d integration (EPP, KV-Cache Indexer, P/D disaggregation)
+=======
+│   │   ├── bible-kv-cache.md        #   KV Cache Bible (13 sections)
+│   │   ├── llm-d.md                 #   llm-d technical deep-dive (20 sections)
+│   │   └── gpu.md                   #   In-depth GPU reference guide (332 lines)
+│   ├── adr/                         # Architecture Decision Records
+│   │   ├── 0001-multi-format-architecture.md
+│   │   ├── 0003-separate-engine-charts.md
+│   │   └── 0004-llm-d-not-implemented.md
+>>>>>>> Stashed changes
 │   ├── runbooks/                    # Incident response procedures
 │   │   ├── gpu-node-failure.md      #   Cordon/drain, ECC/Xid/temp checks
 │   │   ├── latency-spike.md         #   Check failover, GPU throttle, scale up
 │   │   └── pod-crashloop.md         #   OOM/model-not-found/probe-failure
+│   ├── LLM_D_IMPLEMENTATION.md      # llm-d implementation guide (MVP)
 │   ├── env.md                       # Environment variables, secrets, external connections reference (19 sections)
 │   ├── external-tools.md            # External platform configuration guide (12 platforms, 14 sections)
 │   └── integration-report.md        # ArgoCD + external platform integration report (13 sections)
@@ -613,33 +572,27 @@ cargo test --bin cache-roi-calc     # 0 tests (CLI tool, no unit tests)
 # Lint all charts
 helm lint charts/bjw-template
 helm lint charts/model-serving-engine
-helm lint charts/ai-gateway
 
 # Template dry-run
 helm template charts/model-serving-engine --set model.name=test-model
 ```
 
-### 5. Deploy via GitOps (ArgoCD)
+### 5. Deploy with Helm
 
 ```bash
-# 1. Bootstrap: AppProjects + repo credentials (must be applied first)
-kubectl apply -f apps/argocd-appprojects.yaml
-kubectl apply -f apps/argocd-repo-credentials.yaml
+# Direct Helm deployment (no GitOps)
+helm install mistral-7b charts/model-serving-engine \
+  -f environments/prod/values.yaml \
+  --set model.name=mistral-7b-instruct \
+  --namespace model-serving-prod \
+  --create-namespace
 
-# 2. Notifications (Slack + PagerDuty)
-kubectl apply -f apps/argocd-notifications.yaml
-
-# 3. ExternalSecrets (ClusterSecretStore + ExternalSecrets)
-kubectl apply -f apps/external-secrets.yaml
-
-# 4. ArgoCD ApplicationSets (per environment)
-kubectl apply -f apps/argocd-appset-dev.yaml
-kubectl apply -f apps/argocd-appset-staging.yaml
-kubectl apply -f apps/argocd-appset-prod.yaml
-
-# 5. Custom health checks
-kubectl apply -f apps/argocd-health-checks.yaml
+# Verify deployment
+kubectl get pods -n model-serving-prod
+kubectl logs -n model-serving-prod -l app.kubernetes.io/name=model-serving-engine
 ```
+
+**For GitOps deployment** (ArgoCD, FluxCD, Helmfile), see [`apps/README.md`](apps/README.md) and [`docs/architecture/04-gitops-deployment.md`](docs/architecture/04-gitops-deployment.md).
 
 ---
 
@@ -653,9 +606,9 @@ The GitOps pipeline manages deployments in ordered waves — each wave must reac
 | -10 | ArgoCD AppProjects (model-serving, infrastructure) | Projects must exist before Applications |
 | -3 | ExternalSecrets (ClusterSecretStore + ExternalSecrets) | Secrets must exist before workloads reference them |
 | -2 | Longhorn storage, swapoff DaemonSet, seed jobs | Pods need ready volumes; swap disabled before GPU workloads |
-| -1 | NVIDIA GPU Operator, Prometheus stack, KEDA, cert-manager, ESO, DCGM Exporter | Infrastructure must run before workloads |
+| -1 | NVIDIA GPU Operator, KEDA, cert-manager, ESO | Infrastructure must run before workloads |
 | 0 | Model server StatefulSets | The core of the system |
-| 1 | Gateway configuration (HTTPRoute, BackendTrafficPolicy), ServiceMonitor, Grafana dashboards | Depends on workloads being in place |
+| 1 | Post-deployment configuration | Depends on workloads being in place |
 | 2+ | Post-sync smoke tests, notifications | Final validation |
 
 ---
@@ -687,6 +640,7 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 
 ---
 
+<<<<<<< Updated upstream
 ## Observability
 
 ### Health Checking
@@ -770,8 +724,13 @@ The platform implements an **8-layer defensive architecture** for vLLM KV cache 
 | Rate limiting | `BackendTrafficPolicy` 50 req/s per `x-api-key` → HTTP 429 | Request floods overwhelming KV cache |
 | Sticky routing | `x-sticky-session-key` header → same replica | Prefix cache misses from random routing |
 | Aggressive timeouts | request 10s / backendRequest 8s | Queue thrashing from slow requests |
+=======
+## KV Cache Management
 
-### Layer 2 — vLLM Engine (Cache Efficiency)
+The platform implements an **5-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/bible-kv-cache.md`](docs/explain/bible-kv-cache.md). Each layer protects the KV cache from a different failure mode.
+>>>>>>> Stashed changes
+
+### Layer 1 — vLLM Engine (Cache Efficiency)
 
 | Argument | Prod | Staging | Dev | Purpose |
 |---|---|---|---|---|
@@ -783,7 +742,7 @@ The platform implements an **8-layer defensive architecture** for vLLM KV cache 
 | `--block-size` | 16 | 16 | 16 | Optimal block size for paged attention |
 | `--tensor-parallel-size` | 1 | 1 | 1 | Per-NVLink topology |
 
-### Layer 3 — Kubernetes (Resource Protection)
+### Layer 2 — Kubernetes (Resource Protection)
 
 | Mechanism | Implementation | Failure Mode Prevented |
 |---|---|---|
@@ -791,28 +750,9 @@ The platform implements an **8-layer defensive architecture** for vLLM KV cache 
 | **swapoff DaemonSet** | `nsenter swapoff -a` on GPU nodes via DaemonSet | Host swapping KV cache pages to CPU RAM |
 | **Node isolation** | `nodeSelector: nvidia.com/gpu.present: "true"` | CPU workloads competing for GPU node RAM |
 
-### Layer 4 — Observability (Early Detection)
+### Layer 3 — Autoscaling (KEDA)
 
-| Alert | Condition | Severity |
-|---|---|---|
-| `VLLMKVCacheUsageHigh` | `vllm:gpu_cache_usage_perc` > 0.85 for 30s | Warning |
-| `VLLMKVCacheUsageCritical` | `vllm:gpu_cache_usage_perc` >= 1.0 | Critical |
-| `VLLMRequestsWaitingHigh` | `vllm:num_requests_waiting` > 10 for 1m | Critical |
-| `VLLMSwapOutBlocksDetected` | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
-| `NodeSwapSpaceUsageHigh` | swap usage > 10% for 2m | Critical |
-| `VLLMPrefixCacheHitRateLow` | hit rate < 20% for 10m | Warning |
-| `LMCacheL1HitRateLow` | L1 CPU hit < 30% for 10m | Warning |
-| `LMCacheL2HitRateLow` | L2 NVMe hit < 20% for 15m | Warning |
-| `LMCacheL3HitRateLow` | L3 distributed hit < 10% for 15m | Warning |
-| `VLLMPrefillSkipRateLow` | prefill skip < 10% while queue busy | Info |
-| `SSMModelPagedAttentionMisconfigured` | SSM pod detected with PagedAttention args | Critical |
-| `CacheRoutingHeaderAbsent` | `x-cache-affinity-key` missing during traffic | Info |
-
-**ServiceMonitor** scrapes vLLM `/metrics` every 10s with `honorLabels: true`. Grafana dashboard has **18 panels** including 6 LMCache hierarchy and ROI panels (see [`docs/architecture/05-observability.md`](docs/architecture/05-observability.md)).
-
-### Layer 5 — Autoscaling (KEDA)
-
-Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound). The platform uses a KEDA `ScaledObject` with two Prometheus triggers:
+Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound). The platform uses a KEDA `ScaledObject` with two metric triggers:
 
 | Trigger | Metric | Threshold | Action |
 |---|---|---|---|
@@ -823,7 +763,7 @@ Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound
 - `pollingInterval`: 15s, `cooldownPeriod`: 60s
 - Legacy HPA fallback retained for environments without KEDA
 
-### Layer 6 — GitOps (Change Safety)
+### Layer 4 — GitOps (Change Safety)
 
 - All critical vLLM params centralized in `environments/{dev,staging,prod}/values.yaml`
 - ArgoCD sync waves with self-heal + prune + ServerSideApply
@@ -832,7 +772,7 @@ Classic CPU/RAM HPA is **inoperant for LLM workloads** (GPU-bound, not CPU-bound
 - k6 load tests validate before changes reach production
 - Staging environment uses identical GPU hardware to prod
 
-### Layer 7 — Distributed Cache Middleware (LMCache)
+### Layer 5 — Distributed Cache Middleware (LMCache)
 
 The platform deploys **LMCache** as a per-GPU-node DaemonSet to break the per-instance KV cache silo (Bible §4.3). Cache becomes shareable across pods, persistent across restarts, and hierarchical across memory tiers.
 
@@ -860,19 +800,141 @@ Templates: `lmcache-daemonset.yaml`, `lmcache-configmap.yaml`, `lmcache-service.
 | `cachePersistence.storageClass` | longhorn | longhorn | — |
 | `cachePersistence.size` | 50Gi | 30Gi | — |
 
-### Layer 8 — Cache-Aware Routing (Cluster-Level Affinity)
+### Multi-Family Model Support
 
-Sticky routing by model name (`x-sticky-session-key` header) is augmented with **consistent-hash load balancing** on the `x-cache-affinity-key` header, derived from a prefix hash of the first 64 tokens of the system prompt.
+The `engine-selector` tool detects model family (Transformer, MoE, SSM/Mamba, Hybrid) and returns the correct cache strategy. SSM/Mamba models use a fixed-size recurrent state — `--enable-prefix-caching` and `--block-size` are **misconfigurations** for them (Bible §14).
 
-| Mechanism | Implementation | Failure Mode Prevented |
+---
+
+## llm-d: Intelligent Request Routing (MVP)
+
+**Status**: ✅ **MVP Implemented (Option 1)**
+
+The platform now includes **llm-d** (LLM Disaggregation) for cache-aware, intelligent routing of inference requests. llm-d is a CNCF Sandbox project that optimizes request routing based on KV-cache affinity, load balancing, and latency targets.
+
+### Architecture
+
+```
+Client → Gateway API → llm-d Router (Proxy + EPP) → vLLM Backends
+                             ↓
+                       InferencePool CRD
+                    (Service Discovery)
+```
+
+### Components
+
+| Component | Purpose | Status |
 |---|---|---|
-| Prefix-hash routing | Envoy Lua filter (FNV-1a over first 512 bytes of body) → `x-cache-affinity-key` header | Random routing destroying prefix cache locality |
-| Consistent-hash LB | `BackendTrafficPolicy` `loadBalancer.type: ConsistentHash` on `x-cache-affinity-key` | Cache misses from round-robin distribution |
-| Cache invalidation policy | ConfigMap documents RAG/model/prompt invalidation triggers | Stale cache hits returning outdated content |
+| **llm-d-infrastructure** | Gateway API + GAIE CRDs | ✅ Implemented |
+| **llm-d-router** | Proxy + Endpoint Picker (EPP) | ✅ Implemented |
+| **InferencePool** | Service discovery for vLLM pods | ✅ Implemented |
+| **Gateway + HTTPRoute** | HTTP routing with ext-proc | ✅ Implemented |
+| **vLLM config** | Chunked prefill, batching | ✅ Implemented |
+| KV-Cache Indexer | Precise cache-hit routing | ❌ Future |
+| Disaggregated Serving | Prefill/decode separation | ❌ Future |
+| SLO-aware autoscaling | Custom KEDA metrics | ❌ Future |
 
-Template: `cache-routing-policy.yaml` (ConfigMap with Lua filter + invalidation policy).
+### Features
 
-**Multi-Family Model Support** — The `engine-selector` tool detects model family (Transformer, MoE, SSM/Mamba, Hybrid) and returns the correct cache strategy. SSM/Mamba models use a fixed-size recurrent state — `--enable-prefix-caching` and `--block-size` are **misconfigurations** for them (Bible §14). The `SSMModelPagedAttentionMisconfigured` alert catches this at runtime.
+**Cache-Aware Routing** (Heuristic Mode):
+- Routes requests to backends with highest estimated cache hit rate
+- Prefix-match scoring based on recent request patterns
+- Expected improvement: **25-40% faster TTFT, 40-60% cache hit rate**
+
+**Load Balancing**:
+- Queue depth and GPU utilization aware
+- Circuit breaking for failing backends
+- Health checking and capacity filters
+
+**Environment Configuration**:
+- **Dev**: Round-robin, 1 replica, no cache-aware routing
+- **Staging**: Cache-aware (heuristic), 2 replicas, HA
+- **Production**: Optimized cache-aware, 3 replicas, HA, PDB, HPA, monitoring
+
+### Quick Start
+
+```bash
+# 1. Install infrastructure (once per cluster)
+helm install llm-d-infrastructure ./charts/llm-d-infrastructure \
+  --namespace llm-d-system --create-namespace
+
+# 2. Deploy router (per environment)
+helm install llm-d-router ./charts/llm-d-router \
+  --namespace model-serving-prod \
+  --values environments/prod/llm-d-router-values.yaml
+
+# 3. Apply InferencePool
+kubectl apply -f environments/prod/llm-d-inferencepool.yaml
+
+# 4. Apply Gateway + HTTPRoute
+kubectl apply -f environments/prod/llm-d-gateway.yaml
+
+# 5. Upgrade vLLM with llm-d config
+helm upgrade vllm-prod ./charts/model-serving-engine \
+  --values environments/prod/values.yaml
+```
+
+### Documentation
+
+- **Implementation Guide**: [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) — Complete deployment and configuration guide
+- **Technical Deep-Dive**: [`docs/explain/llm-d.md`](docs/explain/llm-d.md) — 20-section reference on llm-d architecture
+- **Decision Record**: [`docs/adr/0004-llm-d-not-implemented.md`](docs/adr/0004-llm-d-not-implemented.md) — Historical context on MVP approach
+
+### Charts
+
+| Chart | Location | Purpose |
+|---|---|---|
+| `llm-d-infrastructure` | `charts/llm-d-infrastructure/` | Gateway API + GAIE CRDs installation |
+| `llm-d-router` | `charts/llm-d-router/` | Proxy + EPP deployments, services, RBAC |
+
+### Configuration Files
+
+**Per Environment**:
+- `environments/{env}/llm-d-inferencepool.yaml` — InferencePool CRD
+- `environments/{env}/llm-d-gateway.yaml` — Gateway + HTTPRoute + InferenceObjective
+- `environments/{env}/llm-d-router-values.yaml` — Router configuration
+- `environments/{env}/values.yaml` — vLLM args (updated for llm-d)
+
+### Monitoring
+
+**Prometheus Metrics**:
+```bash
+# Proxy metrics (port 9090)
+llm_d_proxy_requests_total
+llm_d_proxy_routing_decisions_total
+llm_d_proxy_request_duration_seconds
+
+# EPP metrics (port 9091)
+llm_d_epp_scoring_duration_seconds
+llm_d_epp_backend_scores
+llm_d_epp_cache_hit_rate
+```
+
+**Production Alerts**:
+- `LLMDRouterHighLatency`: P99 > 1s for 5 minutes
+- `LLMDEPPHighScoringDuration`: P99 scoring > 100ms
+- `LLMDCacheHitRateLow`: Cache hit rate < 50%
+
+### Expected Performance
+
+| Metric | Without llm-d | With llm-d (MVP) | Improvement |
+|--------|---------------|------------------|-------------|
+| **TTFT P50** | 300ms | 180-220ms | **25-40% faster** |
+| **TTFT P99** | 800ms | 450-600ms | **25-44% faster** |
+| **Throughput** | 1500 tok/s | 2000-2500 tok/s | **33-67% higher** |
+| **Cache Hit Rate** | 0% | 40-60% | **New capability** |
+
+*Improvements depend on workload characteristics (prefix overlap, request patterns).*
+
+### Future Enhancements
+
+**Planned (Not in MVP)**:
+- **KV-Cache Indexer**: Precise cache-hit routing (+15-20% cache hit rate)
+- **Disaggregated Serving**: Prefill/decode separation (+30-50% throughput, requires RDMA)
+- **SLO-Aware Autoscaling**: KEDA with llm-d metrics (better resource utilization)
+- **Multi-Tenant Flow Control**: Priority-based scheduling, per-tenant rate limiting
+
+See [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) for enabling instructions.
 
 ---
 
@@ -984,7 +1046,7 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 
 | Document | Description |
 |---|---|
-| [`impl.md`](impl.md) | Reference architecture (triple-layer separation, format/engine mapping, GitOps pipeline, observability, auto-healing, multi-year robustness) |
+| [`impl.md`](impl.md) | Reference architecture (triple-layer separation, format/engine mapping, GitOps pipeline, auto-healing, multi-year robustness) |
 | [`tests.md`](tests.md) | Certification test suite (11 categories, 48 tests, GO/NO-GO criteria) |
 | [`namage.md`](namage.md) | Production lifecycle management |
 | [`solve.md`](solve.md) | End-to-end toolchain method |
@@ -996,18 +1058,15 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | [00-overview.md](docs/architecture/00-overview.md) | Three-plane architecture overview |
 | [01-formats-and-engines.md](docs/architecture/01-formats-and-engines.md) | Format-to-engine mapping + decision tree |
 | [02-gpu-scheduling.md](docs/architecture/02-gpu-scheduling.md) | Node pools, VRAM formula, hardware constraints |
-| [03-gateway-federation.md](docs/architecture/03-gateway-federation.md) | Priority routing, health checks, failover |
 | [04-gitops-deployment.md](docs/architecture/04-gitops-deployment.md) | Sync waves, ArgoCD AppSet, Lua health checks |
-| [05-observability.md](docs/architecture/05-observability.md) | LGTM stack, dashboards, anomaly detection |
 | [06-resilience-and-dr.md](docs/architecture/06-resilience-and-dr.md) | Auto-healing layers, rollback strategy |
-| [07-capacity-forecasting.md](docs/architecture/07-capacity-forecasting.md) | Holt-Winters, KEDA predictive, recording rules |
+| [07-capacity-forecasting.md](docs/architecture/07-capacity-forecasting.md) | Holt-Winters, KEDA predictive |
 
 ### Architecture Decision Records (`docs/adr/`)
 
 | ADR | Decision |
 |---|---|
 | [0001](docs/adr/0001-multi-format-architecture.md) | Multi-format architecture (vLLM-only) |
-| [0002](docs/adr/0002-envoy-ai-gateway.md) | Envoy AI Gateway federation |
 | [0003](docs/adr/0003-separate-engine-charts.md) | Separate engine charts per format |
 
 ### Runbooks (`docs/runbooks/`)
@@ -1022,17 +1081,29 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 
 | Doc | Description |
 |---|---|
+<<<<<<< Updated upstream
 | [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps, distributed cache middleware, cache-aware routing) |
 | [vllm-kv-cache.md](docs/explain/vllm-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
+=======
+| [kv-cache.md](docs/explain/kv-cache.md) | 5-layer KV cache management architecture (vLLM, K8s, autoscaling, GitOps, distributed cache middleware) |
+| [bible-kv-cache.md](docs/explain/bible-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
+>>>>>>> Stashed changes
 | [gpu.md](docs/explain/gpu.md) | In-depth GPU reference: 3 families (consumer/workstation/datacenter), prefill vs decode, CUDA gap, per-GPU datasheets, microarchitecture comparison, infrastructure constraints |
+| [llm-d.md](docs/explain/llm-d.md) | llm-d Technical Deep-Dive — 20-section reference: architecture, Router (Proxy + EPP), InferencePool CRD, KV-cache indexing, disaggregated serving, SLO-aware autoscaling, Gateway API integration, deployment patterns |
+
+### llm-d Implementation (`docs/`)
+
+| Doc | Description |
+|---|---|
+| [LLM_D_IMPLEMENTATION.md](docs/LLM_D_IMPLEMENTATION.md) | Complete llm-d implementation guide — MVP architecture, components (infrastructure, router, InferencePool, Gateway), step-by-step deployment, configuration reference, monitoring, troubleshooting, performance tuning, future enhancements |
 
 ### Integration & External Tools (`docs/`)
 
 | Doc | Description |
 |---|---|
-| [integration-report.md](docs/integration-report.md) | Complete ArgoCD + external platform integration report (13 sections + 3 appendices: Git providers, ArgoCD config, registry, secrets, observability, alerting, SaaS fallback, CI/CD, multi-cluster, security, topology, checklist) |
-| [external-tools.md](docs/external-tools.md) | Hands-on configuration guide for 12 external platforms (GitHub, ArgoCD, Helm repos, ESO, SaaS LLM, registries, PagerDuty, Slack, Prometheus, Longhorn, NVIDIA, cert-manager, KEDA) with exact commands, verification, troubleshooting |
-| [env.md](docs/env.md) | Complete inventory of every environment variable, API key, secret, external URL, and HTTP header convention (19 sections: quick reference, GitHub, ArgoCD, ESO, SaaS, registries, alerting, observability, LMCache, cert-manager, KEDA, GPU, Longhorn, tests, runtime, Helm repos, bootstrap, verification, HTTP headers) |
+| [integration-report.md](docs/integration-report.md) | Complete ArgoCD + external platform integration report (Git providers, ArgoCD config, registry, secrets, SaaS fallback, CI/CD, multi-cluster, security, topology, checklist) |
+| [external-tools.md](docs/external-tools.md) | Hands-on configuration guide for external platforms (GitHub, ArgoCD, Helm repos, ESO, SaaS LLM, registries, PagerDuty, Slack, Longhorn, NVIDIA, cert-manager, KEDA) with exact commands, verification, troubleshooting |
+| [env.md](docs/env.md) | Complete inventory of every environment variable, API key, secret, external URL, and HTTP header convention (quick reference, GitHub, ArgoCD, ESO, SaaS, registries, LMCache, cert-manager, KEDA, GPU, Longhorn, tests, runtime, Helm repos, bootstrap, verification, HTTP headers) |
 
 ---
 
@@ -1043,18 +1114,11 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **Orchestration** | Kubernetes (Talos / k3s) | 1.28+ | Container orchestration |
 | **GitOps** | ArgoCD | 2.8+ | Git-based continuous delivery |
 | **Safetensors/AWQ/GPTQ engine** | vLLM | 0.6.3 | PagedAttention, continuous batching |
-| **GPU scheduling** | NVIDIA GPU Operator | 24.9+ | Driver, DCGM, device plugin |
+| **GPU scheduling** | NVIDIA GPU Operator | 24.9+ | Driver, device plugin |
 | **GPU scheduling** | Kueue | 0.6+ | Quotas, queues, priority |
 | **GPU scheduling** | Volcano | 1.9+ | Gang scheduling |
 | **Autoscaling** | KEDA | 2.14+ | Event-driven autoscaling on vLLM metrics (queue depth, KV cache usage) |
 | **Node provisioning** | Karpenter | 0.37+ | On-demand GPU node provisioning |
-| **API Gateway** | Envoy AI Gateway | latest | OpenAI-compatible uniform API |
-| **Metrics** | Prometheus + Mimir | 2.50+ / 2.12+ | Metrics collection + long-term storage |
-| **Logs** | Loki | 3.0+ | Log aggregation |
-| **Traces** | Tempo + OpenTelemetry | 2.5+ | Distributed tracing |
-| **Visualization** | Grafana | 10.4+ | Unified dashboards |
-| **GPU metrics** | DCGM Exporter | 3.3+ | GPU utilization, memory, temp, ECC |
-| **Collection** | Grafana Alloy | latest | Single agent (metrics + logs + traces) |
 | **Storage** | Longhorn | 1.6+ | Distributed RWX PVC |
 | **Object store** | MinIO | latest | S3-compatible model weight storage |
 | **Image registry** | Harbor | 2.10+ | Self-hosted registry with CVE scan |
@@ -1068,48 +1132,31 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | **CI/CD** | GitHub Actions | — | Build, test, lint, validate |
 | **Notifications** | ArgoCD Notifications | — | Slack + PagerDuty sync/health alerts |
 | **CLI tools** | Rust | 1.70+ | engine-selector, vram-budget-calc, model-onboarding, cache-roi-calc |
-| **Drift detection** | Evidently AI | latest | Data quality monitoring (self-hosted) |
+| **Drift detection** | Evidently AI | latest | Data quality detection (self-hosted) |
 
 ---
 
 ## External Platform Integration
 
-The platform integrates with external systems via GitOps. All integration manifests live in `apps/` and `addons/`. See [`docs/integration-report.md`](docs/integration-report.md) for the complete 13-section report.
+The platform is designed to integrate with external systems via GitOps. See [`docs/integration-report.md`](docs/integration-report.md) for the complete integration guide.
 
-### ArgoCD GitOps
-
-| Component | File | Purpose |
-|---|---|---|
-| AppProjects | `apps/argocd-appprojects.yaml` | 2 projects: `model-serving` (namespaced) + `infrastructure` (cluster-scoped) |
-| Repo credentials | `apps/argocd-repo-credentials.yaml` | Repo Secret + known_hosts ConfigMap (real GitHub SSH keys) |
-| ApplicationSets | `apps/argocd-appset-{dev,staging,prod}.yaml` | Per-env AppSets with sync waves |
-| Notifications | `apps/argocd-notifications.yaml` | Slack + PagerDuty (4 triggers, 5 templates, 2 subscriptions) |
-| Health checks | `apps/argocd-health-checks.yaml` | Custom Lua health checks (StatefulSet, InferenceService) |
+> **Note**: ArgoCD integration manifests have been removed from this repository. See [`REMOVED_ARGOCD.md`](REMOVED_ARGOCD.md) for details and [`apps/README.md`](apps/README.md) for integration instructions with your GitOps tool of choice (ArgoCD, FluxCD, Helmfile).
 
 ### Cluster Addons
 
-| Addon | Path | Version | Sync Wave |
+The `addons/` directory contains Helm chart references for infrastructure components:
+
+| Addon | Chart | Version | Purpose |
 |---|---|---|---|
-| NVIDIA GPU Operator | `addons/nvidia-gpu-operator/` | 24.9.0 | -1 |
-| Longhorn | `addons/longhorn/` | 1.7.2 | -2 |
-| kube-prometheus-stack | `addons/prometheus-stack/` | 65.5.0 | -1 |
-| KEDA | `addons/keda/` | 2.16.0 | -1 |
-| External Secrets Operator | `addons/external-secrets/` | 0.10.0 | -1 |
-| cert-manager | `addons/cert-manager/` | 1.16.0 | -1 |
-
-### Secret Management
-
-| Component | File | Purpose |
-|---|---|---|
-| ClusterSecretStore | `apps/external-secrets.yaml` | AWS Secrets Manager (IRSA) — Vault example commented out |
-| ExternalSecret: SaaS keys | `apps/external-secrets.yaml` | 7 SaaS API keys (OpenAI, Anthropic, Google, Azure, Mistral, Cohere, Bedrock) |
-| ExternalSecret: Alertmanager | `apps/external-secrets.yaml` | Full alertmanager config.yaml with PagerDuty + Slack credentials |
-| ExternalSecret: Registry | `apps/external-secrets.yaml` | Docker registry pull secret |
-| ExternalSecret: Image Updater | `apps/external-secrets.yaml` | GitHub token for ArgoCD Image Updater |
+| NVIDIA GPU Operator | `addons/nvidia-gpu-operator/` | 24.9.0 | Driver, device plugin |
+| Longhorn | `addons/longhorn/` | 1.7.2 | Distributed storage (RWX PVC) |
+| KEDA | `addons/keda/` | 2.16.0 | Event-driven autoscaling |
+| External Secrets Operator | `addons/external-secrets/` | 0.10.0 | Secret management |
+| cert-manager | `addons/cert-manager/` | 1.16.0 | TLS certificate provisioning |
 
 ### SaaS Fallback Providers
 
-The gateway supports automatic failover to SaaS providers when self-hosted latency exceeds 2000ms:
+The platform supports automatic failover to SaaS providers when self-hosted latency exceeds 2000ms:
 
 | Provider | Endpoint | Priority |
 |---|---|---|
@@ -1120,14 +1167,6 @@ The gateway supports automatic failover to SaaS providers when self-hosted laten
 | Mistral AI | `https://api.mistral.ai/v1` | 1 |
 | Cohere | `https://api.cohere.ai/v1` | 1 |
 | AWS Bedrock | `https://bedrock-runtime.{region}.amazonaws.com` | 1 |
-
-### Alerting Routing
-
-| Severity | Destination | Trigger |
-|---|---|---|
-| Critical | PagerDuty + Slack `#ml-incidents` | Sync failed, health degraded, KV cache critical |
-| Warning | Slack `#ml-ops` | Sync running, KV cache high, latency high |
-| GPU | Slack `#gpu-ops` | Thermal throttle, ECC errors, VRAM exhaustion |
 
 ### CI/CD Pipeline
 

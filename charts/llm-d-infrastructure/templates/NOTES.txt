@@ -1,0 +1,52 @@
+llm-d Infrastructure (Gateway API + GAIE CRDs) has been installed!
+
+==============================================================================
+Gateway API CRDs: {{ if .Values.gatewayAPI.enabled }}✓ Enabled{{ else }}✗ Disabled{{ end }}
+Version: {{ .Values.gatewayAPI.version }}
+
+GAIE CRDs: {{ if .Values.gaie.enabled }}✓ Enabled{{ else }}✗ Disabled{{ end }}
+Version: {{ .Values.gaie.version }}
+==============================================================================
+
+VERIFICATION:
+
+1. Check Gateway API CRDs are installed:
+   
+   kubectl api-resources | grep gateway
+   
+   Expected output:
+   - gateways
+   - httproutes
+   - grpcroutes
+   - tcproutes
+   - udproutes
+   - referencegrants
+   - gatewayclasses
+
+2. Check GAIE CRDs are installed:
+   
+   kubectl api-resources | grep inference
+   
+   Expected output:
+   - inferencepools
+   - inferenceobjectives
+   - inferencemodelrewrites
+
+3. Check installation job status:
+   
+   kubectl get jobs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=llm-d-infrastructure
+
+4. Check job logs if there were issues:
+   
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=llm-d-infrastructure
+
+==============================================================================
+NEXT STEPS:
+
+Now you can install:
+1. llm-d-router (Proxy + Endpoint Picker)
+2. llm-d-kv-cache-indexer (KV Cache Indexer)
+3. InferencePool resources for your vLLM deployments
+
+See documentation: docs/explain/llm-d.md
+==============================================================================

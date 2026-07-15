@@ -3,7 +3,7 @@
 ## Symptoms
 - Alert: `GPUEccErrors` or `GPUThermalThrottle`
 - Pods on the node show OOM or CrashLoopBackOff
-- DCGM metrics show high temperature or memory exhaustion
+- Node shows high temperature or memory exhaustion (`nvidia-smi`)
 
 ## Steps
 
@@ -24,8 +24,8 @@
    ```
 
 4. **Verify failover**:
-   - Check that Envoy Gateway routes traffic to healthy backends
-   - `kubectl logs -n envoy-gateway-system deploy/envoy-gateway`
+   - Check that traffic routes to healthy backends
+   - `kubectl get pods -n model-serving-prod -o wide`
 
 5. **Investigate root cause**:
    - Check ECC errors: `nvidia-smi -q -d ECC`

@@ -4,5 +4,6 @@ description: Library chart providing common StatefulSet/PVC/Ingress patterns for
 type: library
 version: 0.1.0
 appVersion: "0.1.0"
+icon: https://raw.githubusercontent.com/helm/helm-www/main/static/img/helm.svg
 maintainers:
   - name: Custom-Ai-Ops

@@ -8,7 +8,7 @@
 | `gpu-a100-pool` | NVIDIA A100 | vLLM standard LLM |
 | `gpu-l4-pool` | NVIDIA L4 | vLLM lightweight inference |
 | `gpu-edge-pool` | GPU modest (RTX A2000) | vLLM small models, PoC |
-| `cpu-pool` | CPU only | Preprocessing, gateway, auxiliary services |
+| `cpu-pool` | CPU only | Preprocessing, auxiliary services |
 
 ## Node Isolation
 
@@ -64,6 +64,5 @@ If `Available < 0`, deployment is **blocked** by `vram-budget-calc`.
 ## Tooling
 
 - `tools/vram-budget-calc` — CI gate, validates budget before merge
-- DCGM Exporter — GPU metrics (utilisation, memory, temperature, ECC)
 - Kueue — quota and queue management
 - Karpenter — on-demand node provisioning

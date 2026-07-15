@@ -1,0 +1,77 @@
+{{- if .Values.epp.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llm-d-router.fullname" . }}-epp
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d-router.eppLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.epp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "llm-d-router.eppSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-epp.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "llm-d-router.eppSelectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "llm-d-router.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: epp
+          image: "{{ .Values.epp.image.repository }}:{{ .Values.epp.image.tag }}"
+          imagePullPolicy: {{ .Values.epp.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.epp.service.targetPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: {{ .Values.logging.level }}
+            - name: LOG_FORMAT
+              value: {{ .Values.logging.format }}
+            - name: CONFIG_FILE
+              value: /etc/llm-d/epp-config.yaml
+          livenessProbe:
+            {{- toYaml .Values.epp.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.epp.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.epp.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/llm-d
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "llm-d-router.fullname" . }}-epp-config
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

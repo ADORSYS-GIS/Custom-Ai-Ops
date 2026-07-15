@@ -1,0 +1,157 @@
+# llm-d Router values for staging environment
+# Moderate configuration with cache-aware routing enabled
+
+proxy:
+  enabled: true
+  replicaCount: 2  # High availability in staging
+  
+  image:
+    repository: ghcr.io/llm-d/proxy
+    tag: v0.3.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9090"
+  
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  # Point to EPP service
+  env:
+    - name: EPP_URL
+      value: "http://llm-d-router-epp:8081"
+    - name: LOG_LEVEL
+      value: "info"
+    - name: ENABLE_METRICS
+      value: "true"
+    - name: ENABLE_TRACING
+      value: "true"
+    - name: TIMEOUT_SECONDS
+      value: "120"
+  
+  # Affinity to spread across nodes
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: proxy
+            topologyKey: kubernetes.io/hostname
+
+epp:
+  enabled: true
+  replicaCount: 2  # High availability in staging
+  
+  image:
+    repository: ghcr.io/llm-d/endpoint-picker
+    tag: v0.3.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+    metricsPort: 9091
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9091"
+  
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  # Staging configuration: cache-aware routing with heuristic mode
+  config:
+    scorers:
+      - name: prefix-match
+        weight: 0.6
+        enabled: true
+        config:
+          mode: heuristic  # No KV-Cache Indexer in MVP
+          prefixLength: 512
+      
+      - name: load-balancing
+        weight: 0.3
+        enabled: true
+        config:
+          queueDepthWeight: 0.7
+          gpuUtilizationWeight: 0.3
+      
+      - name: latency
+        weight: 0.1
+        enabled: true
+        config:
+          recentWindowSeconds: 60
+    
+    filters:
+      - name: capacity-check
+        enabled: true
+        config:
+          maxQueueDepth: 20
+          maxGpuUtilization: 0.95
+      
+      - name: health-check
+        enabled: true
+    
+    selector:
+      strategy: weighted
+      topN: 3
+  
+  env:
+    - name: LOG_LEVEL
+      value: "info"
+    - name: NAMESPACE
+      value: "model-serving-staging"
+    - name: INFERENCE_POOL_NAME
+      value: "vllm-staging-pool"
+    - name: ENABLE_METRICS
+      value: "true"
+    - name: ENABLE_TRACING
+      value: "true"
+    - name: CACHE_AWARE_ROUTING
+      value: "true"
+    - name: SCORING_INTERVAL_MS
+      value: "100"
+  
+  # Affinity to spread across nodes
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: epp
+            topologyKey: kubernetes.io/hostname
+
+# RBAC enabled for discovering InferencePools
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: llm-d-router
+
+# Pod Disruption Budget for high availability
+podDisruptionBudget:
+  enabled: true
+  proxy:
+    minAvailable: 1
+  epp:
+    minAvailable: 1

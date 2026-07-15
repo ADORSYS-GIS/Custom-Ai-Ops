@@ -64,6 +64,54 @@ engine:
       periodSeconds: 10
       failureThreshold: 60
 
+<<<<<<< Updated upstream
+=======
+  onnxGenai:
+    image:
+      repository: ghcr.io/microsoft/onnxruntime-genai
+      tag: "0.5.0"
+      pullPolicy: IfNotPresent
+    command: []
+    args:
+      - --model_path
+      - /models/$(MODEL_NAME)
+      - --port
+      - "8080"
+    resources:
+      # QoS Guaranteed: requests == limits for all resources.
+      limits:
+        nvidia.com/gpu: 1
+        cpu: "4"
+        memory: 16Gi
+      requests:
+        nvidia.com/gpu: 1
+        cpu: "4"
+        memory: 16Gi
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 6
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+    startupProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      failureThreshold: 90
+
+>>>>>>> Stashed changes
 model:
   name: ""
   volumeSize: 50Gi
@@ -109,18 +157,6 @@ service:
   port: 80
   targetPort: 8000
 
-# --- Layer 4: Observability — Prometheus scrape ---
-# vLLM exposes /metrics with vllm:gpu_cache_usage_perc, vllm:num_requests_waiting,
-# vllm:swap_out_blocks, vllm:gpu_prefix_cache_hits_total, etc.
-# Scrape interval 5-10s as recommended by the KV cache management doc.
-serviceMonitor:
-  enabled: false
-  path: /metrics
-  interval: 10s          # 5-10s recommended; lower = faster alert reaction
-  scrapeTimeout: 5s
-  releaseLabel: prometheus   # must match the Prometheus Operator release label
-  relabelings: []
-
 ingress:
   enabled: false
   className: ""
@@ -138,7 +174,6 @@ autoscaling:
   # Classic CPU/RAM HPA is inoperant for GPU-bound LLM workloads.
   keda:
     enabled: false
-    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
     pollingInterval: 15
     cooldownPeriod: 60
     queueDepthThreshold: "5"       # vllm:num_requests_waiting > 5 → scale out
@@ -165,7 +200,7 @@ nodeSelector:
 # CPU RAM, inference latency spikes by 10-100x.
 gpuNodeSwapoff: true
 
-# --- LMCache: distributed KV cache middleware (Bible §4.3) ---
+# --- LMCache: distributed KV cache middleware ---
 # Turns KV cache from per-instance silo into persistent, shareable,
 # cluster-wide resource. Enables L1 (CPU) / L2 (NVMe) / L3 (Redis/S3)
 # tiered cache hierarchy for cross-pod prefix reuse.
@@ -180,21 +215,18 @@ lmcache:
   chunkSize: 256
   # Multiprocess mode — LMCache runs as a separate daemon (recommended for prod).
   # vLLM connects via ZMQ (port 5555) + HTTP (port 8080 for health/metrics).
-  # See docs/explain/vllm+lmcache.md §3.2 for integration modes.
   mp:
     host: "127.0.0.1"
     port: 5555
     transferMode: zmq
   # Enable hostIPC for CUDA IPC between vLLM and LMCache pods.
-  # Mandatory when using CUDA IPC mode (m equivalent of card-to-card communication).
   hostIPC: true
   # SafeLMCacheConnectorV1 circuit breaker — vLLM falls back to native GPU
   # cache after N consecutive failures (no fate-sharing with LMCache).
-  # See docs/explain/vllm+lmcache.md §11.2.
   circuitBreaker:
     enabled: true
     maxFailures: 5
-  # CacheBlend — non-prefix reuse for RAG workloads (Bible §4.4).
+  # CacheBlend — non-prefix reuse for RAG workloads.
   # Blends cached KV with partial recomputation for semantic overlap.
   # 3x-4.5x TTFT reduction on RAG (no need for exact prefix match).
   cacheBlend:
@@ -203,11 +235,11 @@ lmcache:
     useLayerwise: true
     checkLayers: 1
     recomputeRatios: 0.15
-  # vLLM --kv-transfer-config fields (Bible §3.1, vllm+lmcache.md §2).
+  # vLLM --kv-transfer-config fields.
   # connector: LMCacheMPConnector (recommended) | LMCacheConnectorV1 |
   #            LMCacheConnectorV1Dynamic
   # role: kv_both (unified pool) | kv_producer (prefill pool) |
-  #       kv_consumer (decode pool, for PD disaggregation, Bible §10)
+  #       kv_consumer (decode pool, for PD disaggregation)
   kvTransferConfig:
     connector: LMCacheMPConnector
     role: kv_both
@@ -215,10 +247,8 @@ lmcache:
     disableHybridKvCacheManager: false
   # Env presets required by LMCache/vLLM integration.
   # PYTHONHASHSEED=0: deterministic hash ordering (avoids cache mismatches).
-  # PROMETHEUS_MULTIPROC_DIR: enables multi-process metric aggregation.
   env:
     PYTHONHASHSEED: "0"
-    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
   disk:
     enabled: false
     path: /var/lib/lmcache
@@ -240,15 +270,8 @@ lmcache:
     limits:
       cpu: "2"
       memory: 16Gi
-  # Separate ServiceMonitor for LMCache daemon metrics on port 8330.
-  # Disabled by default; enabled in envs where lmcache.enabled=true.
-  serviceMonitor:
-    enabled: false
-    interval: 10s
-    scrapeTimeout: 5s
-    releaseLabel: prometheus
 
-# --- SafeTensors cache persistence (Bible §5.1) ---
+# --- SafeTensors cache persistence ---
 # Persists KV cache to disk for fast restart: on pod restart, the cache
 # is restored directly into the attention layer without re-prefill.
 # Up to 136x TTFT reduction (Gemma 3 12B benchmark).

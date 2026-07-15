@@ -54,10 +54,6 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-            # Prometheus metrics (/metrics).
-            - name: metrics
-              containerPort: 8330
-              protocol: TCP
           env:
             - name: LMCACHE_CONFIG
               value: /etc/lmcache/lmcache.toml
@@ -71,9 +67,6 @@ spec:
             # mismatches between vLLM workers when keys hash differently.
             - name: PYTHONHASHSEED
               value: {{ .Values.lmcache.env.PYTHONHASHSEED | default "0" | quote }}
-            # Multi-process Prometheus metric aggregation directory.
-            - name: PROMETHEUS_MULTIPROC_DIR
-              value: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" | quote }}
             {{- if .Values.lmcache.cacheBlend.enabled }}
             # CacheBlend env vars (non-prefix KV reuse for RAG, Bible §4.4).
             - name: LMCACHE_ENABLE_BLENDING
@@ -91,8 +84,6 @@ spec:
             - name: lmcache-config
               mountPath: /etc/lmcache
               readOnly: true
-            - name: prometheus-multiproc
-              mountPath: {{ .Values.lmcache.env.PROMETHEUS_MULTIPROC_DIR | default "/tmp/prometheus_multiproc" }}
             {{- if .Values.lmcache.disk.enabled }}
             - name: lmcache-disk
               mountPath: {{ .Values.lmcache.disk.path | default "/var/lib/lmcache" }}
@@ -122,8 +113,6 @@ spec:
         - name: lmcache-config
           configMap:
             name: {{ include "model-serving-engine.fullname" . }}-lmcache-config
-        - name: prometheus-multiproc
-          emptyDir: {}
         {{- if .Values.lmcache.disk.enabled }}
         - name: lmcache-disk
           hostPath:

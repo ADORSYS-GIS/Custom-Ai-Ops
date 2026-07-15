@@ -6,7 +6,7 @@ This platform serves ML models of multiple formats (Safetensors, AWQ, GPTQ) thro
 
 1. **Model Plane** — Model weights + format (Safetensors, AWQ, GPTQ)
 2. **Engine Plane** — Runtime that executes a given format (vLLM)
-3. **Exposure Plane** — OpenAI-compatible endpoint via Envoy AI Gateway (uniform API regardless of engine)
+3. **Exposure Plane** — OpenAI-compatible endpoint (uniform API regardless of engine)
 
 ## Key Decisions
 

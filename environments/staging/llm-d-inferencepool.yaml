@@ -1,0 +1,95 @@
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferencePool
+metadata:
+  name: vllm-staging-pool
+  namespace: model-serving-staging
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: inferencepool
+    app.kubernetes.io/part-of: model-serving-staging
+    environment: staging
+spec:
+  # Target port where vLLM serves inference requests
+  targetPortNumber: 8000
+  
+  # Selector to discover vLLM pods in this pool
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: model-serving-engine
+      app.kubernetes.io/instance: vllm-staging
+  
+  # Reference to llm-d Endpoint Picker (EPP) for cache-aware routing
+  endpointPickerConfig:
+    extensionRef:
+      group: inference.networking.x-k8s.io
+      kind: EndpointPicker
+      name: llm-d-epp
+      namespace: llm-d-system
+    
+    # EPP configuration specific to this pool
+    config:
+      # Cache-aware routing enabled (LMCache distributed, 1-2 replicas)
+      cacheAwareRouting: true
+      
+      # Scoring algorithms for staging
+      scoringAlgorithms:
+        - name: prefix-match
+          weight: 0.6
+          enabled: true
+          config:
+            # Heuristic cache-aware routing (no KV-Cache Indexer in MVP)
+            mode: heuristic
+            prefixLength: 512  # tokens
+        
+        - name: load-balancing
+          weight: 0.3
+          enabled: true
+          config:
+            queueDepthWeight: 0.7
+            gpuUtilizationWeight: 0.3
+        
+        - name: latency
+          weight: 0.1
+          enabled: true
+          config:
+            recentWindowSeconds: 60
+      
+      # Weighted selection strategy (probabilistic based on scores)
+      selectionStrategy: weighted
+      
+      # Filter overloaded backends
+      filters:
+        - name: capacity-check
+          enabled: true
+          config:
+            maxQueueDepth: 20
+            maxGpuUtilization: 0.95
+        
+        - name: health-check
+          enabled: true
+  
+  # Health check configuration
+  healthCheck:
+    path: /health
+    intervalSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  # Model metadata
+  modelMetadata:
+    modelName: "meta-llama/Llama-3.1-8B"
+    modelVersion: "main"
+    maxModelLen: 8192
+    cachingEnabled: true
+    cacheBlockSize: 16
+    
+    # LMCache configuration reference
+    lmcacheEnabled: true
+    lmcacheTiers:
+      - name: cpu
+        enabled: true
+        size: "8Gi"
+      - name: nvme
+        enabled: true
+        size: "100Gi"

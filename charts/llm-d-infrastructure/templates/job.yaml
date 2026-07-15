@@ -1,0 +1,73 @@
+{{- if .Values.job.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "llm-d-infrastructure.fullname" . }}-installer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llm-d-infrastructure.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "llm-d-infrastructure.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "llm-d-infrastructure.serviceAccountName" . }}
+      restartPolicy: OnFailure
+      containers:
+        - name: crd-installer
+          image: "{{ .Values.job.image }}"
+          imagePullPolicy: {{ .Values.job.imagePullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "================================================================"
+              echo "Installing llm-d Infrastructure CRDs"
+              echo "================================================================"
+              
+              {{- if .Values.gatewayAPI.enabled }}
+              echo ""
+              echo "→ Installing Gateway API CRDs {{ .Values.gatewayAPI.version }}..."
+              kubectl apply -f {{ .Values.gatewayAPI.manifestUrl }}
+              echo "✓ Gateway API CRDs installed"
+              {{- end }}
+              
+              {{- if .Values.gaie.enabled }}
+              echo ""
+              echo "→ Installing Gateway API Inference Extension CRDs {{ .Values.gaie.version }}..."
+              kubectl apply -f {{ .Values.gaie.manifestUrl }}
+              echo "✓ GAIE CRDs installed"
+              {{- end }}
+              
+              echo ""
+              echo "================================================================"
+              echo "Verifying installation..."
+              echo "================================================================"
+              
+              {{- if .Values.gatewayAPI.enabled }}
+              echo ""
+              echo "→ Gateway API resources:"
+              kubectl api-resources | grep gateway || true
+              {{- end }}
+              
+              {{- if .Values.gaie.enabled }}
+              echo ""
+              echo "→ GAIE resources:"
+              kubectl api-resources | grep inference || true
+              {{- end }}
+              
+              echo ""
+              echo "================================================================"
+              echo "✓ llm-d Infrastructure CRDs installation complete!"
+              echo "================================================================"
+          resources:
+            {{- toYaml .Values.job.resources | nindent 12 }}
+{{- end }}

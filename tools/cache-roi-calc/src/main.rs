@@ -130,6 +130,14 @@ fn main() -> Result<()> {
 
     // GPU compute cost
     let cost_per_request_no_cache = cli.ttft_without_cache_s * cli.gpu_cost_per_hour / 3600.0;
+<<<<<<< Updated upstream
+=======
+    let cost_per_request_with_cache = (cli.hit_rate * cli.ttft_with_cache_s
+        + (1.0 - cli.hit_rate) * cli.ttft_without_cache_s)
+        * cli.gpu_cost_per_hour
+        / 3600.0;
+
+>>>>>>> Stashed changes
     let gpu_cost_without = cost_per_request_no_cache * cli.requests_per_hour as f64;
     let gpu_cost_with = compute_gpu_cost_per_hour(
         cli.hit_rate,
@@ -331,7 +339,11 @@ fn main() -> Result<()> {
 
         println!();
         println!(
+<<<<<<< Updated upstream
             "Reference: vllm-kv-cache.md §9 (ROI = (GPU_saved - storage_cost) / storage_cost)"
+=======
+            "Reference: bible-kv-cache.md §9 (ROI = (GPU_saved - storage_cost) / storage_cost)"
+>>>>>>> Stashed changes
         );
     }
 

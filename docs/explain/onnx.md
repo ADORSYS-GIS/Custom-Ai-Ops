@@ -661,14 +661,10 @@ flowchart TB
     subgraph MODEL["Model Plane"]
         STORE["Quantized ONNX weights\n(object storage / PVC)"]
     end
-    subgraph OBS["Observability"]
-        PROM["Prometheus / Grafana\n(cache hit, latency, VRAM)"]
-    end
     subgraph GITOPS["GitOps"]
         ARGO["ArgoCD\n(versioned deployment)"]
     end
     GW --> SEL --> ORT --> STORE
-    ORT -.metrics.-> PROM
     GITOPS --> ENGINE
 ```
 
@@ -679,8 +675,7 @@ flowchart TB
 3. **Graph optimization** (operator fusion, FP16/INT8 quantization).
 4. **Automatic engine selection** by a routing component (`engine-selector`) that detects the format and chooses ONNX Runtime GenAI with a confidence score.
 5. **Versioned deployment** via Helm + ArgoCD, with prior calculation of the required VRAM budget (including KV cache).
-6. **Continuous observability**: latency metrics, error rate, memory and cache utilization, exposed via ServiceMonitor / Prometheus / Grafana.
-7. **Autoscaling** driven by queue depth and cache pressure (KEDA), on the same basis as for an engine like vLLM.
+6. **Autoscaling** driven by queue depth and cache pressure (KEDA), on the same basis as for an engine like vLLM.
 
 ### 13.3 Why This "Triple-Layer" Architecture Suits ONNX Particularly Well
 
@@ -799,7 +794,7 @@ In a mature production architecture, ONNX is **not a replacement** for vLLM or T
 
 1. **Deploy vLLM** for the most demanding models (long context, high performance), with LMCache as the distributed cache layer.
 2. **Deploy ONNX** for smaller models, routing tasks, or less critical workloads, where portability and cost matter most.
-3. **Unify observability and GitOps** across both engine families, rather than seeking a single universal tool.
+3. **Unify GitOps** across both engine families, rather than seeking a single universal tool.
 
 It is this **hybrid approach**, rather than an exclusive choice, that captures the best of both worlds.
 

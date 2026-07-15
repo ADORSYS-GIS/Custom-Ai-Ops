@@ -23,8 +23,8 @@ data:
     1. **RAG corpus update**: when the underlying knowledge base is
        updated, the system prompts embedding the RAG context will
        produce stale answers. Trigger invalidation by bumping the
-       `x-rag-version` header on the gateway — the prefix hash
-       changes, routing new requests to fresh cache entries.
+       `x-rag-version` header — the prefix hash changes, routing
+       new requests to fresh cache entries.
     
     2. **Model weight update**: when a new model version is deployed,
        all KV cache entries are invalid (weights changed → different
@@ -45,20 +45,13 @@ data:
     ## How to invalidate
     
     ### Soft invalidation (preferred, zero downtime)
-    - Bump `x-rag-version` header value at the gateway
-    - The prefix-hash routing Lua filter incorporates this header
-      into the hash → new requests get new affinity keys → new cache
+    - Bump `x-rag-version` header value — the prefix-hash routing
+      incorporates this header into the hash → new requests get new
+      affinity keys → new cache
     - Old cache entries age out via LRU eviction
     
     ### Hard invalidation (full flush)
     - `kubectl rollout restart statefulset -n <namespace>`
     - For LMCache L2/L3: flush Redis (`FLUSHDB`) or delete S3 prefix
     - For SafeTensors persistence: delete the PVC or the version dir
-    
-    ## Monitoring cache freshness
-    
-    - Alert `VLLMPrefixCacheHitRateLow` (hit rate < 20% for 10m)
-      may indicate stale cache being evicted faster than used
-    - Alert `VLLMKVCacheUsageCritical` (>= 100%) indicates cache
-      pressure — investigate whether invalidation is too slow
 {{- end }}

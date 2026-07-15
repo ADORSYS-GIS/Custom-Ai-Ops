@@ -49,6 +49,7 @@ jobs:
         run: helm lint charts/model-serving-vllm
       - name: Lint model-serving-engine
         run: helm lint charts/model-serving-engine
+<<<<<<< Updated upstream
       - name: Lint ai-gateway
         run: helm lint charts/ai-gateway
       - name: Lint llm-d
@@ -56,6 +57,10 @@ jobs:
       - name: Template dry-run all charts
         run: |
           # Charts that accept --set model.name=test-model
+=======
+      - name: Template dry-run all charts
+        run: |
+>>>>>>> Stashed changes
           for chart in charts/model-serving-vllm; do
             helm template test-release "$chart" --set model.name=test-model > /dev/null
           done

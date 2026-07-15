@@ -622,6 +622,7 @@ mod tests {
             assert_eq!(chart, expected_chart, "Chart mismatch for {:?}", fmt);
         }
     }
+<<<<<<< Updated upstream
 
     // --- Routing mode tests ---
 
@@ -779,4 +780,6 @@ mod tests {
     fn test_should_disaggregate_hybrid_model() {
         assert!(should_disaggregate(ModelFamily::Hybrid, 40.0, 32));
     }
+=======
+>>>>>>> Stashed changes
 }

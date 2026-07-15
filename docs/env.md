@@ -10,21 +10,17 @@
 2. [GitHub — Repository Access and CI](#2-github)
 3. [ArgoCD — Repository Credentials and Notifications](#3-argocd)
 4. [External Secrets Operator — Secret Backend](#4-eso)
-5. [SaaS LLM Fallback Providers (7)](#5-saas-llm)
-6. [Container Registries](#6-registries)
-7. [Alerting — PagerDuty and Slack](#7-alerting)
-8. [Observability — Prometheus, Grafana, Alertmanager](#8-observability)
-9. [LMCache — Redis and S3 Backends](#9-lmcache)
-10. [cert-manager — Let's Encrypt](#10-cert-manager)
-11. [KEDA — Prometheus Connection](#11-keda)
-12. [NVIDIA GPU Operator — DCGM Exporter](#12-nvidia)
-13. [Longhorn — Distributed Storage](#13-longhorn)
-14. [Test Scripts — Environment Variables](#14-tests)
-15. [Runtime Environment Variables (Pods)](#15-runtime-env)
-16. [Helm Repository URLs (6)](#16-helm-repos)
-17. [Bootstrap Order — Where to Place Each Secret](#17-bootstrap-order)
-18. [Verification Checklist](#18-checklist)
-19. [HTTP Headers — Gateway Conventions](#19-http-headers)
+5. [Container Registries](#6-registries)
+6. [LMCache — Redis and S3 Backends](#9-lmcache)
+7. [cert-manager — Let's Encrypt](#10-cert-manager)
+8. [KEDA — Autoscaling Configuration](#11-keda)
+9. [NVIDIA GPU Operator](#12-nvidia)
+10. [Longhorn — Distributed Storage](#13-longhorn)
+11. [Test Scripts — Environment Variables](#14-tests)
+12. [Runtime Environment Variables (Pods)](#15-runtime-env)
+13. [Helm Repository URLs (5)](#16-helm-repos)
+14. [Bootstrap Order — Where to Place Each Secret](#17-bootstrap-order)
+15. [Verification Checklist](#18-checklist)
 
 ---
 
@@ -38,33 +34,15 @@
 | 3 | `custom-ai-ops-repo` | `username` | ArgoCD Secret | ArgoCD repo access | `argocd` |
 | 4 | `argocd-notifications-secret` | `slack-webhook-url` | ArgoCD Secret | ArgoCD Notifications | `argocd` |
 | 5 | `argocd-notifications-secret` | `pagerduty-integration-key` | ArgoCD Secret | ArgoCD Notifications | `argocd` |
-| 6 | `ai-gateway-saas-keys` | `openai-gpt4-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 7 | `ai-gateway-saas-keys` | `anthropic-claude-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 8 | `ai-gateway-saas-keys` | `google-vertex-ai-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 9 | `ai-gateway-saas-keys` | `azure-openai-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 10 | `ai-gateway-saas-keys` | `mistral-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 11 | `ai-gateway-saas-keys` | `cohere-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 12 | `ai-gateway-saas-keys` | `aws-bedrock-api-key` | K8s Secret (via ESO) | AI Gateway fallback | `envoy-gateway-system` |
-| 13 | `alertmanager-config` | `config.yaml` (templated) | K8s Secret (via ESO) | Alertmanager | `monitoring` |
-| 14 | `argocd-image-updater-git` | `GITHUB_TOKEN` | K8s Secret (via ESO) | ArgoCD Image Updater | `argocd` |
-| 15 | `registry-credentials` | `.dockerconfigjson` | K8s Secret (via ESO) | Pod image pulls | `model-serving-prod` |
-| 16 | `inference-tls` | `tls.crt` + `tls.key` | K8s Secret (via cert-manager) | AI Gateway TLS | `envoy-gateway-system` |
-| 17 | `letsencrypt-prod-account-key` | `tls.key` | K8s Secret (via cert-manager) | ACME account | `cert-manager` |
-| 18 | `letsencrypt-staging-account-key` | `tls.key` | K8s Secret (via cert-manager) | ACME account (staging) | `cert-manager` |
+| 6 | `argocd-image-updater-git` | `GITHUB_TOKEN` | K8s Secret (via ESO) | ArgoCD Image Updater | `argocd` |
+| 7 | `registry-credentials` | `.dockerconfigjson` | K8s Secret (via ESO) | Pod image pulls | `model-serving-prod` |
+| 8 | `letsencrypt-prod-account-key` | `tls.key` | K8s Secret (via cert-manager) | ACME account | `cert-manager` |
+| 9 | `letsencrypt-staging-account-key` | `tls.key` | K8s Secret (via cert-manager) | ACME account (staging) | `cert-manager` |
 
 ### Remote Secrets (in AWS Secrets Manager / Vault / GCP SM)
 
 | Remote Path | Description | Consumed By |
 |---|---|---|
-| `saas/openai-api-key` | OpenAI GPT-4 API key | ExternalSecret `saas-api-keys` |
-| `saas/anthropic-api-key` | Anthropic Claude API key | ExternalSecret `saas-api-keys` |
-| `saas/google-vertex-ai-key` | Google Vertex AI service account JSON | ExternalSecret `saas-api-keys` |
-| `saas/azure-openai-key` | Azure OpenAI API key | ExternalSecret `saas-api-keys` |
-| `saas/mistral-api-key` | Mistral AI API key | ExternalSecret `saas-api-keys` |
-| `saas/cohere-api-key` | Cohere API key | ExternalSecret `saas-api-keys` |
-| `saas/aws-bedrock-key` | AWS Bedrock access key | ExternalSecret `saas-api-keys` |
-| `alerting/pagerduty-service-key` | PagerDuty Events API v2 integration key | ExternalSecret `alertmanager-config` |
-| `alerting/slack-webhook-url` | Slack incoming webhook URL | ExternalSecret `alertmanager-config` |
 | `registry/github-pat` | GitHub PAT (for Image Updater + ghcr.io pull) | ExternalSecret `argocd-image-updater-token` + `registry-pull-secret` |
 | `registry/docker-username` | Docker Hub username | ExternalSecret `registry-pull-secret` |
 | `registry/docker-password` | Docker Hub password/token | ExternalSecret `registry-pull-secret` |
@@ -190,11 +168,11 @@ kubectl create secret generic argocd-notifications-secret \
 
 | AppSet File | AppSet Name | Entries | Sync Waves |
 |---|---|---|---|
-| `apps/argocd-appset-dev.yaml` | `model-serving-dev` | engine, gateway, secrets | 0, 1, -3 |
-| `apps/argocd-appset-staging.yaml` | `model-serving-staging` | engine, gateway, secrets | 0, 1, -3 |
-| `apps/argocd-appset-prod.yaml` | `model-serving-prod` | engine, gateway, secrets, 6 addons | 0, 1, -3, -2, -1 |
+| `apps/argocd-appset-dev.yaml` | `model-serving-dev` | engine, secrets | 0, -3 |
+| `apps/argocd-appset-staging.yaml` | `model-serving-staging` | engine, secrets | 0, -3 |
+| `apps/argocd-appset-prod.yaml` | `model-serving-prod` | engine, secrets, 5 addons | 0, -3, -2, -1 |
 
-**`model-serving-secrets` AppSet entry**: In all 3 AppSet files, the secrets entry deploys `apps/external-secrets.yaml` (path: `apps`, directory.include: `external-secrets.yaml`, sync-wave -3, ServerSideApply=true). This is the AppSet that creates the 4 ExternalSecrets + ClusterSecretStore.
+**`model-serving-secrets` AppSet entry**: In all 3 AppSet files, the secrets entry deploys `apps/external-secrets.yaml` (path: `apps`, directory.include: `external-secrets.yaml`, sync-wave -3, ServerSideApply=true). This is the AppSet that creates the 2 ExternalSecrets + ClusterSecretStore.
 
 ---
 
@@ -228,30 +206,15 @@ kubectl create secret generic argocd-notifications-secret \
 - **Google Secret Manager**: Change provider to `gcpsm`, set `projectID`
 - **Azure Key Vault**: Change provider to `azurekv`, set `vaultUrl`, configure service principal auth
 
-### 4.2 ExternalSecrets (4)
+### 4.2 ExternalSecrets (2)
 
 | ExternalSecret | Namespace | Target Secret | Keys | Remote Refs |
 |---|---|---|---|---|
-| `saas-api-keys` | `envoy-gateway-system` | `ai-gateway-saas-keys` | 7 SaaS API keys | `saas/openai-api-key`, `saas/anthropic-api-key`, `saas/google-vertex-ai-key`, `saas/azure-openai-key`, `saas/mistral-api-key`, `saas/cohere-api-key`, `saas/aws-bedrock-key` |
-| `alertmanager-config` | `monitoring` | `alertmanager-config` | `config.yaml` (templated with `{{ .pagerduty_key }}` and `{{ .slack_webhook }}`) | `alerting/pagerduty-service-key`, `alerting/slack-webhook-url` |
 | `argocd-image-updater-token` | `argocd` | `argocd-image-updater-git` | `GITHUB_TOKEN` | `registry/github-pat` |
 | `registry-pull-secret` | `model-serving-prod` | `registry-credentials` | `.dockerconfigjson` (docker registry config) | `registry/github-pat`, `registry/docker-username`, `registry/docker-password` |
 
 **How to create remote secrets in AWS Secrets Manager**:
 ```bash
-# SaaS API keys
-aws secretsmanager create-secret --name saas/openai-api-key --secret-string "sk-..."
-aws secretsmanager create-secret --name saas/anthropic-api-key --secret-string "sk-ant-..."
-aws secretsmanager create-secret --name saas/google-vertex-ai-key --secret-string '{"type":"service_account",...}'
-aws secretsmanager create-secret --name saas/azure-openai-key --secret-string "your-azure-key"
-aws secretsmanager create-secret --name saas/mistral-api-key --secret-string "your-mistral-key"
-aws secretsmanager create-secret --name saas/cohere-api-key --secret-string "your-cohere-key"
-aws secretsmanager create-secret --name saas/aws-bedrock-key --secret-string "your-bedrock-key"
-
-# Alerting
-aws secretsmanager create-secret --name alerting/pagerduty-service-key --secret-string "your-pagerduty-key"
-aws secretsmanager create-secret --name alerting/slack-webhook-url --secret-string "https://hooks.slack.com/services/T000/B000/XXX"
-
 # Registry
 aws secretsmanager create-secret --name registry/github-pat --secret-string "ghp_your_pat"
 aws secretsmanager create-secret --name registry/docker-username --secret-string "your-docker-hub-username"
@@ -266,31 +229,6 @@ kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-sec
 ```
 
 This URL is referenced in the header comment of `apps/external-secrets.yaml`.
-
----
-
-<a id="5-saas-llm"></a>
-## 5. SaaS LLM Fallback Providers (7)
-
-The AI Gateway uses these providers as fallback when self-hosted models are unavailable or latency exceeds 2000ms. Keys are pulled from the `ai-gateway-saas-keys` Secret (created by ExternalSecret `saas-api-keys`).
-
-| Provider | Secret Key | Remote Path | API Endpoint | Role |
-|---|---|---|---|---|
-| **OpenAI** (GPT-4) | `openai-gpt4-api-key` | `saas/openai-api-key` | `https://api.openai.com/v1` | Primary SaaS fallback (priority 1) |
-| **Anthropic** (Claude) | `anthropic-claude-api-key` | `saas/anthropic-api-key` | `https://api.anthropic.com/v1` | Alternative fallback |
-| **Google Vertex AI** | `google-vertex-ai-key` | `saas/google-vertex-ai-key` | `https://{REGION}-aiplatform.googleapis.com` | Alternative fallback |
-| **Azure OpenAI** | `azure-openai-api-key` | `saas/azure-openai-key` | `https://{RESOURCE}.openai.azure.com` | Alternative fallback |
-| **Mistral AI** | `mistral-api-key` | `saas/mistral-api-key` | `https://api.mistral.ai/v1` | Alternative fallback |
-| **Cohere** | `cohere-api-key` | `saas/cohere-api-key` | `https://api.cohere.ai/v1` | Alternative fallback |
-| **AWS Bedrock** | `aws-bedrock-api-key` | `saas/aws-bedrock-key` | `https://bedrock-runtime.{REGION}.amazonaws.com` | Alternative fallback |
-
-**Where to configure**:
-1. Create API keys on each provider's dashboard
-2. Store them in AWS Secrets Manager (or Vault/GCP SM) at the paths listed above
-3. ESO automatically syncs them into the `ai-gateway-saas-keys` Secret in `envoy-gateway-system`
-4. The AI Gateway chart references this Secret in its `fallback.saasBackends[].apiKeySecret` configuration
-
-**Where referenced in code**: `charts/ai-gateway/values.yaml` → `fallback.saasBackends[].apiKeySecret: ai-gateway-saas-keys`
 
 ---
 
@@ -337,6 +275,7 @@ The AI Gateway uses these providers as fallback when self-hosted models are unav
 
 ---
 
+<<<<<<< Updated upstream
 <a id="7-alerting"></a>
 ## 7. Alerting — PagerDuty and Slack
 
@@ -430,6 +369,8 @@ The Alertmanager config is NOT stored as a plain file — it is templated by ESO
 
 ---
 
+=======
+>>>>>>> Stashed changes
 <a id="9-lmcache"></a>
 ## 9. LMCache — Redis and S3 Backends
 
@@ -438,15 +379,15 @@ The Alertmanager config is NOT stored as a plain file — it is templated by ESO
 | Parameter | Value | Where Configured |
 |---|---|---|
 | `lmcache.redis.enabled` | `true` (prod) / `false` (staging, dev) | `environments/prod/values.yaml` |
-| `lmcache.redis.host` | `redis-cache.monitoring.svc.cluster.local` | `environments/prod/values.yaml` |
+| `lmcache.redis.host` | `redis-cache.model-serving-prod.svc.cluster.local` | `environments/prod/values.yaml` |
 | `lmcache.redis.port` | `6379` | `environments/prod/values.yaml` |
 
-**Where to deploy Redis**: Redis must be deployed separately (not included in this repo). Recommended: `bitnami/redis` Helm chart in the `monitoring` namespace.
+**Where to deploy Redis**: Redis must be deployed separately (not included in this repo). Recommended: `bitnami/redis` Helm chart in the `model-serving-prod` namespace.
 
 ```bash
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install redis-cache bitnami/redis \
-  --namespace monitoring \
+  --namespace model-serving-prod \
   --set architecture=standalone \
   --set auth.enabled=false \
   --set persistence.size=50Gi
@@ -463,7 +404,7 @@ helm install redis-cache bitnami/redis \
 
 **IAM permissions needed**: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the bucket.
 
-### 9.3 LMCache Observability
+### 9.3 LMCache Metrics
 
 | Parameter | Value | Where Configured |
 |---|---|---|
@@ -483,7 +424,6 @@ helm install redis-cache bitnami/redis \
 | ACME server | `https://acme-v02.api.letsencrypt.org/directory` | `addons/cert-manager/Chart.yaml` → ClusterIssuer `letsencrypt-prod` |
 | Email | `ops@example.com` | **REPLACE** with your operations email |
 | Account key secret | `letsencrypt-prod-account-key` | Auto-created by cert-manager |
-| HTTP01 solver ingress class | `envoy-gateway` | ClusterIssuer solver |
 | Default issuer | `letsencrypt-prod` | `addons/cert-manager/Chart.yaml` → `ingressShim.defaultIssuerName` |
 
 ### 10.2 Let's Encrypt Staging
@@ -497,41 +437,37 @@ helm install redis-cache bitnami/redis \
 **How to configure**:
 1. Replace `ops@example.com` with your real email in `addons/cert-manager/Chart.yaml`
 2. cert-manager automatically creates the ACME account and obtains certificates
-3. The AI Gateway chart creates a `Certificate` resource for `inference.example.com` → cert-manager produces the `inference-tls` Secret
 
 **External endpoint**: Let's Encrypt ACME API (no credentials needed — cert-manager handles the challenge automatically via HTTP01).
 
 ---
 
 <a id="11-keda"></a>
-## 11. KEDA — Prometheus Connection
+## 11. KEDA — Autoscaling Configuration
 
 | Parameter | Value | Where Configured |
 |---|---|---|
 | KEDA namespace | `keda-system` | `addons/keda/Chart.yaml` |
 | Watch namespaces | `model-serving-prod,model-serving-staging` | `addons/keda/Chart.yaml` → `watchNamespace` |
-| Prometheus address | `http://prometheus-server.monitoring.svc.cluster.local:9090` | `environments/{prod,staging}/values.yaml` → `autoscaling.keda.prometheusAddress` |
 | Polling interval | `15` (seconds) | `environments/{prod,staging}/values.yaml` → `autoscaling.keda.pollingInterval` |
 | Cooldown period | `60` (seconds) | `environments/{prod,staging}/values.yaml` → `autoscaling.keda.cooldownPeriod` |
 | Queue depth threshold | `5` | `vllm:num_requests_waiting > 5` triggers scale-out |
 | Cache usage threshold | `0.85` | `vllm:gpu_cache_usage_perc > 0.85` triggers scale-out |
 
-**No external credentials needed** — KEDA connects to the in-cluster Prometheus via HTTP.
+**No external credentials needed** — KEDA scales based on in-cluster vLLM metrics.
 
 ---
 
 <a id="12-nvidia"></a>
-## 12. NVIDIA GPU Operator — DCGM Exporter
+## 12. NVIDIA GPU Operator
 
 | Parameter | Value | Where Configured |
 |---|---|---|
 | Helm repo | `https://nvidia.github.io/gpu-operator` | `addons/nvidia-gpu-operator/Chart.yaml` |
 | Chart version | `v24.9.0` | `addons/nvidia-gpu-operator/Chart.yaml` |
-| DCGM metrics port | `9400` | Auto-configured by GPU Operator |
-| DCGM metrics path | `/metrics` | Auto-configured, scraped via DCGM's own ServiceMonitor |
 | Node label | `nvidia.com/gpu.present=true` | Must be applied to GPU nodes (auto-labeled by GPU Operator with NFD) |
 
-**No external credentials needed** — the GPU Operator runs inside the cluster and manages NVIDIA drivers/toolkit/DCGM automatically.
+**No external credentials needed** — the GPU Operator runs inside the cluster and provisions GPU nodes automatically.
 
 **Node labeling**: The GPU Operator's Node Feature Discovery (NFD) automatically labels GPU nodes with `nvidia.com/gpu.present=true`. This label is used by:
 - `model-serving-engine` nodeSelector
@@ -660,17 +596,17 @@ These are TOML config values (not env vars), but documented here for completenes
 | `local_cpu.num_cpus` | `4` (prod) / `2` (staging) | CPU workers for L1 |
 | `local_disk.path` | `/var/lib/lmcache` | L2 NVMe path |
 | `local_disk.max_size` | `200GiB` (prod) / `100GiB` (staging) | L2 max disk usage |
-| `redis.host` | `redis-cache.monitoring.svc.cluster.local` | L3 Redis host (prod only) |
+| `redis.host` | `redis-cache.model-serving-prod.svc.cluster.local` | L3 Redis host (prod only) |
 | `redis.port` | `6379` | L3 Redis port |
 | `s3.endpoint` | (not set by default) | L3 S3 endpoint |
 | `s3.bucket` | (not set by default) | L3 S3 bucket |
 | `s3.region` | `us-east-1` | L3 S3 region |
-| `observability.metrics_port` | `8330` | Prometheus metrics port |
+| `metrics.port` | `8330` | Metrics port |
 
 ---
 
 <a id="16-helm-repos"></a>
-## 16. Helm Repository URLs (6)
+## 16. Helm Repository URLs (5)
 
 These are external Helm chart repositories referenced by the addon ArgoCD Applications. No credentials needed — all are public.
 
@@ -678,7 +614,6 @@ These are external Helm chart repositories referenced by the addon ArgoCD Applic
 |---|---|---|---|
 | NVIDIA GPU Operator | `https://nvidia.github.io/gpu-operator` | `gpu-operator` | `v24.9.0` |
 | Longhorn | `https://charts.longhorn.io` | `longhorn` | `1.7.2` |
-| Prometheus Stack | `https://prometheus-community.github.io/helm-charts` | `kube-prometheus-stack` | `65.5.0` |
 | KEDA | `https://kedacore.github.io/charts` | `keda` | `2.16.0` |
 | External Secrets | `https://charts.external-secrets.io` | `external-secrets` | `0.10.0` |
 | cert-manager | `https://charts.jetstack.io` | `cert-manager` | `v1.16.0` |
@@ -687,7 +622,6 @@ These are external Helm chart repositories referenced by the addon ArgoCD Applic
 ```bash
 helm repo add nvidia https://nvidia.github.io/gpu-operator
 helm repo add longhorn https://charts.longhorn.io
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add kedacore https://kedacore.github.io/charts
 helm repo add external-secrets https://charts.external-secrets.io
 helm repo add jetstack https://charts.jetstack.io
@@ -706,11 +640,10 @@ The sync waves determine the order in which ArgoCD applies resources. Secrets mu
 | `-11` | ArgoCD repo credentials | GitHub PAT | Replace `<GITHUB_PAT_TOKEN>` in `apps/argocd-repo-credentials.yaml` |
 | `-11` | ArgoCD notifications | Slack webhook + PagerDuty key | Replace placeholders in `apps/argocd-notifications.yaml` |
 | `-10` | AppProjects | None | Auto-applied |
-| `-3` | ExternalSecrets | AWS SM secrets must exist | Create 11 remote secrets in AWS SM (see §4.2) |
+| `-3` | ExternalSecrets | AWS SM secrets must exist | Create 3 remote secrets in AWS SM (see §4.2) |
 | `-2` | Longhorn + swapoff DaemonSet | None | Auto-applied |
-| `-1` | GPU Operator, Prometheus, KEDA, cert-manager, ESO | AWS IAM role for ESO (IRSA) | Configure IAM role + service account annotation |
+| `-1` | GPU Operator, KEDA, cert-manager, ESO | AWS IAM role for ESO (IRSA) | Configure IAM role + service account annotation |
 | `0` | Model-serving StatefulSets | `registry-credentials` Secret (via ESO) | ESO creates it at wave -3 |
-| `1` | AI Gateway, ServiceMonitor, Grafana | `ai-gateway-saas-keys` Secret (via ESO), `inference-tls` (via cert-manager) | ESO creates SaaS keys at -3; cert-manager creates TLS at -1 |
 | `2+` | Smoke tests, notifications | None | Auto-applied |
 
 ### One-Time Manual Setup (before first ArgoCD sync)
@@ -719,37 +652,33 @@ The sync waves determine the order in which ArgoCD applies resources. Secrets mu
 # 1. Create GitHub PAT (see §2.2)
 
 # 2. Create AWS IAM role for ESO (IRSA)
-#    Attach policy with secretsmanager:GetSecretValue for all 11 secrets
+#    Attach policy with secretsmanager:GetSecretValue for all 3 secret paths listed in §4.2
 #    Annotate the model-serving-engine service account:
 #    eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/model-serving-eso
 
-# 3. Create 11 remote secrets in AWS Secrets Manager (see §4.2)
+# 3. Create 3 remote secrets in AWS Secrets Manager (see §4.2)
 
-# 4. Create Slack webhook (see §7.2)
-# 5. Create PagerDuty integration key (see §7.1)
+# 4. Set up Slack webhook and PagerDuty integration key (used by ArgoCD notifications, see §3.3)
 
-# 6. Replace placeholders in ArgoCD credential files
+# 5. Replace placeholders in ArgoCD credential files
 sed -i 's/<GITHUB_PAT_TOKEN>/ghp_your_real_token/' apps/argocd-repo-credentials.yaml
 sed -i 's/<SLACK_WEBHOOK_URL>/https:\/\/hooks.slack.com\/services\/T000\/B000\/XXX/' apps/argocd-notifications.yaml
 sed -i 's/<PAGERDUTY_INTEGRATION_KEY>/your_integration_key/' apps/argocd-notifications.yaml
 
-# 7. Replace email in cert-manager
+# 6. Replace email in cert-manager
 sed -i 's/ops@example.com/your-real-email@company.com/' addons/cert-manager/Chart.yaml
 
-# 8. Replace Grafana admin password
-sed -i 's/admin123/your-secure-password/' addons/prometheus-stack/Chart.yaml
-
-# 9. Apply repo credentials first
+# 7. Apply repo credentials first
 kubectl apply -f apps/argocd-repo-credentials.yaml
 kubectl apply -f apps/argocd-notifications.yaml
 
-# 10. Apply AppProjects
+# 8. Apply AppProjects
 kubectl apply -f apps/argocd-appprojects.yaml
 
-# 11. Apply ExternalSecrets (AWS SM secrets must already exist)
+# 9. Apply ExternalSecrets (AWS SM secrets must already exist)
 kubectl apply -f apps/external-secrets.yaml
 
-# 12. Apply AppSets (this triggers the full deployment)
+# 10. Apply AppSets (this triggers the full deployment)
 kubectl apply -f apps/argocd-appset-dev.yaml
 kubectl apply -f apps/argocd-appset-staging.yaml
 kubectl apply -f apps/argocd-appset-prod.yaml
@@ -765,46 +694,15 @@ After all secrets and connections are configured, verify each integration:
 | # | Check | Command | Expected Result |
 |---|---|---|---|
 | 1 | ArgoCD repo connection | `argocd repo list` | `rustnew/custom-ai-ops` shows `CONNECTION OK` |
-| 2 | ExternalSecrets synced | `kubectl get externalsecrets -A` | All 4 show `READY=True` |
-| 3 | SaaS keys Secret exists | `kubectl get secret ai-gateway-saas-keys -n envoy-gateway-system` | Secret found with 7 keys |
-| 4 | Alertmanager config exists | `kubectl get secret alertmanager-config -n monitoring` | Secret found with `config.yaml` key |
-| 5 | Registry pull secret exists | `kubectl get secret registry-credentials -n model-serving-prod` | Secret found, type `kubernetes.io/dockerconfigjson` |
-| 6 | TLS certificate issued | `kubectl get certificate inference-tls -n envoy-gateway-system` | `READY=True` |
-| 7 | Prometheus scraping vLLM | `kubectl port-forward svc/prometheus-server 9090:9090 -n monitoring` then open `/targets` | vLLM target shows `UP` |
-| 8 | KEDA ScaledObject active | `kubectl get scaledobject -n model-serving-prod` | `READY=True`, `ACTIVE=True` |
-| 9 | LMCache daemon running | `kubectl get ds -n model-serving-prod` | `lmcache` DaemonSet shows desired=pod count |
-| 10 | GPU nodes labeled | `kubectl get nodes -l nvidia.com/gpu.present=true` | GPU nodes listed |
-| 11 | Slack notification received | Trigger a sync in ArgoCD | Message appears in `#ml-ops` Slack channel |
-| 12 | PagerDuty alert received | Trigger a critical Prometheus alert | Incident created in PagerDuty |
-| 13 | Longhorn storage classes | `kubectl get storageclass` | `longhorn` and `longhorn-rwx` listed |
-| 14 | Grafana dashboard loaded | Open Grafana → Dashboards | `model-serving` dashboard with 18 panels visible |
-| 15 | Redis connectivity (prod) | `kubectl exec -it <lmcache-pod> -n model-serving-prod -- nc -zv redis-cache.monitoring 6379` | Connection successful |
-
----
-
-<a id="19-http-headers"></a>
-## 19. HTTP Headers — Gateway Conventions
-
-These are HTTP header names (not env vars or secrets) used by the AI Gateway for routing and rate limiting. Clients must send them; the gateway reads them.
-
-| Header | Purpose | Where Used | Required? |
-|---|---|---|---|
-| `x-api-key` | Rate limiting key — BackendTrafficPolicy limits 50 req/s per unique `x-api-key` value | `charts/ai-gateway/templates/backend-traffic-policy.yaml` | Yes (for rate limiting to work) |
-| `x-sticky-session-key` | Sticky routing — HTTPRoute RequestHeaderModifier reads this to route to the same backend pod | `charts/ai-gateway/templates/httproute.yaml` | No (only for sticky routing) |
-| `x-cache-affinity-key` | Cache-aware routing — Lua FNV-1a hash of request prefix, used by ConsistentHash LB to route to the pod holding the KV cache | `charts/ai-gateway/templates/cache-routing-policy.yaml` + `backend-traffic-policy.yaml` | No (injected by gateway Lua filter) |
-| `x-rag-version` | Cache invalidation — bump this value when RAG corpus changes to invalidate prefix cache entries | `charts/model-serving-engine/templates/cache-invalidation-configmap.yaml` | No (only when RAG is used) |
-
-**How clients use them**:
-```bash
-# Rate limiting (required for all requests)
-curl -H "x-api-key: customer-123" https://inference.example.com/v1/chat/completions ...
-
-# Sticky routing (optional, for session affinity)
-curl -H "x-api-key: customer-123" -H "x-sticky-session-key: session-abc" https://...
-
-# RAG version (optional, bump when knowledge base changes)
-curl -H "x-api-key: customer-123" -H "x-rag-version: v2.1" https://...
-```
+| 2 | ExternalSecrets synced | `kubectl get externalsecrets -A` | Both ExternalSecrets show `READY=True` |
+| 3 | Registry pull secret exists | `kubectl get secret registry-credentials -n model-serving-prod` | Secret found, type `kubernetes.io/dockerconfigjson` |
+| 4 | cert-manager ClusterIssuers | `kubectl get clusterissuer` | `letsencrypt-prod` and `letsencrypt-staging` show `READY=True` |
+| 5 | KEDA ScaledObject active | `kubectl get scaledobject -n model-serving-prod` | `READY=True`, `ACTIVE=True` |
+| 6 | LMCache daemon running | `kubectl get ds -n model-serving-prod` | `lmcache` DaemonSet shows desired=pod count |
+| 7 | GPU nodes labeled | `kubectl get nodes -l nvidia.com/gpu.present=true` | GPU nodes listed |
+| 8 | Slack notification received | Trigger a sync in ArgoCD | Message appears in `#ml-ops` Slack channel |
+| 9 | Longhorn storage classes | `kubectl get storageclass` | `longhorn` and `longhorn-rwx` listed |
+| 10 | Redis connectivity (prod) | `kubectl exec -it <lmcache-pod> -n model-serving-prod -- nc -zv redis-cache.model-serving-prod 6379` | Connection successful |
 
 ---
 
