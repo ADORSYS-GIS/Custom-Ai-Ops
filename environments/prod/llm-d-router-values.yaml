@@ -6,8 +6,8 @@ proxy:
   replicaCount: 3  # 3 replicas for production HA
   
   image:
-    repository: ghcr.io/llm-d/proxy
-    tag: v0.3.0
+    repository: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    tag: v0.9.0
     pullPolicy: IfNotPresent
   
   service:
@@ -75,8 +75,8 @@ epp:
   replicaCount: 3  # 3 replicas for production HA
   
   image:
-    repository: ghcr.io/llm-d/endpoint-picker
-    tag: v0.3.0
+    repository: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    tag: v0.9.0
     pullPolicy: IfNotPresent
   
   service:
@@ -142,7 +142,7 @@ epp:
       - name: version-check
         enabled: true
         config:
-          allowedVersions: ["v0.6.0", "v0.6.1", "v0.6.2", "v0.6.3"]
+          allowedVersions: ["v0.23.0"]
     
     selector:
       strategy: weighted

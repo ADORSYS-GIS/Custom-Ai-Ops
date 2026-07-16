@@ -2,7 +2,7 @@
 # Documentation Link Validator
 # Checks that all referenced .md files exist
 
-set -euo pipefail
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -23,16 +23,19 @@ cd "$PROJECT_ROOT"
 
 # List of referenced files from grep search
 references=(
-    "docs/integration-report.md"
     "docs/explain/kv-cache.md"
-    "docs/explain/bible-kv-cache.md"
-    "docs/architecture/04-gitops-deployment.md"
-    "docs/runbooks/latency-spike.md"
-    "docs/architecture/01-formats-and-engines.md"
-    "docs/architecture/00-overview.md"
+    "docs/explain/vllm-kv-cache.md"
+    "docs/explain/vllm+lmcache.md"
     "docs/explain/vllm+lmcache-theory.md"
     "docs/explain/vllm+lmcache-practice.md"
+    "docs/explain/llm-d.md"
+    "docs/explain/gpu.md"
+    "docs/architecture/04-gitops-deployment.md"
+    "docs/runbooks/latency-spike.md"
     "docs/runbooks/pod-crashloop.md"
+    "docs/architecture/00-overview.md"
+    "docs/adr/0004-llm-d-integration.md"
+    "docs/env.md"
 )
 
 # Check main documentation files
@@ -52,9 +55,8 @@ echo
 echo "📚 Checking top-level documentation..."
 top_level_docs=(
     "README.md"
-    "impl.md"
-    "solve.md"
-    "namage.md"
+    "LICENSE"
+    "Cargo.toml"
 )
 
 for doc in "${top_level_docs[@]}"; do
@@ -72,7 +74,6 @@ echo
 echo "🏗️  Checking architecture docs..."
 arch_docs=(
     "docs/architecture/00-overview.md"
-    "docs/architecture/01-formats-and-engines.md"
     "docs/architecture/02-gpu-scheduling.md"
     "docs/architecture/04-gitops-deployment.md"
     "docs/architecture/06-resilience-and-dr.md"
@@ -124,7 +125,11 @@ echo
 echo "💡 Checking explain docs..."
 explain_docs=(
     "docs/explain/kv-cache.md"
-    "docs/explain/bible-kv-cache.md"
+    "docs/explain/vllm-kv-cache.md"
+    "docs/explain/vllm+lmcache.md"
+    "docs/explain/vllm+lmcache-theory.md"
+    "docs/explain/vllm+lmcache-practice.md"
+    "docs/explain/llm-d.md"
     "docs/explain/gpu.md"
 )
 

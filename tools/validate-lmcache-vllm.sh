@@ -172,7 +172,7 @@ for env in dev staging prod; do
     echo "  Checking $env environment:"
     
     for arg in "${critical_args[@]}"; do
-        if grep -q "$arg" "$values_file"; then
+        if grep -q -e "$arg" "$values_file"; then
             echo -e "    ${GREEN}✓${NC} $arg present"
         else
             echo -e "    ${RED}✗${NC} $arg missing"
@@ -192,8 +192,8 @@ for env in dev staging prod; do
     echo "  Checking $env environment:"
     
     # Extract resources from values file
-    cpu_requests=$(grep -A 10 "vllm:" "$values_file" | grep -A 5 "requests:" | grep "cpu:" | head -1 | awk '{print $2}' | tr -d '"')
-    cpu_limits=$(grep -A 10 "vllm:" "$values_file" | grep -A 5 "limits:" | grep "cpu:" | head -1 | awk '{print $2}' | tr -d '"')
+    cpu_requests=$(grep -A 40 "vllm:" "$values_file" | grep -A 5 "requests:" | grep "cpu:" | head -1 | awk '{print $2}' | tr -d '"')
+    cpu_limits=$(grep -A 40 "vllm:" "$values_file" | grep -A 5 "limits:" | grep "cpu:" | head -1 | awk '{print $2}' | tr -d '"')
     
     if [[ "$cpu_requests" == "$cpu_limits" ]]; then
         echo -e "    ${GREEN}✓${NC} CPU QoS Guaranteed (requests=$cpu_requests == limits=$cpu_limits)"
