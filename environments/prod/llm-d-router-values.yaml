@@ -14,10 +14,6 @@ proxy:
     type: ClusterIP
     port: 8080
     targetPort: 8080
-    annotations:
-      prometheus.io/scrape: "true"
-      prometheus.io/port: "9090"
-      prometheus.io/path: "/metrics"
   
   resources:
     requests:
@@ -34,8 +30,6 @@ proxy:
     - name: LOG_LEVEL
       value: "info"
     - name: ENABLE_METRICS
-      value: "true"
-    - name: ENABLE_TRACING
       value: "true"
     - name: ENABLE_ACCESS_LOG
       value: "true"
@@ -90,10 +84,6 @@ epp:
     port: 8081
     targetPort: 8081
     metricsPort: 9091
-    annotations:
-      prometheus.io/scrape: "true"
-      prometheus.io/port: "9091"
-      prometheus.io/path: "/metrics"
   
   resources:
     requests:
@@ -172,8 +162,6 @@ epp:
       value: "vllm-prod-pool"
     - name: ENABLE_METRICS
       value: "true"
-    - name: ENABLE_TRACING
-      value: "true"
     - name: CACHE_AWARE_ROUTING
       value: "true"
     - name: SCORING_INTERVAL_MS
@@ -228,50 +216,6 @@ podDisruptionBudget:
     minAvailable: 2  # Keep at least 2 proxy pods during disruptions
   epp:
     minAvailable: 2  # Keep at least 2 EPP pods during disruptions
-
-# Monitoring configuration
-monitoring:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-    interval: 15s
-    scrapeTimeout: 10s
-  
-  # Grafana dashboard
-  grafana:
-    enabled: true
-    dashboardConfigMap: llm-d-router-dashboard
-  
-  # Alerting rules
-  prometheusRule:
-    enabled: true
-    rules:
-      - alert: LLMDRouterHighLatency
-        expr: histogram_quantile(0.99, rate(llm_d_proxy_latency_seconds_bucket[5m])) > 1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "llm-d Router high latency"
-          description: "P99 latency is above 1s for 5 minutes"
-      
-      - alert: LLMDEPPHighScoringDuration
-        expr: histogram_quantile(0.99, rate(llm_d_epp_scoring_duration_seconds_bucket[5m])) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "llm-d EPP high scoring duration"
-          description: "P99 scoring duration is above 100ms for 5 minutes"
-      
-      - alert: LLMDCacheHitRateLow
-        expr: llm_d_epp_cache_hit_rate < 0.5
-        for: 10m
-        labels:
-          severity: info
-        annotations:
-          summary: "llm-d cache hit rate low"
-          description: "Cache hit rate is below 50% for 10 minutes"
 
 # Security configuration
 securityContext:

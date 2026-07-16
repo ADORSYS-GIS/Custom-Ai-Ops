@@ -406,18 +406,6 @@ spec:
         - protocol: TCP
           port: 9090  # Metrics
     
-    # Allow from Prometheus (metrics scraping)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-          podSelector:
-            matchLabels:
-              app: prometheus
-      ports:
-        - protocol: TCP
-          port: 9090
-  
   egress:
     # Allow vLLM to communicate with LMCache daemon (same node, hostIPC)
     - to:

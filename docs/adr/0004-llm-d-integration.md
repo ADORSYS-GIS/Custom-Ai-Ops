@@ -61,7 +61,7 @@ Integrate llm-d into the platform in 5 phases:
 | `charts/ai-gateway/` | HTTPRoute targets InferencePool when llm-d enabled; BackendTrafficPolicy uses RoundRobin (EPP handles routing) |
 | `environments/` | dev (disabled), staging (Phase 1 EPP), prod (Phase 2 + indexer) |
 | `apps/` | ApplicationSets for llm-d in dev/staging/prod |
-| `observability/` | EPP routing alerts, KV-Cache Indexer alerts, disaggregation alerts, Grafana dashboard |
+| N/A (observability removed) | EPP routing, KV-Cache Indexer, and disaggregation use built-in metrics |
 
 ## SSM/Mamba Consideration
 
@@ -72,7 +72,7 @@ SSM/Mamba models use fixed-size recurrent state, not paginable KV-cache. The eng
 1. **CNCF Sandbox instability**: llm-d APIs (InferencePool CRD, EPP plugin interface) may have breaking changes. Mitigated by isolating llm-d behind feature flags (`llmD.enabled: false` by default in dev).
 2. **RDMA requirement**: Phases 4-5 require InfiniBand/NVLink. Ensure GPU node pool labels distinguish RDMA-capable nodes.
 3. **KV-Cache Indexer SPOF**: The indexer is a new critical component. Mitigated by PDB, multiple replicas in prod, and alerts on availability.
-4. **Increased operational complexity**: Additional components to monitor and debug. Mitigated by comprehensive observability (14 new alerts, dedicated Grafana dashboard).
+4. **Increased operational complexity**: Additional components to monitor and debug. Components provide built-in metrics endpoints.
 
 ## Consequences
 

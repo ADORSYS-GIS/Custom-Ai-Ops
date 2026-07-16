@@ -20,6 +20,9 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 =======
 ![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Helm%20Charts-2-blue.svg?logo=helm)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 ---
@@ -45,6 +48,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 ![CUDA](https://img.shields.io/badge/CUDA-12.4+-76B900.svg?logo=nvidia)
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 #### Gateway & API
 
 ![Envoy AI Gateway](https://img.shields.io/badge/Envoy%20AI%20Gateway-latest-AC6191.svg?logo=envoy)
@@ -55,18 +59,6 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 ![llm-d](https://img.shields.io/badge/llm--d-CNCf%20Sandbox-5673CE.svg?logo=kubernetes)
 ![EPP](https://img.shields.io/badge/EPP-Cache%20Aware%20Routing-5673CE.svg)
 
-#### Observability (LGTM Stack)
-
-![Prometheus](https://img.shields.io/badge/Prometheus-2.50+-E6522C.svg?logo=prometheus)
-![Grafana](https://img.shields.io/badge/Grafana-10.4+-F46800.svg?logo=grafana)
-![Loki](https://img.shields.io/badge/Loki-3.0+-F8A900.svg?logo=grafana)
-![Tempo](https://img.shields.io/badge/Tempo-2.5+-29D4A8.svg?logo=grafana)
-![Mimir](https://img.shields.io/badge/Mimir-2.12+-F8A900.svg?logo=grafana)
-![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.0+-425EEA.svg?logo=opentelemetry)
-![Alertmanager](https://img.shields.io/badge/Alertmanager-0.27+-E6522C.svg?logo=prometheus)
-
-=======
->>>>>>> Stashed changes
 #### Storage & Registry
 
 ![Longhorn](https://img.shields.io/badge/Longhorn-1.6+-0F1689.svg?logo=helm)
@@ -112,9 +104,7 @@ A highly resilient, long-term, multi-format ML model serving platform with tripl
 - [Sync Waves](#sync-waves)
 - [Model Registry](#model-registry)
 - [KV Cache Management](#kv-cache-management)
-<<<<<<< Updated upstream
-- [llm-d Integration](#llm-d-integration)
-- [Observability](#observability)
+- [llm-d: Intelligent Request Routing (MVP)](#llm-d-intelligent-request-routing-mvp)
 =======
 - [llm-d: Intelligent Request Routing (MVP)](#llm-d-intelligent-request-routing-mvp)
 >>>>>>> Stashed changes
@@ -385,12 +375,15 @@ Custom-Ai-Ops/
 │   │                               # (security context, probes, volumes, tolerations)
 │   ├── model-serving-engine/       # Unified vLLM engine chart
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     │   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
     │   │                               #  PVC, seed-job, swapoff DaemonSet, ServiceMonitor)
     │   └── ai-gateway/                 # Envoy AI Gateway (HTTPRoute, BackendTrafficPolicy,
                                     #  rate limiting, payload validation, sticky routing, secrets)
 │   └── llm-d/                        # llm-d middleware (EPP router, KV-Cache Indexer, InferencePool CRD)
 =======
+=======
+>>>>>>> Stashed changes
 │   │                               # (StatefulSet, KEDA ScaledObject, PDB, NetworkPolicy,
 │   │                               #  PVC, seed-job, swapoff DaemonSet)
 │   ├── llm-d-infrastructure/       # Gateway API + GAIE CRDs installation
@@ -399,6 +392,9 @@ Custom-Ai-Ops/
 │   └── llm-d-router/               # llm-d Router (Proxy + Endpoint Picker)
 │                                   # (Deployments, Services, ConfigMap, RBAC,
 │                                   #  cache-aware routing configuration)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 │
 ├── environments/                    # Environment-specific configurations
@@ -409,6 +405,7 @@ Custom-Ai-Ops/
 │   │   └── llm-d-router-values.yaml # Router configuration for dev
 │   ├── staging/                     # 1-2 replicas, longhorn 50Gi, autoscaling on
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 │   ├── prod/                        # 2-4 replicas, longhorn 100Gi, PDB, topology spread
 │   ├── dev/llm-d/                   # llm-d chart values for dev (disabled)
 │   ├── staging/llm-d/               # llm-d chart values for staging (Phase 1: EPP only)
@@ -417,6 +414,8 @@ Custom-Ai-Ops/
 │   ├── staging/ai-gateway/          # ai-gateway values for staging (llm-d enabled, InferencePool)
 │   └── prod/ai-gateway/             # ai-gateway values for prod (llm-d enabled, InferencePool)
 =======
+=======
+>>>>>>> Stashed changes
 │   │   ├── values.yaml              # vLLM configuration for staging
 │   │   ├── llm-d-inferencepool.yaml # InferencePool CRD for staging
 │   │   ├── llm-d-gateway.yaml       # Gateway + HTTPRoute + InferenceObjective
@@ -426,6 +425,9 @@ Custom-Ai-Ops/
 │       ├── llm-d-inferencepool.yaml # InferencePool CRD for production
 │       ├── llm-d-gateway.yaml       # Gateway + HTTPRoute + InferenceObjective + NetworkPolicy
 │       └── llm-d-router-values.yaml # Router configuration for production
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 │
 ├── apps/                            # GitOps application manifests (empty - see apps/README.md)
@@ -438,16 +440,7 @@ Custom-Ai-Ops/
 │   ├── external-secrets/           # External Secrets Operator (CRDs + controller) — wave -1
 │   └── cert-manager/               # cert-manager + 2 ClusterIssuers (Let's Encrypt) — wave -1
 │
-<<<<<<< Updated upstream
-├── observability/                   # Monitoring and alerting
-│   ├── envoy-gateway-config.yaml    # HTTPRoute + BackendTrafficPolicy + HealthCheckPolicy
-│   ├── prometheus-anomaly-rules.yaml # 6 rule groups: latency, errors, GPU, pods, anomaly, kv-cache
-│   ├── llm-d-alert-rules.yaml        # llm-d alerts: EPP routing, KV-Cache Indexer, disaggregation, InferencePool
-│   ├── alertmanager-routes.yaml         # Alert routing: critical→PagerDuty+Slack, warning→Slack
-│   └── grafana-dashboards/          # DCGM dashboard + model-serving dashboard + llm-d dashboard
-│
-=======
->>>>>>> Stashed changes
+
 ├── models/                          # Model registry and per-model documentation
 │   ├── registry.yaml                # Declarative registry (2 models, llm-d integration metadata)
 │   └── registry/                    # Per-model documentation directory
@@ -486,6 +479,9 @@ Custom-Ai-Ops/
 │   │   ├── 0001-multi-format-architecture.md
 │   │   ├── 0003-separate-engine-charts.md
 │   │   └── 0004-llm-d-not-implemented.md
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 │   ├── runbooks/                    # Incident response procedures
 │   │   ├── gpu-node-failure.md      #   Cordon/drain, ECC/Xid/temp checks
@@ -641,94 +637,9 @@ If FP8 on Ampere  →  deployment BLOCKED (no native FP8 support)
 ---
 
 <<<<<<< Updated upstream
-## Observability
-
-### Health Checking
-
-- Active health-checking at the Envoy AI Gateway level (`GET /health` endpoint)
-- Immediate failover to fallback backend if latency > 2000ms
-- Priority routing (priority 0 → priority 1) with circuit breaker (Prioritized)
-- Retry on 502/503/504 (2 attempts)
-- **Rate limiting**: 50 req/s per API key (HTTP 429 on excess) — protects KV cache from request floods
-- **Payload validation**: max body size 4MiB (HTTP 413), required fields enforced (HTTP 400)
-- **Sticky routing**: `x-sticky-session-key` header routes same-prefix requests to same replica (maximizes prefix cache hits)
-- **Aggressive timeouts**: request 10s / backendRequest 8s — prevents KV cache thrashing from queued requests
-
-### Monitoring Stack (LGTM)
-
-| Layer | Tool | Purpose |
-|---|---|---|
-| Metrics | Prometheus + Mimir | Long-term metric storage (2-year retention) |
-| Logs | Loki | Log aggregation (low storage cost) |
-| Traces | Tempo + OpenTelemetry | Distributed tracing |
-| Dashboards | Grafana | Unified visualization |
-| GPU Metrics | DCGM Exporter | GPU utilization, memory, temperature, ECC errors |
-| vLLM Metrics | ServiceMonitor | Scrapes vLLM `/metrics` every 10s (KV cache, queue, prefix cache, TTFT) |
-| Collection | Grafana Alloy | Single agent for metrics + logs + traces |
-
-### Grafana Dashboards
-
-| Dashboard | Panels |
-|---|---|
-| `nvidia-dcgm-dashboard.json` | GPU health (temperature, utilization, memory, ECC) |
-| `vllm-dashboard.json` | Request rate, P95 latency, error rate, tokens/s, OOM kills, **KV cache usage (%)**, **prefix cache hit rate (%)**, **request queue depth**, **TTFT (p95+p50)**, **KV cache swap-out blocks**, **GPU VRAM usage (DCGM)**, **LMCache L1/L2/L3 hit rates**, **prefill skip rate**, **cache ROI estimate ($/h)**, **cache affinity routing distribution** — **18 panels total** |
-
-### Alerting Rules
-
-| Category | Alert | Condition | Severity |
-|---|---|---|---|
-| Latency | HighLatency | p95 > 2s for 3m | Warning |
-| Latency | CriticalLatency | p99 > 5s for 2m | Critical |
-| Errors | HighErrorRate | > 5% for 5m | Warning |
-| Errors | CriticalErrorRate | > 15% for 3m | Critical |
-| GPU | GPUThermalThrottle | > 85°C | Critical |
-| GPU | GPUUtilizationLow | < 10% for 30m | Warning |
-| GPU | GPUMemoryNearExhaustion | > 95% for 2m | Critical |
-| GPU | GPUEccErrors | > 100/h | Critical |
-| Pods | CrashLooping | restarts > 3/h | Warning |
-| Pods | NotReady | 10m | Warning |
-| Anomaly | LatencyAnomaly | deriv > 0.1 for 10m | Warning |
-| Anomaly | ThroughputAnomaly | deriv < -0.5 for 10m | Warning |
-| KV Cache | VLLMKVCacheUsageHigh | `vllm:gpu_cache_usage_perc` > 0.85 for 30s | Warning |
-| KV Cache | VLLMKVCacheUsageCritical | `vllm:gpu_cache_usage_perc` >= 1.0 | Critical |
-| KV Cache | VLLMRequestsWaitingHigh | `vllm:num_requests_waiting` > 10 for 1m | Critical |
-| KV Cache | VLLMSwapOutBlocksDetected | `increase(vllm:swap_out_blocks[5m])` > 0 | Critical |
-| KV Cache | NodeSwapSpaceUsageHigh | swap usage > 10% for 2m | Critical |
-| KV Cache | VLLMPrefixCacheHitRateLow | prefix cache hit < 20% for 10m | Warning |
-| KV Cache | LMCacheL1HitRateLow | L1 CPU hit < 30% for 10m | Warning |
-| KV Cache | LMCacheL2HitRateLow | L2 NVMe hit < 20% for 15m | Warning |
-| KV Cache | LMCacheL3HitRateLow | L3 Redis/S3 hit < 10% for 15m | Warning |
-| KV Cache | SSMModelPagedAttentionMisconfigured | SSM pod with PagedAttention args | Critical |
-| KV Cache | VLLMPrefillSkipRateLow | prefill skip < 10% while queue busy | Info |
-| KV Cache | CacheRoutingHeaderAbsent | `x-cache-affinity-key` missing during traffic | Info |
-
-### Alert Routing
-
-- **Critical** → PagerDuty + Slack `#ml-incidents`
-- **Warning** → Slack `#ml-ops`
-- **GPU** → Slack `#gpu-ops`
-- **Serving** → Slack `#ml-ops`
-- Inhibit: critical suppresses warning for same alert
-
----
-
 ## KV Cache Management
 
-The platform implements an **8-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/vllm-kv-cache.md`](docs/explain/vllm-kv-cache.md). Each layer protects the KV cache from a different failure mode.
-
-### Layer 1 — API Gateway (Edge Protection)
-
-| Mechanism | Implementation | Failure Mode Prevented |
-|---|---|---|
-| Payload validation | `HTTPRouteFilter` maxBodySize 4MiB → HTTP 413 | Oversized payloads polluting KV cache |
-| Rate limiting | `BackendTrafficPolicy` 50 req/s per `x-api-key` → HTTP 429 | Request floods overwhelming KV cache |
-| Sticky routing | `x-sticky-session-key` header → same replica | Prefix cache misses from random routing |
-| Aggressive timeouts | request 10s / backendRequest 8s | Queue thrashing from slow requests |
-=======
-## KV Cache Management
-
-The platform implements an **5-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md) and [`docs/explain/bible-kv-cache.md`](docs/explain/bible-kv-cache.md). Each layer protects the KV cache from a different failure mode.
->>>>>>> Stashed changes
+The platform implements a **5-layer defensive architecture** for vLLM KV cache management, as documented in [`docs/explain/kv-cache.md`](docs/explain/kv-cache.md). Each layer protects the KV cache from a different failure mode.
 
 ### Layer 1 — vLLM Engine (Cache Efficiency)
 
@@ -824,6 +735,7 @@ Client → Gateway API → llm-d Router (Proxy + EPP) → vLLM Backends
 ### Components
 
 | Component | Purpose | Status |
+<<<<<<< Updated upstream
 |---|---|---|
 | **llm-d-infrastructure** | Gateway API + GAIE CRDs | ✅ Implemented |
 | **llm-d-router** | Proxy + Endpoint Picker (EPP) | ✅ Implemented |
@@ -961,8 +873,7 @@ The platform integrates [llm-d](https://llm-d.ai) (CNCF Sandbox, March 2026) —
 | InferencePool CRD | `charts/llm-d` | Gateway API Inference Extension — groups replicas serving one model |
 | llm-d labels + env vars | `charts/model-serving-engine` | vLLM pods register with InferencePool, emit KV events |
 | InferencePool backendRef | `charts/ai-gateway` | HTTPRoute targets InferencePool instead of direct backendRefs |
-| EPP alerts (14 rules) | `observability/llm-d-alert-rules.yaml` | Routing latency, cache-hit rate, indexer availability, P/D health |
-| EPP dashboard (10 panels) | `observability/grafana-dashboards/llm-d-dashboard.json` | EPP metrics, indexer status, transfer latency, pool replicas |
+| EPP metrics | `charts/llm-d/templates/` | Router + EPP metrics endpoints for cache-aware routing |
 
 ### Engine-Selector Routing Modes
 
@@ -995,6 +906,119 @@ The `vram-budget-calc` tool (`--disaggregated` flag) computes separate prefill/d
 | `disaggregation.enabled` | false | false | false (Phase 4) |
 
 **SSM/Mamba Exclusion**: SSM models always return `consistent-hash` routing regardless of `llmD.enabled` — their fixed recurrent state is not compatible with EPP cache-aware routing.
+=======
+|---|---|---|
+| **llm-d-infrastructure** | Gateway API + GAIE CRDs | ✅ Implemented |
+| **llm-d-router** | Proxy + Endpoint Picker (EPP) | ✅ Implemented |
+| **InferencePool** | Service discovery for vLLM pods | ✅ Implemented |
+| **Gateway + HTTPRoute** | HTTP routing with ext-proc | ✅ Implemented |
+| **vLLM config** | Chunked prefill, batching | ✅ Implemented |
+| KV-Cache Indexer | Precise cache-hit routing | ❌ Future |
+| Disaggregated Serving | Prefill/decode separation | ❌ Future |
+| SLO-aware autoscaling | Custom KEDA metrics | ❌ Future |
+
+### Features
+
+**Cache-Aware Routing** (Heuristic Mode):
+- Routes requests to backends with highest estimated cache hit rate
+- Prefix-match scoring based on recent request patterns
+- Expected improvement: **25-40% faster TTFT, 40-60% cache hit rate**
+
+**Load Balancing**:
+- Queue depth and GPU utilization aware
+- Circuit breaking for failing backends
+- Health checking and capacity filters
+
+**Environment Configuration**:
+- **Dev**: Round-robin, 1 replica, no cache-aware routing
+- **Staging**: Cache-aware (heuristic), 2 replicas, HA
+- **Production**: Optimized cache-aware, 3 replicas, HA, PDB, HPA, monitoring
+
+### Quick Start
+
+```bash
+# 1. Install infrastructure (once per cluster)
+helm install llm-d-infrastructure ./charts/llm-d-infrastructure \
+  --namespace llm-d-system --create-namespace
+
+# 2. Deploy router (per environment)
+helm install llm-d-router ./charts/llm-d-router \
+  --namespace model-serving-prod \
+  --values environments/prod/llm-d-router-values.yaml
+
+# 3. Apply InferencePool
+kubectl apply -f environments/prod/llm-d-inferencepool.yaml
+
+# 4. Apply Gateway + HTTPRoute
+kubectl apply -f environments/prod/llm-d-gateway.yaml
+
+# 5. Upgrade vLLM with llm-d config
+helm upgrade vllm-prod ./charts/model-serving-engine \
+  --values environments/prod/values.yaml
+```
+
+### Documentation
+
+- **Implementation Guide**: [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) — Complete deployment and configuration guide
+- **Technical Deep-Dive**: [`docs/explain/llm-d.md`](docs/explain/llm-d.md) — 20-section reference on llm-d architecture
+- **Decision Record**: [`docs/adr/0004-llm-d-not-implemented.md`](docs/adr/0004-llm-d-not-implemented.md) — Historical context on MVP approach
+
+### Charts
+
+| Chart | Location | Purpose |
+|---|---|---|
+| `llm-d-infrastructure` | `charts/llm-d-infrastructure/` | Gateway API + GAIE CRDs installation |
+| `llm-d-router` | `charts/llm-d-router/` | Proxy + EPP deployments, services, RBAC |
+
+### Configuration Files
+
+**Per Environment**:
+- `environments/{env}/llm-d-inferencepool.yaml` — InferencePool CRD
+- `environments/{env}/llm-d-gateway.yaml` — Gateway + HTTPRoute + InferenceObjective
+- `environments/{env}/llm-d-router-values.yaml` — Router configuration
+- `environments/{env}/values.yaml` — vLLM args (updated for llm-d)
+
+### Monitoring
+
+**Prometheus Metrics**:
+```bash
+# Proxy metrics (port 9090)
+llm_d_proxy_requests_total
+llm_d_proxy_routing_decisions_total
+llm_d_proxy_request_duration_seconds
+
+# EPP metrics (port 9091)
+llm_d_epp_scoring_duration_seconds
+llm_d_epp_backend_scores
+llm_d_epp_cache_hit_rate
+```
+
+**Production Alerts**:
+- `LLMDRouterHighLatency`: P99 > 1s for 5 minutes
+- `LLMDEPPHighScoringDuration`: P99 scoring > 100ms
+- `LLMDCacheHitRateLow`: Cache hit rate < 50%
+
+### Expected Performance
+
+| Metric | Without llm-d | With llm-d (MVP) | Improvement |
+|--------|---------------|------------------|-------------|
+| **TTFT P50** | 300ms | 180-220ms | **25-40% faster** |
+| **TTFT P99** | 800ms | 450-600ms | **25-44% faster** |
+| **Throughput** | 1500 tok/s | 2000-2500 tok/s | **33-67% higher** |
+| **Cache Hit Rate** | 0% | 40-60% | **New capability** |
+
+*Improvements depend on workload characteristics (prefix overlap, request patterns).*
+
+### Future Enhancements
+
+**Planned (Not in MVP)**:
+- **KV-Cache Indexer**: Precise cache-hit routing (+15-20% cache hit rate)
+- **Disaggregated Serving**: Prefill/decode separation (+30-50% throughput, requires RDMA)
+- **SLO-Aware Autoscaling**: KEDA with llm-d metrics (better resource utilization)
+- **Multi-Tenant Flow Control**: Priority-based scheduling, per-tenant rate limiting
+
+See [`docs/LLM_D_IMPLEMENTATION.md`](docs/LLM_D_IMPLEMENTATION.md) for enabling instructions.
+>>>>>>> Stashed changes
 
 ---
 
@@ -1082,9 +1106,12 @@ The full certification suite defines **11 categories, 48 tests** with strict GO/
 | Doc | Description |
 |---|---|
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 | [kv-cache.md](docs/explain/kv-cache.md) | 6-layer KV cache management architecture (gateway, vLLM, K8s, observability, autoscaling, GitOps, distributed cache middleware, cache-aware routing) |
 | [vllm-kv-cache.md](docs/explain/vllm-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
 =======
+=======
+>>>>>>> Stashed changes
 | [kv-cache.md](docs/explain/kv-cache.md) | 5-layer KV cache management architecture (vLLM, K8s, autoscaling, GitOps, distributed cache middleware) |
 | [bible-kv-cache.md](docs/explain/bible-kv-cache.md) | KV Cache Bible — 13-section reference: math foundations, tools panorama (vLLM, SGLang, LMCache, Mooncake, Dynamo), by-format guide, ROI analysis, millions-of-users scaling, modular architecture, multi-family models (Transformer/MoE/SSM/Hybrid), anti-patterns |
 >>>>>>> Stashed changes

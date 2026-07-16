@@ -12,7 +12,6 @@ models:
     layers: 32
     heads: 32
     quantisation: bf16
-<<<<<<< Updated upstream
     gatewayBackend: mistral-7b-local
     llmD:
       enabled: true
@@ -22,10 +21,6 @@ models:
       emitKvEvents: true
       disaggregated: false
     notes: "Staged for A100 (40 GB) deployment, awaiting quota. llm-d EPP routing enabled (Phase 1)."
-=======
-    backend: mistral-7b-local
-    notes: "Staged for A100 (40 GB) deployment, awaiting quota"
->>>>>>> Stashed changes
 
   - name: llama-3-70b-instruct
     format: safetensors
@@ -40,7 +35,6 @@ models:
     layers: 80
     heads: 64
     quantisation: fp16
-<<<<<<< Updated upstream
     gatewayBackend: llama-3-70b-local
     llmD:
       enabled: true
@@ -52,7 +46,3 @@ models:
       prefillGpuUtilization: 0.92
       decodeGpuUtilization: 0.85
     notes: "Large model on standby, requires H100 with tensor parallelism. llm-d disaggregated P/D mode planned (Phase 4, requires RDMA)."
-=======
-    backend: llama-3-70b-local
-    notes: "Large model on standby, requires H100 with tensor parallelism"
->>>>>>> Stashed changes

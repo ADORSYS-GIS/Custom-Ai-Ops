@@ -2,135 +2,84 @@
 
 ## Purpose
 
-This directory is reserved for GitOps application manifests (e.g., ArgoCD ApplicationSets, FluxCD Applications, etc.).
+This directory contains ArgoCD ApplicationSet manifests for deploying the
+LMCache + vLLM + llm-d stack across dev, staging, and prod environments.
 
-## Current Status
+## Files
 
-**Empty** - ArgoCD integration files have been removed before GitHub publication.
+```
+apps/
+├── README.md                        # This file
+├── argocd-appset-dev.yaml           # Dev environment ApplicationSets
+├── argocd-appset-staging.yaml       # Staging environment ApplicationSets
+└── argocd-appset-prod.yaml          # Prod environment ApplicationSets
+```
 
-## Why Was It Emptied?
+## What Each AppSet Deploys
 
-The ArgoCD manifests were removed because they contained:
-1. Infrastructure-specific configurations
-2. Secret placeholders that could be confused with real credentials
-3. Environment-specific details not suitable for a public template
+### Per-Environment AppSets (dev / staging / prod)
 
-For details on what was removed, see: [`REMOVED_ARGOCD.md`](../REMOVED_ARGOCD.md)
+Each `argocd-appset-{env}.yaml` deploys:
 
-## How to Use This Project
+1. **model-serving-engine** — vLLM + LMCache + llm-d integration chart
+   (source: `charts/model-serving-engine`, values: `environments/{env}/values.yaml`)
+2. **ai-gateway** — AI Gateway with rate limiting and llm-d HTTPRoute integration
+   (source: `charts/ai-gateway`, values: `environments/{env}/ai-gateway/values.yaml`)
+3. **llm-d** — llm-d router (Envoy + EPP) + KV-Cache Indexer + InferencePool
+   (source: `charts/llm-d`, values: `environments/{env}/llm-d/values.yaml`)
 
-### Option 1: Direct Helm Deployment
+### Prod-Only: Infrastructure AppSet
 
-Deploy charts directly without GitOps:
+The prod AppSet additionally deploys:
+
+- **nvidia-gpu-operator** — NVIDIA GPU Operator (required for vLLM GPU support)
+
+## Deployment Order (Sync Waves)
+
+| Wave | Component | Purpose |
+|------|-----------|---------|
+| -1 | NVIDIA GPU Operator | GPU drivers + device plugin |
+| 0 | model-serving-engine, llm-d | vLLM + LMCache + llm-d router |
+| 1 | ai-gateway | Gateway routing to InferencePool |
+
+## How to Deploy
+
+### Option 1: ArgoCD (GitOps)
 
 ```bash
-# Deploy a model
+kubectl apply -f apps/argocd-appset-dev.yaml
+kubectl apply -f apps/argocd-appset-staging.yaml
+kubectl apply -f apps/argocd-appset-prod.yaml
+```
+
+### Option 2: Direct Helm Deployment
+
+```bash
+# Deploy vLLM + LMCache
 helm install my-model charts/model-serving-engine \
   -f environments/prod/values.yaml \
   --set model.name=mistral-7b-instruct \
   --namespace model-serving-prod \
   --create-namespace
-```
 
-### Option 2: Integrate with Your GitOps Tool
+# Deploy llm-d router
+helm install llm-d charts/llm-d \
+  -f environments/prod/llm-d/values.yaml \
+  --namespace llm-d-system \
+  --create-namespace
 
-#### With ArgoCD
-
-Create your own ApplicationSet:
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: model-serving
-  namespace: argocd
-spec:
-  generators:
-    - list:
-        elements:
-          - env: prod
-            namespace: model-serving-prod
-  template:
-    metadata:
-      name: 'model-serving-{{env}}'
-    spec:
-      project: default
-      source:
-        repoURL: https://github.com/YOUR_ORG/custom-ai-ops.git
-        targetRevision: HEAD
-        path: charts/model-serving-engine
-        helm:
-          valueFiles:
-            - ../../environments/{{env}}/values.yaml
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: '{{namespace}}'
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-```
-
-See [`docs/architecture/04-gitops-deployment.md`](../docs/architecture/04-gitops-deployment.md) for complete ArgoCD integration guide.
-
-#### With FluxCD
-
-Create a HelmRelease:
-
-```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta1
-kind: HelmRelease
-metadata:
-  name: model-serving
-  namespace: flux-system
-spec:
-  interval: 5m
-  chart:
-    spec:
-      chart: charts/model-serving-engine
-      sourceRef:
-        kind: GitRepository
-        name: custom-ai-ops
-      interval: 1m
-  values:
-    # Reference your environment values
-    model:
-      name: mistral-7b-instruct
-```
-
-#### With Helmfile
-
-Create a `helmfile.yaml`:
-
-```yaml
-releases:
-  - name: model-serving-prod
-    namespace: model-serving-prod
-    chart: ./charts/model-serving-engine
-    values:
-      - environments/prod/values.yaml
-    set:
-      - name: model.name
-        value: mistral-7b-instruct
+# Deploy AI gateway
+helm install ai-gateway charts/ai-gateway \
+  -f environments/prod/ai-gateway/values.yaml \
+  --namespace envoy-gateway-system \
+  --create-namespace
 ```
 
 ## Documentation References
 
 - **GitOps Guide**: [`docs/architecture/04-gitops-deployment.md`](../docs/architecture/04-gitops-deployment.md)
-- **External Tools Setup**: [`docs/external-tools.md`](../docs/external-tools.md)
-- **Integration Report**: [`docs/integration-report.md`](../docs/integration-report.md)
 - **Environment Configs**: [`environments/`](../environments/)
-
-## Example Structure (If You Recreate GitOps)
-
-```
-apps/
-├── README.md                        # This file
-├── argocd-appprojects.yaml         # (Create your own)
-├── argocd-appset-{env}.yaml        # (Per environment)
-├── argocd-notifications.yaml       # (Your notification config)
-└── external-secrets.yaml           # (Your secrets management)
-```
+- **Architecture Overview**: [`docs/architecture/00-overview.md`](../docs/architecture/00-overview.md)
 
 ## Security Note
 
@@ -139,5 +88,3 @@ apps/
 - Sealed Secrets
 - SOPS encrypted values
 - Your organization's secret management solution
-
-See [`docs/external-tools.md`](../docs/external-tools.md) §5 for secret management setup.

@@ -13,9 +13,6 @@ router:
       queueDepth: 0.2
       gpuUtilization: 0.1
     maxInflightPerReplica: 64
-  serviceMonitor:
-    enabled: true
-    releaseLabel: prometheus
   pdb:
     enabled: true
     minAvailable: 1

@@ -13,11 +13,6 @@ router:
       queueDepth: 0.2
       gpuUtilization: 0.1
     maxInflightPerReplica: 128
-  serviceMonitor:
-    enabled: true
-    interval: 10s
-    scrapeTimeout: 5s
-    releaseLabel: prometheus
   pdb:
     enabled: true
     minAvailable: 2
@@ -35,13 +30,9 @@ kvCacheIndexer:
   storage:
     type: redis
     redis:
-      host: "redis-cache.monitoring.svc.cluster.local"
+      host: "redis-cache.lmcache-system.svc.cluster.local"  # Redis for KV-Cache Indexer storage
       port: 6379
   reconcileInterval: 5s
-  serviceMonitor:
-    enabled: true
-    releaseLabel: prometheus
-
 inferencePool:
   enabled: true
   modelName: ""

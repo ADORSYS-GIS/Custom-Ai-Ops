@@ -67,11 +67,7 @@ spec:
           {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
-<<<<<<< Updated upstream
-{{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
-=======
           {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
->>>>>>> Stashed changes
           {{- $command := list }}
           {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- end }}
           securityContext:

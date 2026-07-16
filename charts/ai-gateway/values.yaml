@@ -8,7 +8,7 @@ backends: []
   # - name: mistral-7b-local
   #   schema: OpenAI
   #   prefix: /v1
-  #   hostname: model-serving-vllm.model-serving-prod.svc.cluster.local
+  #   hostname: model-serving-engine.model-serving-prod.svc.cluster.local
   #   port: 80
   #   securityType: APIKey
   #   tlsHostname: ""

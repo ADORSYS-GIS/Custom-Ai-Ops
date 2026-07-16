@@ -1,13 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use engine_selector::{
-<<<<<<< Updated upstream
     cache_strategy_for, detect_family, detect_format, detect_serving_mode, parse_format_override,
     routing_mode_for, select_engine, EngineSelection,
-=======
-    cache_strategy_for, detect_family, detect_format, parse_format_override, select_engine,
-    EngineSelection,
->>>>>>> Stashed changes
 };
 
 #[derive(Parser)]

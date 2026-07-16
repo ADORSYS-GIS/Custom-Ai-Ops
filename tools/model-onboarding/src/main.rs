@@ -143,11 +143,7 @@ fn main() -> Result<()> {
             .quantisation
             .clone()
             .unwrap_or_else(|| "unknown".to_string()),
-<<<<<<< Updated upstream
-        gateway_backend: gateway_backend.clone(),
-=======
         backend: backend.clone(),
->>>>>>> Stashed changes
         notes,
     };
 

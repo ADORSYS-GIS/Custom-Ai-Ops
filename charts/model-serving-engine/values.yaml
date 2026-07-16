@@ -64,54 +64,6 @@ engine:
       periodSeconds: 10
       failureThreshold: 60
 
-<<<<<<< Updated upstream
-=======
-  onnxGenai:
-    image:
-      repository: ghcr.io/microsoft/onnxruntime-genai
-      tag: "0.5.0"
-      pullPolicy: IfNotPresent
-    command: []
-    args:
-      - --model_path
-      - /models/$(MODEL_NAME)
-      - --port
-      - "8080"
-    resources:
-      # QoS Guaranteed: requests == limits for all resources.
-      limits:
-        nvidia.com/gpu: 1
-        cpu: "4"
-        memory: 16Gi
-      requests:
-        nvidia.com/gpu: 1
-        cpu: "4"
-        memory: 16Gi
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 60
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 6
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 10
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 3
-    startupProbe:
-      httpGet:
-        path: /health
-        port: http
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      failureThreshold: 90
-
->>>>>>> Stashed changes
 model:
   name: ""
   volumeSize: 50Gi

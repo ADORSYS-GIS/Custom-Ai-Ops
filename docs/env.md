@@ -275,20 +275,18 @@ This URL is referenced in the header comment of `apps/external-secrets.yaml`.
 
 ---
 
-<<<<<<< Updated upstream
 <a id="7-alerting"></a>
-## 7. Alerting — PagerDuty and Slack
+## 7. Alerting — ArgoCD Notifications
 
 ### 7.1 PagerDuty
 
 | Parameter | Value | Where Placed |
 |---|---|---|
-| Integration key | `<PAGERDUTY_SERVICE_KEY>` or `<PAGERDUTY_INTEGRATION_KEY>` | Two places (see below) |
-| Events API URL | `https://events.pagerduty.com/v2/enqueue` | Configured in Alertmanager (implicit) |
+| Integration key | `<PAGERDUTY_SERVICE_KEY>` or `<PAGERDUTY_INTEGRATION_KEY>` | ArgoCD Notifications |
+| Events API URL | `https://events.pagerduty.com/v2/enqueue` | ArgoCD Notifications ConfigMap |
 
 **Where to configure**:
-1. **Alertmanager** — Remote secret `alerting/pagerduty-service-key` → ESO templates it into `alertmanager-config` Secret as `{{ .pagerduty_key }}` in the `pagerduty_configs` section
-2. **ArgoCD Notifications** — Secret `argocd-notifications-secret`, key `pagerduty-integration-key` (can be same or different PagerDuty service)
+1. **ArgoCD Notifications** — Secret `argocd-notifications-secret`, key `pagerduty-integration-key`
 
 **How to get the key**:
 ```
@@ -296,19 +294,17 @@ PagerDuty → Services → New Service → Integration: Events API v2 → Copy i
 ```
 
 **Routing**:
-- `severity: critical` → PagerDuty + Slack `#ml-incidents`
 - ArgoCD sync failed (production) → PagerDuty
 
 ### 7.2 Slack
 
 | Parameter | Value | Where Placed |
 |---|---|---|
-| Webhook URL | `<SLACK_WEBHOOK_URL>` | Two places (see below) |
+| Webhook URL | `<SLACK_WEBHOOK_URL>` | ArgoCD Notifications |
 | API URL | `https://slack.com/api` | ArgoCD Notifications ConfigMap (hardcoded) |
 
 **Where to configure**:
-1. **Alertmanager** — Remote secret `alerting/slack-webhook-url` → ESO templates it into `alertmanager-config` Secret as `{{ .slack_webhook }}` in all `slack_configs` sections
-2. **ArgoCD Notifications** — Secret `argocd-notifications-secret`, key `slack-webhook-url`
+1. **ArgoCD Notifications** — Secret `argocd-notifications-secret`, key `slack-webhook-url`
 
 **How to get the webhook URL**:
 ```
@@ -318,60 +314,11 @@ Slack → Apps → Incoming Webhooks → Add to Slack → Choose channel → Cop
 **Channels used**:
 | Channel | Receives |
 |---|---|
-| `#ml-incidents` | Critical alerts (PagerDuty + Slack) |
-| `#ml-ops` | Warning alerts, model-serving alerts, ArgoCD sync notifications |
-| `#gpu-ops` | GPU-specific alerts (thermal, VRAM, utilization) |
+| `#ml-ops` | ArgoCD sync notifications, model-serving alerts |
 
 ---
 
-<a id="8-observability"></a>
-## 8. Observability — Prometheus, Grafana, Alertmanager
-
-### 8.1 Prometheus
-
-| Parameter | Value | Where Configured |
-|---|---|---|
-| Scrape interval | `10s` | `addons/prometheus-stack/Chart.yaml` → `prometheus.prometheusSpec.scrapeInterval` |
-| Scrape timeout | `5s` | ServiceMonitor in `charts/model-serving-engine/templates/servicemonitor.yaml` |
-| Retention | `30d` | `addons/prometheus-stack/Chart.yaml` |
-| `serviceMonitorSelectorNilUsesHelmValues` | `false` | CRITICAL — allows discovery of model-serving ServiceMonitors |
-| `ruleSelectorNilUsesHelmValues` | `false` | CRITICAL — allows loading PrometheusRules from `observability/` |
-| Prometheus URL (for KEDA) | `http://prometheus-server.monitoring.svc.cluster.local:9090` | `environments/{prod,staging}/values.yaml` → `autoscaling.keda.prometheusAddress` |
-
-**No external credentials needed** — Prometheus is internal to the cluster.
-
-### 8.2 Grafana
-
-| Parameter | Value | Where Configured |
-|---|---|---|
-| Admin password | `admin123` | `addons/prometheus-stack/Chart.yaml` → `grafana.adminPassword` |
-| Dashboard file | `vllm-dashboard.json` | `observability/grafana-dashboards/` (18 panels) |
-| Grafana host | `grafana.example.com` | `addons/prometheus-stack/Chart.yaml` → `grafana.ingress.hosts` |
-
-**Change the admin password for production**:
-```yaml
-# In addons/prometheus-stack/Chart.yaml
-grafana:
-  adminPassword: <your-secure-password>
-```
-
-### 8.3 Alertmanager
-
-| Parameter | Value | Where Configured |
-|---|---|---|
-| Config source | `useExistingSecret.name: alertmanager-config` | `addons/prometheus-stack/Chart.yaml` |
-| Config key | `config.yaml` | ESO creates this Secret with templated config |
-| Alertmanager host | `alertmanager.example.com` | `addons/prometheus-stack/Chart.yaml` → `alertmanager.ingress.hosts` |
-
-The Alertmanager config is NOT stored as a plain file — it is templated by ESO with real PagerDuty and Slack credentials. See §4.2 and §7.
-
-**Internal webhook URL**: `http://alertmanager-webhook.monitoring:9093/alerts` — used by internal services (e.g., ArgoCD notifications, custom webhook senders) to push alerts directly to Alertmanager. This is the in-cluster Service DNS name.
-
----
-
-=======
->>>>>>> Stashed changes
-<a id="9-lmcache"></a>
+<a id="8-lmcache"></a>
 ## 9. LMCache — Redis and S3 Backends
 
 ### 9.1 Redis (L3 distributed cache — prod only)

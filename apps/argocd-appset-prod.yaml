@@ -58,21 +58,6 @@ spec:
           - name: nvidia-gpu-operator
             path: addons/nvidia-gpu-operator
             wave: "-1"
-          - name: longhorn
-            path: addons/longhorn
-            wave: "-2"
-          - name: prometheus-stack
-            path: addons/prometheus-stack
-            wave: "-1"
-          - name: keda
-            path: addons/keda
-            wave: "-1"
-          - name: external-secrets
-            path: addons/external-secrets
-            wave: "-1"
-          - name: cert-manager
-            path: addons/cert-manager
-            wave: "-1"
   template:
     metadata:
       name: '{{name}}'
@@ -100,47 +85,6 @@ spec:
             duration: 30s
             factor: 2
             maxDuration: 10m
----
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: model-serving-secrets
-  namespace: argocd
-spec:
-  generators:
-    - list:
-        elements:
-          - name: model-serving-secrets
-            wave: "-3"
-  template:
-    metadata:
-      name: '{{name}}'
-      annotations:
-        argocd.argoproj.io/sync-wave: '{{wave}}'
-    spec:
-      project: model-serving
-      source:
-        repoURL: https://github.com/rustnew/custom-ai-ops.git
-        targetRevision: HEAD
-        path: apps
-        directory:
-          include: 'external-secrets.yaml'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: model-serving-prod
-      syncPolicy:
-        automated:
-          prune: false
-          selfHeal: true
-        syncOptions:
-          - CreateNamespace=true
-          - ServerSideApply=true
-        retry:
-          limit: 3
-          backoff:
-            duration: 10s
-            factor: 2
-            maxDuration: 2m
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
