@@ -21,10 +21,13 @@ Plus three first-class citizens Diátaxis doesn't name:
 | [`benchmarks/`](benchmarks/) | Dated, immutable benchmark reports — the evidence layer under every ADR |
 | [`runbooks/`](runbooks/) | Operational procedures: symptom → diagnosis → mitigation |
 
-And two living pages:
+And three living pages:
 
+- [`roadmap.md`](roadmap.md) — the learning roadmap: ten parts from bare serving to the frontier, each producing documents in this structure.
 - [`reference/glossary.md`](reference/glossary.md) — one-sentence definitions, linked from everywhere. Our shared vocabulary.
 - [`watchlist.md`](watchlist.md) — dated triage of ecosystem news (vLLM, llm-d, LMCache, …). The field moves monthly; this is how we keep up.
+
+Benchmark *reports* live in `benchmarks/`; the raw, reproducible experiment assets behind them live in [`../experiments/`](../experiments/README.md), and the measurement standard is [`benchmarks/methodology.md`](benchmarks/methodology.md).
 
 ## The rules
 
