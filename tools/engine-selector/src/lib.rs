@@ -31,6 +31,48 @@ pub enum ModelFamily {
     Hybrid,
 }
 
+/// KV-cache routing strategy — determines how the gateway dispatches
+/// requests to vLLM replicas for maximum cache reuse.
+///
+/// `ConsistentHash`: legacy heuristic — hash of first 512 bytes of body
+/// deterministically maps to a replica.  No knowledge of actual cache
+/// state; relies on probabilistic prefix reuse.
+///
+/// `EPP`: llm-d Endpoint Picker — inspects each request's prompt prefix,
+/// queries the EPP scoring pipeline (Discover→Filter→Score→Select) to
+/// pick the replica most likely to hold relevant KV-cache blocks.
+/// Requires no RDMA; works with LMCache on TCP.
+///
+/// `EPPWithIndexer`: EPP + KV-Cache Indexer — the indexer maintains a
+/// cluster-wide map of cache blocks consumed via vLLM KV events.  EPP
+/// queries this map for exact, real-time routing decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RoutingMode {
+    ConsistentHash,
+    Epp,
+    EppWithIndexer,
+}
+
+/// Serving topology — determines how vLLM pods are organised.
+///
+/// `Unified`: all replicas run both prefill and decode (standard vLLM).
+///
+/// `Disaggregated`: prefill and decode are split onto independently
+/// scalable pod sets (P/D disaggregation).  KV-cache is transferred
+/// from prefill to decode pods via NIXL (RDMA/NVLink/TCP fallback).
+/// Requires `--kv-transfer-config` with `kv_producer`/`kv_consumer` roles.
+///
+/// `WideExpertParallel`: MoE-specific — experts are distributed across
+/// pods via LeaderWorkerSet so each expert set fits in GPU memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServingMode {
+    Unified,
+    Disaggregated,
+    WideExpertParallel,
+}
+
 #[derive(Debug, Serialize)]
 pub struct EngineSelection {
     pub format: String,
@@ -40,6 +82,8 @@ pub struct EngineSelection {
     pub rationale: String,
     pub family: String,
     pub cache_strategy: String,
+    pub routing_mode: String,
+    pub serving_mode: String,
 }
 
 pub fn detect_format(path: &str) -> Result<ModelFormat> {
@@ -181,7 +225,7 @@ pub fn select_engine(fmt: ModelFormat) -> (Engine, f64, String, String) {
 }
 
 /// Detect the model architecture family from config.json.
-/// See docs/explain/bible-kv-cache.md §5 and kv-cache.md §5 for the
+/// See docs/explain/vllm-kv-cache.md §5 and kv-cache.md §5 for the
 /// distinction between Transformer (paginable KV cache), MoE
 /// (dense KV + expert cache), SSM/Mamba (fixed-size recurrent state,
 /// NOT paginable), and Hybrid (mixed memory profiles).
@@ -189,7 +233,12 @@ pub fn detect_family(path: &str) -> Result<ModelFamily> {
     let p = Path::new(path);
     let config_path = if p.is_dir() {
         p.join("config.json")
-    } else if p.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() == Some("json") {
+    } else if p
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .as_deref()
+        == Some("json")
+    {
         p.to_path_buf()
     } else {
         let dir = p.parent().unwrap_or(Path::new("."));
@@ -204,7 +253,10 @@ pub fn detect_family(path: &str) -> Result<ModelFamily> {
     let lower = content.to_lowercase();
 
     // SSM / Mamba: model_type contains "mamba" or "ssm"
-    if lower.contains("\"mamba\"") || lower.contains("\"model_type\": \"mamba\"") || lower.contains("_ssm") {
+    if lower.contains("\"mamba\"")
+        || lower.contains("\"model_type\": \"mamba\"")
+        || lower.contains("_ssm")
+    {
         return Ok(ModelFamily::Ssm);
     }
 
@@ -214,7 +266,10 @@ pub fn detect_family(path: &str) -> Result<ModelFamily> {
     }
 
     // MoE: architectures contains "MoE" or config has num_experts
-    if lower.contains("moe") || lower.contains("mixture_of_experts") || lower.contains("\"num_experts\"") {
+    if lower.contains("moe")
+        || lower.contains("mixture_of_experts")
+        || lower.contains("\"num_experts\"")
+    {
         return Ok(ModelFamily::Moe);
     }
 
@@ -223,7 +278,7 @@ pub fn detect_family(path: &str) -> Result<ModelFamily> {
 
 /// Returns the recommended KV cache strategy for a model family.
 /// SSM/Mamba models do NOT use a pagable KV cache — their recurrent
-/// state is fixed-size and cannot be paged or evicted (bible-kv-cache.md §5.3).
+/// state is fixed-size and cannot be paged or evicted (vllm-kv-cache.md §5.3).
 pub fn cache_strategy_for(family: ModelFamily) -> &'static str {
     match family {
         ModelFamily::Transformer => "PagedAttention + APC + LMCache (hierarchical L0/L1/L2/L3)",
@@ -231,6 +286,109 @@ pub fn cache_strategy_for(family: ModelFamily) -> &'static str {
         ModelFamily::Ssm => "Fixed recurrent state — NO PagedAttention. Allocate contiguous per-layer state. Prefix caching via state checkpointing (not token-bloc hash).",
         ModelFamily::Hybrid => "Asymmetric paging: PagedAttention for attention layers, contiguous allocation for SSM layers.",
     }
+}
+
+/// Recommend the KV-cache routing mode based on model family and
+/// whether llm-d is enabled.
+///
+/// - SSM/Mamba models have fixed recurrent state — no paginable KV
+///   cache, so consistent-hash is sufficient (no benefit from EPP).
+/// - Transformer and Hybrid models benefit from EPP when llm-d is
+///   enabled, because their paginable KV cache can be precisely
+///   located on a specific replica.
+/// - MoE models benefit from EPP + KV-Cache Indexer for expert-level
+///   routing, especially in Wide Expert Parallel setups.
+pub fn routing_mode_for(family: ModelFamily, llm_d_enabled: bool) -> RoutingMode {
+    if !llm_d_enabled {
+        return RoutingMode::ConsistentHash;
+    }
+    match family {
+        ModelFamily::Transformer => RoutingMode::Epp,
+        ModelFamily::Hybrid => RoutingMode::Epp,
+        ModelFamily::Moe => RoutingMode::EppWithIndexer,
+        ModelFamily::Ssm => RoutingMode::ConsistentHash,
+    }
+}
+
+/// Detect the recommended serving topology from config.json and
+/// model family.
+///
+/// - Unified (default): prefill + decode on same replicas.
+/// - Disaggregated: split P/D when model is large (>40B params) and
+///   config has `"disaggregated": true` or `"pd_split": true`.
+///   Only Transformer and Hybrid families support P/D (SSM has no
+///   paginable KV cache to transfer).
+/// - WideExpertParallel: MoE models with many experts that exceed
+///   single-GPU memory, when config has `"expert_parallel": "wide"`
+///   or `"num_experts_per_gpu"` set.
+pub fn detect_serving_mode(path: &str, family: ModelFamily) -> Result<ServingMode> {
+    let p = Path::new(path);
+    let config_path = if p.is_dir() {
+        p.join("config.json")
+    } else if p
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .as_deref()
+        == Some("json")
+    {
+        p.to_path_buf()
+    } else {
+        let dir = p.parent().unwrap_or(Path::new("."));
+        dir.join("config.json")
+    };
+
+    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let lower = content.to_lowercase();
+
+    // Wide Expert Parallel for MoE
+    if family == ModelFamily::Moe {
+        if lower.contains("\"expert_parallel\"") && lower.contains("\"wide\"") {
+            return Ok(ServingMode::WideExpertParallel);
+        }
+        if lower.contains("\"num_experts_per_gpu\"") {
+            return Ok(ServingMode::WideExpertParallel);
+        }
+    }
+
+    // P/D disaggregation — only for families with paginable KV cache
+    if family == ModelFamily::Transformer || family == ModelFamily::Hybrid {
+        if lower.contains("\"disaggregated\"") || lower.contains("\"pd_split\"") {
+            return Ok(ServingMode::Disaggregated);
+        }
+        // Auto-detect from model size: if num_params or hidden_size suggests >40B
+        if lower.contains("\"num_parameters\"") {
+            if let Some(start) = lower.find("\"num_parameters\"") {
+                let rest = &content[start..];
+                if let Some(num_start) = rest.find(':') {
+                    let num_part = &rest[num_start + 1..];
+                    let num_str: String = num_part
+                        .chars()
+                        .skip_while(|c| c.is_whitespace() || *c == '"')
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    if let Ok(n) = num_str.parse::<u64>() {
+                        if n > 40_000_000_000 {
+                            return Ok(ServingMode::Disaggregated);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ServingMode::Unified)
+}
+
+/// Recommend whether P/D disaggregation is beneficial for a model.
+/// Disaggregation shines when:
+/// - The model is large (prefill is compute-bound, decode is memory-bound)
+/// - The workload has high request concurrency (amortises KV transfer)
+/// - The KV cache is paginable (Transformer/Hybrid, NOT SSM)
+pub fn should_disaggregate(family: ModelFamily, model_size_gb: f64, concurrency: u32) -> bool {
+    if family == ModelFamily::Ssm {
+        return false;
+    }
+    model_size_gb > 14.0 && concurrency > 8
 }
 
 #[cfg(test)]
@@ -244,7 +402,10 @@ mod tests {
 
     #[test]
     fn test_parse_format_override_safetensors() {
-        assert_eq!(parse_format_override("safetensors").unwrap(), ModelFormat::Safetensors);
+        assert_eq!(
+            parse_format_override("safetensors").unwrap(),
+            ModelFormat::Safetensors
+        );
     }
 
     #[test]
@@ -294,7 +455,11 @@ mod tests {
     fn test_detect_family_ssm() {
         let dir = create_temp_dir();
         let config_path = dir.path().join("config.json");
-        fs::write(&config_path, r#"{"model_type": "mamba", "architectures": ["MambaForCausalLM"]}"#).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"model_type": "mamba", "architectures": ["MambaForCausalLM"]}"#,
+        )
+        .unwrap();
         let family = detect_family(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(family, ModelFamily::Ssm);
     }
@@ -312,7 +477,11 @@ mod tests {
     fn test_detect_family_moe() {
         let dir = create_temp_dir();
         let config_path = dir.path().join("config.json");
-        fs::write(&config_path, r#"{"model_type": "llama", "num_experts": 8, "architectures": ["MixtralForCausalLM"]}"#).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "num_experts": 8, "architectures": ["MixtralForCausalLM"]}"#,
+        )
+        .unwrap();
         let family = detect_family(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(family, ModelFamily::Moe);
     }
@@ -321,7 +490,11 @@ mod tests {
     fn test_detect_family_transformer() {
         let dir = create_temp_dir();
         let config_path = dir.path().join("config.json");
-        fs::write(&config_path, r#"{"model_type": "llama", "architectures": ["LlamaForCausalLM"]}"#).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "architectures": ["LlamaForCausalLM"]}"#,
+        )
+        .unwrap();
         let family = detect_family(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(family, ModelFamily::Transformer);
     }
@@ -329,7 +502,10 @@ mod tests {
     #[test]
     fn test_cache_strategy_ssm_no_paging() {
         let strategy = cache_strategy_for(ModelFamily::Ssm);
-        assert!(strategy.contains("NO PagedAttention"), "SSM should explicitly say no PagedAttention");
+        assert!(
+            strategy.contains("NO PagedAttention"),
+            "SSM should explicitly say no PagedAttention"
+        );
     }
 
     #[test]
@@ -375,7 +551,11 @@ mod tests {
         let safetensors_path = dir.path().join("model.safetensors");
         fs::write(&safetensors_path, "fake").unwrap();
         let config_path = dir.path().join("config.json");
-        fs::write(&config_path, r#"{"quant_method": "awq", "model_type": "llama"}"#).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"quant_method": "awq", "model_type": "llama"}"#,
+        )
+        .unwrap();
         let result = detect_format(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(result, ModelFormat::Awq);
     }
@@ -384,7 +564,11 @@ mod tests {
     fn test_detect_format_gptq_dir() {
         let dir = create_temp_dir();
         let config_path = dir.path().join("config.json");
-        fs::write(&config_path, r#"{"quant_method": "gptq", "model_type": "llama"}"#).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"quant_method": "gptq", "model_type": "llama"}"#,
+        )
+        .unwrap();
         let result = detect_format(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(result, ModelFormat::Gptq);
     }
@@ -424,7 +608,11 @@ mod tests {
     #[test]
     fn test_all_format_to_chart_mappings() {
         let formats = vec![
-            (ModelFormat::Safetensors, Engine::Vllm, "model-serving-engine"),
+            (
+                ModelFormat::Safetensors,
+                Engine::Vllm,
+                "model-serving-engine",
+            ),
             (ModelFormat::Awq, Engine::Vllm, "model-serving-engine"),
             (ModelFormat::Gptq, Engine::Vllm, "model-serving-engine"),
         ];
@@ -433,5 +621,162 @@ mod tests {
             assert_eq!(engine, expected_engine, "Engine mismatch for {:?}", fmt);
             assert_eq!(chart, expected_chart, "Chart mismatch for {:?}", fmt);
         }
+    }
+
+    // --- Routing mode tests ---
+
+    #[test]
+    fn test_routing_mode_consistent_hash_without_llm_d() {
+        assert_eq!(
+            routing_mode_for(ModelFamily::Transformer, false),
+            RoutingMode::ConsistentHash
+        );
+        assert_eq!(
+            routing_mode_for(ModelFamily::Moe, false),
+            RoutingMode::ConsistentHash
+        );
+        assert_eq!(
+            routing_mode_for(ModelFamily::Hybrid, false),
+            RoutingMode::ConsistentHash
+        );
+    }
+
+    #[test]
+    fn test_routing_mode_epp_for_transformer() {
+        assert_eq!(
+            routing_mode_for(ModelFamily::Transformer, true),
+            RoutingMode::Epp
+        );
+    }
+
+    #[test]
+    fn test_routing_mode_epp_for_hybrid() {
+        assert_eq!(
+            routing_mode_for(ModelFamily::Hybrid, true),
+            RoutingMode::Epp
+        );
+    }
+
+    #[test]
+    fn test_routing_mode_epp_with_indexer_for_moe() {
+        assert_eq!(
+            routing_mode_for(ModelFamily::Moe, true),
+            RoutingMode::EppWithIndexer
+        );
+    }
+
+    #[test]
+    fn test_routing_mode_consistent_hash_for_ssm_even_with_llm_d() {
+        assert_eq!(
+            routing_mode_for(ModelFamily::Ssm, true),
+            RoutingMode::ConsistentHash
+        );
+    }
+
+    // --- Serving mode detection tests ---
+
+    #[test]
+    fn test_detect_serving_mode_unified_for_transformer() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "architectures": ["LlamaForCausalLM"]}"#,
+        )
+        .unwrap();
+        let mode =
+            detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Transformer).unwrap();
+        assert_eq!(mode, ServingMode::Unified);
+    }
+
+    #[test]
+    fn test_detect_serving_mode_disaggregated_by_flag() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "disaggregated": true}"#,
+        )
+        .unwrap();
+        let mode =
+            detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Transformer).unwrap();
+        assert_eq!(mode, ServingMode::Disaggregated);
+    }
+
+    #[test]
+    fn test_detect_serving_mode_disaggregated_by_pd_split() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(&config_path, r#"{"model_type": "llama", "pd_split": true}"#).unwrap();
+        let mode =
+            detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Transformer).unwrap();
+        assert_eq!(mode, ServingMode::Disaggregated);
+    }
+
+    #[test]
+    fn test_detect_serving_mode_disaggregated_by_large_model() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "num_parameters": 70000000000}"#,
+        )
+        .unwrap();
+        let mode =
+            detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Transformer).unwrap();
+        assert_eq!(mode, ServingMode::Disaggregated);
+    }
+
+    #[test]
+    fn test_detect_serving_mode_wide_expert_parallel() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"model_type": "llama", "num_experts": 64, "expert_parallel": "wide"}"#,
+        )
+        .unwrap();
+        let mode = detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Moe).unwrap();
+        assert_eq!(mode, ServingMode::WideExpertParallel);
+    }
+
+    #[test]
+    fn test_detect_serving_mode_ssm_never_disaggregated() {
+        let dir = create_temp_dir();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"model_type": "mamba", "disaggregated": true}"#,
+        )
+        .unwrap();
+        let mode = detect_serving_mode(dir.path().to_str().unwrap(), ModelFamily::Ssm).unwrap();
+        assert_eq!(mode, ServingMode::Unified);
+    }
+
+    // --- Disaggregation recommendation tests ---
+
+    #[test]
+    fn test_should_disaggregate_ssm_returns_false() {
+        assert!(!should_disaggregate(ModelFamily::Ssm, 100.0, 100));
+    }
+
+    #[test]
+    fn test_should_disaggregate_small_model_returns_false() {
+        assert!(!should_disaggregate(ModelFamily::Transformer, 7.0, 100));
+    }
+
+    #[test]
+    fn test_should_disaggregate_low_concurrency_returns_false() {
+        assert!(!should_disaggregate(ModelFamily::Transformer, 70.0, 4));
+    }
+
+    #[test]
+    fn test_should_disaggregate_large_model_high_concurrency() {
+        assert!(should_disaggregate(ModelFamily::Transformer, 70.0, 16));
+    }
+
+    #[test]
+    fn test_should_disaggregate_hybrid_model() {
+        assert!(should_disaggregate(ModelFamily::Hybrid, 40.0, 32));
     }
 }

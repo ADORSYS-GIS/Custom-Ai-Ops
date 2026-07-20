@@ -6,9 +6,9 @@
 |------|---------|---------------|
 | -3 | Bootstrap namespace, secrets | Nothing starts without these |
 | -2 | Storage (PVC, Longhorn, versioned seed jobs), **swapoff DaemonSet** | Pods need volumes ready; swap must be off before model pods start |
-| -1 | Operators (NVIDIA GPU, Prometheus) | Must run before workloads to capture metrics |
+| -1 | Operators (NVIDIA GPU) | Must run before workloads |
 | 0 | Workloads (StatefulSets) | Core model serving |
-| 1 | Content (Grafana dashboards, gateway config, ServiceMonitor) | Depends on workloads |
+| 1 | Content (post-deployment config) | Depends on workloads |
 | 2+ | Post-sync (smoke tests, notifications) | Validation final |
 
 ## ArgoCD ApplicationSet
@@ -17,7 +17,7 @@ Production deployment uses `apps/argocd-appset-prod.yaml` with:
 - Automated prune and self-heal
 - Server-side apply
 - Retry with exponential backoff
-- Sync waves: -3 (secrets) → -2 (infrastructure + swapoff) → -1 (GPU operator) → 0 (model pods) → 1 (gateway + dashboards) → 2 (smoke tests)
+- Sync waves: -3 (secrets) → -2 (infrastructure + swapoff) → -1 (GPU operator) → 0 (model pods) → 1 (post-deployment config) → 2 (smoke tests)
 
 ## Health Checks for ML CRDs
 
@@ -36,6 +36,5 @@ All critical vLLM parameters are centralized in `environments/{dev,staging,prod}
 | `enable-prefix-caching` | ✓ | ✓ | ✓ |
 | `block-size` | 16 | 16 | 16 |
 | KEDA autoscaling | off | on | on |
-| ServiceMonitor | on | on | on |
 | swapoff DaemonSet | on | on | on |
 | QoS Guaranteed | ✓ | ✓ | ✓ |

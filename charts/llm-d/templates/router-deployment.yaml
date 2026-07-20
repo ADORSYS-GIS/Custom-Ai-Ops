@@ -1,0 +1,128 @@
+{{- if .Values.router.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llm-d.router.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+    component: router
+spec:
+  replicas: {{ .Values.router.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "llm-d.selectorLabels" . | nindent 6 }}
+      component: router
+  template:
+    metadata:
+      labels:
+        {{- include "llm-d.selectorLabels" . | nindent 8 }}
+        component: router
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "llm-d.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: envoy-proxy
+          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}envoyproxy/envoy:distroless-v1.39.0-latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ .Values.router.envoy.port }}
+              protocol: TCP
+            - name: admin
+              containerPort: {{ .Values.router.envoy.adminPort }}
+              protocol: TCP
+          args:
+            - -c
+            - /etc/llm-d/envoy.yaml
+            - --log-level
+            - warn
+          volumeMounts:
+            - name: llm-d-config
+              mountPath: /etc/llm-d
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: epp
+          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ .Values.router.eppImage.repository }}:{{ .Values.router.eppImage.tag }}"
+          imagePullPolicy: {{ .Values.router.eppImage.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: 9002
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: EPP_CONFIG_FILE
+              value: /etc/llm-d/epp-config.json
+            - name: INFERENCEPOOL_NAME
+              value: {{ include "llm-d.fullname" . }}
+            - name: INFERENCEPOOL_NAMESPACE
+              value: {{ .Values.global.namespace }}
+            {{- if .Values.kvCacheIndexer.enabled }}
+            - name: KV_CACHE_INDEXER_HOST
+              value: {{ include "llm-d.indexer.fullname" . }}.{{ .Values.global.namespace }}.svc.cluster.local
+            - name: KV_CACHE_INDEXER_PORT
+              value: "8090"
+            {{- end }}
+          volumeMounts:
+            - name: llm-d-config
+              mountPath: /etc/llm-d
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          resources:
+            {{- toYaml .Values.router.resources | nindent 12 }}
+          readinessProbe:
+            grpc:
+              port: 9002
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            grpc:
+              port: 9002
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: llm-d-config
+          configMap:
+            name: {{ include "llm-d.router.fullname" . }}-config
+{{- end }}

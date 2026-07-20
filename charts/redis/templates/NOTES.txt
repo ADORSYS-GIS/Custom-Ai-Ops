@@ -1,0 +1,49 @@
+🎯 Redis for LMCache L3 — Deployed
+
+  Chart:        {{ .Chart.Name }} v{{ .Chart.Version }}
+  Architecture: {{ .Values.architecture | upper }}
+  Namespace:    {{ include "redis.namespace" . }}
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ Primary service:  {{ include "redis.primaryServiceName" . }}.{{ include "redis.namespace" . }}.svc.cluster.local:{{ .Values.service.primary.port }}
+  └────────────────────────────────────────────────────────────────────┘
+
+{{- if eq .Values.architecture "sentinel" }}
+  ⚡ HA mode with Sentinel:
+    - 1 primary + {{ .Values.replica.replicaCount }} replicas
+    - {{ .Values.sentinel.replicaCount }} sentinel monitors
+    - Quorum: {{ .Values.sentinel.quorum }}
+    - Auto-failover on primary failure (5s detection, 10s failover)
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ Sentinel connection:                                                │
+  │   redis-cli -h {{ include "redis.fullname" . }}-sentinel.{{ include "redis.namespace" . }}.svc.cluster.local -p 26379
+  │   SENTINEL get-master-addr-by-name {{ include "redis.sentinelMasterName" . }}
+  └────────────────────────────────────────────────────────────────────┘
+{{- else }}
+  ⚡ Standalone mode (no HA):
+    - Single Redis node with persistent storage
+    - For dev/staging use only
+{{- end }}
+
+{{- if .Values.auth.enabled }}
+  🔐 Auth enabled:
+    - Secret: {{ include "redis.secretName" . }}
+    - Key:    {{ include "redis.secretPasswordKey" . }}
+{{- else }}
+  ⚠️  Auth DISABLED — not for production use!
+{{- end }}
+
+  📋 To verify:
+    kubectl exec -n {{ include "redis.namespace" . }} deploy/{{ include "redis.fullname" . }}-sentinel -- redis-cli -p 26379 ping
+    # Expected: PONG
+
+  📖 Configuration:
+    - Max memory: {{ .Values.config.maxmemory }}
+    - Eviction:   {{ .Values.config.maxmemoryPolicy }}
+    - AOF:        {{ .Values.config.appendonly }}
+
+  ⚙️  Update config:
+    helm upgrade {{ .Release.Name }} ./charts/redis \
+      -n {{ include "redis.namespace" . }} \
+      -f environments/prod/values.yaml

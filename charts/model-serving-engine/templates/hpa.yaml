@@ -1,45 +1,4 @@
 {{- if .Values.autoscaling.enabled }}
-{{- if .Values.autoscaling.keda }}
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: {{ include "model-serving-engine.fullname" . }}-keda
-  namespace: {{ .Values.global.namespace }}
-  labels:
-    {{- include "model-serving-engine.labels" . | nindent 4 }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: StatefulSet
-    name: {{ include "model-serving-engine.fullname" . }}
-  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
-  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
-  pollingInterval: {{ .Values.autoscaling.keda.pollingInterval | default 15 }}
-  cooldownPeriod: {{ .Values.autoscaling.keda.cooldownPeriod | default 60 }}
-  triggers:
-    # Primary trigger: waiting request queue depth.
-    # Classic CPU/RAM autoscaling is inoperant for LLM inference because
-    # GPU-bound workloads barely register on CPU. Queue depth directly
-    # reflects engine saturation.
-    - type: prometheus
-      metadata:
-        serverAddress: {{ .Values.autoscaling.keda.prometheusAddress | quote }}
-        metricName: vllm_num_requests_waiting
-        threshold: {{ .Values.autoscaling.keda.queueDepthThreshold | default "5" | quote }}
-        query: |
-          max(vllm:num_requests_waiting{namespace="{{ .Values.global.namespace }}"})
-    # Secondary trigger: KV cache usage percentage.
-    # Scales out before the cache fills completely to avoid evictions.
-    - type: prometheus
-      metadata:
-        serverAddress: {{ .Values.autoscaling.keda.prometheusAddress | quote }}
-        metricName: vllm_gpu_cache_usage_perc
-        threshold: {{ .Values.autoscaling.keda.cacheUsageThreshold | default "0.85" | quote }}
-        query: |
-          max(vllm:gpu_cache_usage_perc{namespace="{{ .Values.global.namespace }}"})
-{{- else }}
 {{/* Fallback: legacy HPA on CPU/RAM (NOT recommended for LLM workloads) */}}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -72,5 +31,4 @@ spec:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
-{{- end }}
 {{- end }}

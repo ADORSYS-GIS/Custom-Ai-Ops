@@ -1,0 +1,17 @@
+apiVersion: v2
+name: llm-d
+description: llm-d distributed inference middleware — EPP cache-aware routing, KV-Cache Indexer, InferencePool CRD
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Custom-Ai-Ops
+sources:
+  - https://github.com/llm-d/llm-d
+keywords:
+  - llm-d
+  - epp
+  - inference
+  - routing
+  - kv-cache
+  - disaggregation

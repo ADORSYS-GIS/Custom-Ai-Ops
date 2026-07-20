@@ -1,0 +1,47 @@
+{{- if eq .Values.architecture "sentinel" }}
+# --- RBAC for Sentinel (needs K8s API access to update Service endpoints on failover) ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "redis.fullname" . }}-sentinel
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "redis.fullname" . }}-sentinel
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "redis.fullname" . }}-sentinel
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "redis.fullname" . }}-sentinel
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "redis.fullname" . }}-sentinel
+    namespace: {{ include "redis.namespace" . }}
+{{- end }}

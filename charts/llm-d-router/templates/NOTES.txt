@@ -1,0 +1,90 @@
+llm-d Router (Proxy + Endpoint Picker) has been installed!
+
+==============================================================================
+Components Deployed:
+
+{{- if .Values.proxy.enabled }}
+✓ Proxy (Gateway data-plane)
+  Replicas: {{ .Values.proxy.replicaCount }}
+  Service: {{ include "llm-d-router.fullname" . }}-proxy
+  Port: {{ .Values.proxy.service.port }}
+  {{- if .Values.proxy.extProc.enabled }}
+  ext-proc: Enabled (EPP callback)
+  {{- end }}
+{{- end }}
+
+{{- if .Values.epp.enabled }}
+✓ Endpoint Picker (EPP - scheduling brain)
+  Replicas: {{ .Values.epp.replicaCount }}
+  Service: {{ .Values.epp.service.name }}
+  Port: {{ .Values.epp.service.port }}
+  
+  Scheduling Pipeline:
+  1. Discover - Watch InferencePool resources
+  2. Filter - Drop overloaded/unhealthy pods
+  3. Score - Cache-aware + load + affinity
+  4. Select - Max score picker
+  
+  Cache-aware routing: {{ if .Values.epp.indexer.enabled }}Precise (with Indexer){{ else }}Heuristic{{ end }}
+{{- end }}
+
+==============================================================================
+VERIFICATION:
+
+1. Check Proxy deployment:
+   
+   kubectl get pods -n {{ .Values.global.namespace }} -l app.kubernetes.io/subcomponent=proxy
+   kubectl logs -n {{ .Values.global.namespace }} -l app.kubernetes.io/subcomponent=proxy
+
+2. Check EPP deployment:
+   
+   kubectl get pods -n {{ .Values.global.namespace }} -l app.kubernetes.io/subcomponent=epp
+   kubectl logs -n {{ .Values.global.namespace }} -l app.kubernetes.io/subcomponent=epp
+
+3. Check services:
+   
+   kubectl get svc -n {{ .Values.global.namespace }} | grep llm-d
+
+4. Check RBAC:
+   
+   kubectl get clusterrole {{ include "llm-d-router.fullname" . }}
+   kubectl get clusterrolebinding {{ include "llm-d-router.fullname" . }}
+
+==============================================================================
+NEXT STEPS:
+
+1. Create InferencePool resources for your vLLM deployments
+2. Create Gateway and HTTPRoute to route traffic via llm-d
+3. Configure vLLM to emit KV-cache events (optional but recommended)
+
+See documentation: docs/explain/llm-d.md
+
+==============================================================================
+ACCESSING THE ROUTER:
+
+# Port-forward for testing
+kubectl port-forward -n {{ .Values.global.namespace }} \
+  svc/{{ include "llm-d-router.fullname" . }}-proxy {{ .Values.proxy.service.port }}:{{ .Values.proxy.service.port }}
+
+# Test routing (after Gateway/HTTPRoute configured)
+curl http://localhost:{{ .Values.proxy.service.port }}/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama-3.1-8b", "messages": [{"role": "user", "content": "Hello"}]}'
+
+==============================================================================
+MONITORING:
+
+{{- if .Values.monitoring.enabled }}
+Metrics exposed on:
+- Proxy: http://{{ include "llm-d-router.fullname" . }}-proxy:{{ .Values.proxy.service.port }}/metrics
+- EPP: http://{{ .Values.epp.service.name }}:8081/metrics
+
+Key metrics:
+- llm_d_router_requests_total
+- llm_d_router_request_duration_seconds
+- llm_d_epp_scheduling_decisions_total
+- llm_d_epp_scheduling_duration_seconds
+- llm_d_epp_cache_hits_total
+{{- end }}
+
+==============================================================================

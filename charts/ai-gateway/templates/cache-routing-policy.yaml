@@ -11,7 +11,7 @@ metadata:
 data:
   cache-routing-policy.yaml: |
     # Cache-Aware Routing Policy
-    # See docs/explain/bible-kv-cache.md §10.3 and §12.3.
+    # See docs/explain/vllm-kv-cache.md §10.3 and §12.3.
     #
     # Ensures requests sharing a common prefix are routed to the same
     # backend pod, maximizing KV cache hit rate at the cluster level.
@@ -24,7 +24,7 @@ data:
     -- and injects the result as x-cache-affinity-key header.
     -- The backend traffic policy then routes by this header via consistent-hash.
     --
-    -- See bible-kv-cache.md §10.3: "At scale, a simple round-robin LB
+    -- See vllm-kv-cache.md §10.3: "At scale, a simple round-robin LB
     -- destroys the cache benefit by dispersing similar requests."
 
     local prefix_bytes = 512  -- hash first 512 bytes of body (covers system prompt)

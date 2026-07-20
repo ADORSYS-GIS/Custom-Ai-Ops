@@ -1,0 +1,20 @@
+{{- if .Values.router.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llm-d.router.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+    component: router
+spec:
+  type: {{ .Values.router.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.router.service.port }}
+      targetPort: {{ .Values.router.service.targetPort }}
+      protocol: TCP
+  selector:
+    {{- include "llm-d.selectorLabels" . | nindent 4 }}
+    component: router
+{{- end }}

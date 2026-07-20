@@ -13,7 +13,14 @@ models:
     heads: 32
     quantisation: bf16
     gatewayBackend: mistral-7b-local
-    notes: "Staged for A100 (40 GB) deployment, awaiting quota"
+    llmD:
+      enabled: true
+      routingMode: epp
+      servingMode: unified
+      inferencePool: mistral-7b-pool
+      emitKvEvents: true
+      disaggregated: false
+    notes: "Staged for A100 (40 GB) deployment, awaiting quota. llm-d EPP routing enabled (Phase 1)."
 
   - name: llama-3-70b-instruct
     format: safetensors
@@ -29,4 +36,13 @@ models:
     heads: 64
     quantisation: fp16
     gatewayBackend: llama-3-70b-local
-    notes: "Large model on standby, requires H100 with tensor parallelism"
+    llmD:
+      enabled: true
+      routingMode: epp-with-indexer
+      servingMode: disaggregated
+      inferencePool: llama-3-70b-pool
+      emitKvEvents: true
+      disaggregated: true
+      prefillGpuUtilization: 0.92
+      decodeGpuUtilization: 0.85
+    notes: "Large model on standby, requires H100 with tensor parallelism. llm-d disaggregated P/D mode planned (Phase 4, requires RDMA)."

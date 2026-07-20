@@ -1,0 +1,15 @@
+{{- if and .Values.router.enabled .Values.router.pdb.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "llm-d.router.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.router.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "llm-d.selectorLabels" . | nindent 6 }}
+      component: router
+{{- end }}

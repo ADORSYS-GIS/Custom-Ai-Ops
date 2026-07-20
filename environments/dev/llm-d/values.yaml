@@ -1,0 +1,25 @@
+global:
+  namespace: llm-d-system
+
+# Dev: minimal router, no KV-Cache Indexer, no disaggregation
+router:
+  enabled: true
+  replicaCount: 1
+  epp:
+    plugin: prefix-cache
+    minReplicas: 1
+  pdb:
+    enabled: false
+
+kvCacheIndexer:
+  enabled: false
+
+inferencePool:
+  enabled: true
+  modelName: ""
+  targetService:
+    name: ""
+    port: 80
+
+disaggregation:
+  enabled: false

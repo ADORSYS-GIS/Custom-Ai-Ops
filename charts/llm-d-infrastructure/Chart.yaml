@@ -1,0 +1,38 @@
+apiVersion: v2
+name: llm-d-infrastructure
+description: |
+  Gateway API and Gateway API Inference Extension (GAIE) CRDs required for llm-d.
+  
+  This chart installs the foundational Custom Resource Definitions needed for llm-d:
+  - Gateway API v1.5.1+ (Gateway, HTTPRoute, etc.)
+  - Gateway API Inference Extension v1.5.0+ (InferencePool, InferenceObjective, etc.)
+  
+  These CRDs must be installed before deploying llm-d-router or llm-d-kv-cache-indexer.
+
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+keywords:
+  - gateway-api
+  - gaie
+  - inference
+  - llm-d
+  - kubernetes
+  - crd
+
+home: https://gateway-api.sigs.k8s.io/
+sources:
+  - https://github.com/kubernetes-sigs/gateway-api
+  - https://github.com/kubernetes-sigs/gateway-api-inference-extension
+
+maintainers:
+  - name: Kubernetes SIG-Network
+    url: https://github.com/kubernetes-sigs/gateway-api
+
+icon: https://gateway-api.sigs.k8s.io/images/logo/logo.svg
+
+annotations:
+  artifacthub.io/changes: |
+    - kind: changed
+      description: Update Gateway API to v1.5.1 and GAIE to v1.5.0

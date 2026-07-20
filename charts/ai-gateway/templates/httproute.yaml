@@ -25,6 +25,16 @@ spec:
             - type: Exact
               name: x-model
               value: {{ .name }}
+      {{- if $.Values.llmD.enabled }}
+      # llm-d EPP cache-aware routing: the InferencePool routes
+      # requests to the replica holding the relevant KV-cache blocks.
+      # No sticky-session header needed — EPP inspects the prompt prefix.
+      backendRefs:
+        - name: {{ $.Values.llmD.inferencePoolName }}
+          kind: InferencePool
+          group: inference.networking.x-k8s.io
+          namespace: {{ $.Values.llmD.inferencePoolNamespace }}
+      {{- else }}
       # Sticky routing by prefix hash: requests with the same prompt prefix
       # are routed to the same backend pod to maximize KV cache hit rate.
       # This leverages vLLM's --enable-prefix-caching by ensuring that
@@ -46,6 +56,7 @@ spec:
           port: 443
           weight: 0
         {{- end }}
+      {{- end }}
       timeouts:
         request: {{ $.Values.rateLimit.requestTimeout | default "10s" | quote }}
         backendRequest: {{ $.Values.rateLimit.backendRequestTimeout | default "8s" | quote }}

@@ -1,0 +1,249 @@
+# llm-d Router values for production environment
+# Full production configuration with cache-aware routing, monitoring, and high availability
+
+proxy:
+  enabled: true
+  replicaCount: 3  # 3 replicas for production HA
+  
+  image:
+    repository: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    tag: v0.9.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  
+  # Point to EPP service
+  env:
+    - name: EPP_URL
+      value: "http://llm-d-router-epp:8081"
+    - name: LOG_LEVEL
+      value: "info"
+    - name: ENABLE_METRICS
+      value: "true"
+    - name: ENABLE_ACCESS_LOG
+      value: "true"
+    - name: TIMEOUT_SECONDS
+      value: "180"
+    - name: MAX_CONCURRENT_REQUESTS
+      value: "1000"
+    - name: CIRCUIT_BREAKER_ENABLED
+      value: "true"
+    - name: CIRCUIT_BREAKER_MAX_FAILURES
+      value: "5"
+    - name: CIRCUIT_BREAKER_TIMEOUT_SECONDS
+      value: "60"
+  
+  # Production-grade affinity rules
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: proxy
+          topologyKey: kubernetes.io/hostname
+  
+  # Topology spread for multi-zone HA
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: proxy
+  
+  # HPA for dynamic scaling
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+epp:
+  enabled: true
+  replicaCount: 3  # 3 replicas for production HA
+  
+  image:
+    repository: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    tag: v0.9.0
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+    metricsPort: 9091
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+  
+  # Production configuration: optimized cache-aware routing
+  config:
+    scorers:
+      - name: prefix-match
+        weight: 0.7
+        enabled: true
+        config:
+          mode: heuristic  # MVP: heuristic mode (no KV-Cache Indexer)
+          prefixLength: 1024
+          # Future: mode: precise (requires KV-Cache Indexer)
+          # indexerUrl: "http://llm-d-kv-cache-indexer:8080"
+      
+      - name: load-balancing
+        weight: 0.2
+        enabled: true
+        config:
+          queueDepthWeight: 0.6
+          gpuUtilizationWeight: 0.4
+          includeMemoryPressure: true
+      
+      - name: latency
+        weight: 0.1
+        enabled: true
+        config:
+          recentWindowSeconds: 120
+          targetP99Ms: 500
+          penaltyFactor: 2.0
+    
+    filters:
+      - name: model-compatibility
+        enabled: true
+        config:
+          enforceExactMatch: true
+      
+      - name: capacity-check
+        enabled: true
+        config:
+          maxQueueDepth: 30
+          maxGpuUtilization: 0.95
+          minAvailableMemoryBytes: 1073741824  # 1GB
+      
+      - name: health-check
+        enabled: true
+        config:
+          consecutiveSuccesses: 2
+      
+      - name: version-check
+        enabled: true
+        config:
+          allowedVersions: ["v0.25.1"]
+    
+    selector:
+      strategy: weighted
+      topN: 2
+    
+    circuitBreaker:
+      enabled: true
+      maxFailures: 5
+      resetTimeoutSeconds: 60
+  
+  env:
+    - name: LOG_LEVEL
+      value: "info"
+    - name: NAMESPACE
+      value: "model-serving-prod"
+    - name: INFERENCE_POOL_NAME
+      value: "vllm-prod-pool"
+    - name: ENABLE_METRICS
+      value: "true"
+    - name: CACHE_AWARE_ROUTING
+      value: "true"
+    - name: SCORING_INTERVAL_MS
+      value: "50"  # Faster scoring in production
+    - name: DISCOVERY_INTERVAL_SECONDS
+      value: "5"
+    - name: METRICS_SCRAPE_INTERVAL_SECONDS
+      value: "10"
+  
+  # Production-grade affinity rules
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: epp
+          topologyKey: kubernetes.io/hostname
+  
+  # Topology spread for multi-zone HA
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: epp
+  
+  # HPA for dynamic scaling
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# RBAC enabled for discovering InferencePools
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: llm-d-router
+  annotations:
+    # Add annotations for workload identity if using cloud provider IAM
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/llm-d-router
+    # iam.gke.io/gcp-service-account: llm-d-router@PROJECT.iam.gserviceaccount.com
+
+# Pod Disruption Budget for high availability
+podDisruptionBudget:
+  enabled: true
+  proxy:
+    minAvailable: 2  # Keep at least 2 proxy pods during disruptions
+  epp:
+    minAvailable: 2  # Keep at least 2 EPP pods during disruptions
+
+# Security configuration
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+
+# Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: model-serving-prod
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: model-serving-prod
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -8,10 +8,11 @@ global:
 engine:
   type: vllm
 
+  # ── vLLM engine (LLM text inference) ────────────────────────────
   vllm:
     image:
       repository: vllm/vllm-openai
-      tag: v0.6.3
+      tag: v0.25.1
       pullPolicy: IfNotPresent
     command: []
     args:
@@ -64,61 +65,64 @@ engine:
       periodSeconds: 10
       failureThreshold: 60
 
-<<<<<<< Updated upstream
-  onnxGenai:
+  # ── Image-Gen engine (Stable Diffusion image generation) ───────
+  # Generates images from text prompts using bk-sdm-small.
+  # CPU-only, no GPU required. Serves via REST API at /generate.
+  imageGen:
     image:
-      repository: ghcr.io/microsoft/onnxruntime-genai
-      tag: "0.5.0"
+      # Default: use diffusers image with bk-sdm-small
+      repository: pytorch/pytorch
+      tag: 2.5.1-cuda12.4-cudnn9-runtime
       pullPolicy: IfNotPresent
-    command: []
-    args:
-      - --model_path
-      - /models/$(MODEL_NAME)
-      - --port
-      - "8080"
+    replicas: 1
+    args: []
     resources:
-      # QoS Guaranteed: requests == limits for all resources.
       limits:
-        nvidia.com/gpu: 1
         cpu: "4"
-        memory: 16Gi
+        memory: 8Gi
       requests:
-        nvidia.com/gpu: 1
-        cpu: "4"
-        memory: 16Gi
+        cpu: "2"
+        memory: 4Gi
     livenessProbe:
       httpGet:
         path: /health
-        port: http
+        port: 8000
       initialDelaySeconds: 60
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 6
+      periodSeconds: 30
+      timeoutSeconds: 15
+      failureThreshold: 5
     readinessProbe:
       httpGet:
         path: /health
-        port: http
-      initialDelaySeconds: 10
+        port: 8000
+      initialDelaySeconds: 30
       periodSeconds: 15
-      timeoutSeconds: 5
+      timeoutSeconds: 10
       failureThreshold: 3
     startupProbe:
       httpGet:
         path: /health
-        port: http
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      failureThreshold: 90
+        port: 8000
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      failureThreshold: 30
 
 model:
-=======
-  model:
->>>>>>> Stashed changes
   name: ""
   volumeSize: 50Gi
   seedCommand: []
   seedImage: ""
   seedImagePullPolicy: IfNotPresent
+  # Image-gen model configuration (used when engine.type=image-gen)
+  imageGen:
+    # Hugging Face model ID for image generation
+    modelId: "nota-ai/bk-sdm-small"
+    # Cache directory for downloaded models
+    cacheDir: /models/cache
+    # Default inference steps
+    defaultSteps: 25
+    # Default guidance scale
+    defaultGuidance: 7.5
 
 replicaCount: 1
 
@@ -133,6 +137,9 @@ persistenceRWX:
   storageClass: longhorn-rwx
   accessMode: ReadWriteMany
   size: 50Gi
+
+# Use an existing Kubernetes Secret for sensitive data (recommended over values.yaml secrets)
+# existingSecret: "my-secret-name"
 
 imagePullSecrets:
   - name: registry-credentials
@@ -158,18 +165,6 @@ service:
   port: 80
   targetPort: 8000
 
-# --- Layer 4: Observability — Prometheus scrape ---
-# vLLM exposes /metrics with vllm:gpu_cache_usage_perc, vllm:num_requests_waiting,
-# vllm:swap_out_blocks, vllm:gpu_prefix_cache_hits_total, etc.
-# Scrape interval 5-10s as recommended by the KV cache management doc.
-serviceMonitor:
-  enabled: false
-  path: /metrics
-  interval: 10s          # 5-10s recommended; lower = faster alert reaction
-  scrapeTimeout: 5s
-  releaseLabel: prometheus   # must match the Prometheus Operator release label
-  relabelings: []
-
 ingress:
   enabled: false
   className: ""
@@ -187,7 +182,6 @@ autoscaling:
   # Classic CPU/RAM HPA is inoperant for GPU-bound LLM workloads.
   keda:
     enabled: false
-    prometheusAddress: "http://prometheus-server.monitoring.svc.cluster.local:9090"
     pollingInterval: 15
     cooldownPeriod: 60
     queueDepthThreshold: "5"       # vllm:num_requests_waiting > 5 → scale out
@@ -207,6 +201,7 @@ networkPolicy:
 nodeSelector:
   # Isolate vLLM pods on GPU-only nodes to prevent interference with
   # CPU-only workloads. This label should be applied to all GPU nodes.
+  # For image-gen engine (CPU only), override with CPU-friendly labels.
   nvidia.com/gpu.present: "true"
 
 # Disable swap on GPU nodes via a DaemonSet (swapoff -a).
@@ -214,7 +209,7 @@ nodeSelector:
 # CPU RAM, inference latency spikes by 10-100x.
 gpuNodeSwapoff: true
 
-# --- LMCache: distributed KV cache middleware (Bible §4.3) ---
+# --- LMCache: distributed KV cache middleware ---
 # Turns KV cache from per-instance silo into persistent, shareable,
 # cluster-wide resource. Enables L1 (CPU) / L2 (NVMe) / L3 (Redis/S3)
 # tiered cache hierarchy for cross-pod prefix reuse.
@@ -223,27 +218,24 @@ lmcache:
   enabled: false
   image:
     repository: lmcache/lmcache-server
-    tag: latest
+    tag: v0.5.1
     pullPolicy: IfNotPresent
   cpuWorkers: 4
   chunkSize: 256
   # Multiprocess mode — LMCache runs as a separate daemon (recommended for prod).
   # vLLM connects via ZMQ (port 5555) + HTTP (port 8080 for health/metrics).
-  # See docs/explain/vllm+lmcache.md §3.2 for integration modes.
   mp:
     host: "127.0.0.1"
     port: 5555
     transferMode: zmq
   # Enable hostIPC for CUDA IPC between vLLM and LMCache pods.
-  # Mandatory when using CUDA IPC mode (m equivalent of card-to-card communication).
   hostIPC: true
   # SafeLMCacheConnectorV1 circuit breaker — vLLM falls back to native GPU
   # cache after N consecutive failures (no fate-sharing with LMCache).
-  # See docs/explain/vllm+lmcache.md §11.2.
   circuitBreaker:
     enabled: true
     maxFailures: 5
-  # CacheBlend — non-prefix reuse for RAG workloads (Bible §4.4).
+  # CacheBlend — non-prefix reuse for RAG workloads.
   # Blends cached KV with partial recomputation for semantic overlap.
   # 3x-4.5x TTFT reduction on RAG (no need for exact prefix match).
   cacheBlend:
@@ -252,11 +244,11 @@ lmcache:
     useLayerwise: true
     checkLayers: 1
     recomputeRatios: 0.15
-  # vLLM --kv-transfer-config fields (Bible §3.1, vllm+lmcache.md §2).
+  # vLLM --kv-transfer-config fields.
   # connector: LMCacheMPConnector (recommended) | LMCacheConnectorV1 |
   #            LMCacheConnectorV1Dynamic
   # role: kv_both (unified pool) | kv_producer (prefill pool) |
-  #       kv_consumer (decode pool, for PD disaggregation, Bible §10)
+  #       kv_consumer (decode pool, for PD disaggregation)
   kvTransferConfig:
     connector: LMCacheMPConnector
     role: kv_both
@@ -264,10 +256,8 @@ lmcache:
     disableHybridKvCacheManager: false
   # Env presets required by LMCache/vLLM integration.
   # PYTHONHASHSEED=0: deterministic hash ordering (avoids cache mismatches).
-  # PROMETHEUS_MULTIPROC_DIR: enables multi-process metric aggregation.
   env:
     PYTHONHASHSEED: "0"
-    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
   disk:
     enabled: false
     path: /var/lib/lmcache
@@ -289,15 +279,8 @@ lmcache:
     limits:
       cpu: "2"
       memory: 16Gi
-  # Separate ServiceMonitor for LMCache daemon metrics on port 8330.
-  # Disabled by default; enabled in envs where lmcache.enabled=true.
-  serviceMonitor:
-    enabled: false
-    interval: 10s
-    scrapeTimeout: 5s
-    releaseLabel: prometheus
 
-# --- SafeTensors cache persistence (Bible §5.1) ---
+# --- SafeTensors cache persistence ---
 # Persists KV cache to disk for fast restart: on pod restart, the cache
 # is restored directly into the attention layer without re-prefill.
 # Up to 136x TTFT reduction (Gemma 3 12B benchmark).
@@ -327,3 +310,63 @@ commonAnnotations: {}
 restartPolicy: Always
 
 terminationGracePeriodSeconds: 300
+
+# --- llm-d integration ---
+# When enabled, vLLM pods register with the llm-d InferencePool,
+# emit KV-cache events for the KV-Cache Indexer, and accept
+# cache-aware routing decisions from the EPP.
+# See docs/explain/llm-d.md for the full integration guide.
+llmD:
+  enabled: false
+  # InferencePool name that this pool registers with
+  inferencePoolName: ""
+  # EPP gRPC endpoint for cache-aware routing
+  eppEndpoint: ""
+  # Emit KV-cache events for the KV-Cache Indexer
+  emitKvEvents: false
+  # KV-Cache Indexer endpoint (if enabled)
+  kvCacheIndexerEndpoint: ""
+
+# --- Disaggregated P/D mode ---
+# Splits prefill and decode onto separate pod sets.
+# Requires llmD.enabled=true and RDMA/NVLink interconnect
+# for KV-cache transfer between prefill and decode pods.
+disaggregation:
+  enabled: false
+  # Role: unified | prefill | decode
+  role: unified
+  # Prefill-specific args (appended when role=prefill)
+  prefill:
+    gpuMemoryUtilization: "0.92"
+    maxNumSeqs: "32"
+  # Decode-specific args (appended when role=decode)
+  decode:
+    gpuMemoryUtilization: "0.85"
+    maxNumSeqs: "256"
+  # --- NIXL (NVIDIA Inference Xfer Library) ---
+  # NIXL is the KV-cache transfer layer for PD disaggregation.
+  # It uses RDMA/NVLink for high-speed GPU-to-GPU cache transfer.
+  # Requires: RDMA-capable NICs (InfiniBand/RoCE), nixl>=1.3.0
+  #           pip install "lmcache[nixl]" in the vLLM image.
+  # Docs: docs/explain/llm-d.md §20
+  nixl:
+    enabled: false
+    # Side-channel port for NIXL control messages.
+    # Must differ per instance on the same host.
+    sideChannelPort: 5600
+    # RDMA IB ports (comma-separated), e.g. "mlx5_0:1,mlx5_1:1"
+    # Leave empty for auto-detection.
+    ibPorts: ""
+    # Transport: rdma (default), tcp (fallback), cuda_ipc (intra-node)
+    transport: rdma
+    # GPU-Direct RDMA (bypass CPU, lower latency)
+    useGpuDirect: true
+    # Resource requests for RDMA-capable devices
+    # Typically: nvidia.com/hostdev or rdma/ib (varies by device plugin)
+    resources:
+      requests: {}
+      limits: {}
+    # Node selector for RDMA-capable GPU nodes
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+      # rdma/device: "true"  # Uncomment when RDMA device plugin is installed

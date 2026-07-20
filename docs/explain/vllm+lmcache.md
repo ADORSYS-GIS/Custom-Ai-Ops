@@ -20,14 +20,13 @@
 12. [Cache Coherence: The Critical Watchpoint](#12-cache-coherence)
 13. [Kubernetes Integration: vLLM Production Stack](#13-kubernetes-integration)
 14. [Cache-Aware Routing (KV-aware routing)](#14-cache-aware-routing)
-15. [Observability and Metrics](#15-observability-and-metrics)
-16. [Complete Configuration Reference](#16-configuration-reference)
-17. [Practical Guide: Setting Up a Local Test Environment](#17-local-guide)
-18. [Practical Guide: Production Kubernetes Deployment](#18-kubernetes-guide)
-19. [Troubleshooting](#19-troubleshooting)
-20. [Optimal Deployment Checklist](#20-checklist)
-21. [Technical Glossary](#21-glossary)
-22. [Sources](#22-sources)
+15. [Complete Configuration Reference](#15-configuration-reference)
+16. [Practical Guide: Setting Up a Local Test Environment](#16-local-guide)
+17. [Practical Guide: Production Kubernetes Deployment](#17-kubernetes-guide)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Optimal Deployment Checklist](#19-checklist)
+20. [Technical Glossary](#20-glossary)
+21. [Sources](#21-sources)
 
 ---
 
@@ -194,7 +193,7 @@ lmcache server \
 ```
 
 - Port **5555** (ZMQ): control channel, listens for incoming vLLM connections.
-- Port **8080** (HTTP): health checks, Prometheus metrics, management endpoints.
+- Port **8080** (HTTP): health checks, management endpoints.
 
 **Starting vLLM connected to the server**:
 
@@ -810,16 +809,9 @@ flowchart TB
         subgraph CACHE["Cache Layer"]
             LMCSVC["LMCache Service (separate deployment, MP mode)"]
         end
-        subgraph OBS["Observability"]
-            PROM["Prometheus"]
-            GRAF["Grafana"]
-            OTEL["OpenTelemetry traces"]
-        end
         CLIENT["Incoming traffic"] --> ROUTER
         ROUTER --> E1 & E2 & E3
         E1 & E2 & E3 <--> LMCSVC
-        E1 & E2 & E3 -.metrics.-> PROM --> GRAF
-        E1 & E2 & E3 -.traces.-> OTEL
         OP -.manages.-> ROUTER
         OP -.manages.-> ENGINES
         OP -.manages.-> LMCSVC
@@ -839,8 +831,7 @@ flowchart TB
 1. **Separate deployment**: LMCache (in MP mode) is deployed as its own Kubernetes service, with its own resources (RAM sized for L1, PVC or network access for L2), independent of the vLLM pod lifecycle.
 2. **Service discovery**: each vLLM pod connects to the LMCache service via its internal Kubernetes DNS name, without static IP configuration. In Kubernetes, the LMCache operator can create a **ConfigMap** (`<name>-connection`) containing the server address, mounted by vLLM pods.
 3. **Independent scaling**: the number of LMCache replicas (for P2P mode) and the number of vLLM replicas evolve independently according to their respective bottlenecks (cache memory vs GPU compute).
-4. **Unified observability**: KV cache-specific metrics (per-token hit rate, request lifecycle, per-level L1/L2 utilization) are exposed alongside standard Kubernetes metrics, consolidated in the same Grafana dashboards.
-5. **`hostIPC: true`**: when CUDA IPC transport is used between pods (manual DaemonSet deployment without the operator), this parameter is **mandatory** on LMCache and vLLM pods to enable CUDA IPC communication. The LMCache operator handles this automatically when used.
+4. **`hostIPC: true`**: when CUDA IPC transport is used between pods (manual DaemonSet deployment without the operator), this parameter is **mandatory** on LMCache and vLLM pods to enable CUDA IPC communication. The LMCache operator handles this automatically when used.
 
 ### 13.4 Helm Deployment — Values File
 
@@ -936,7 +927,7 @@ servingEngineSpec:
 | `vllmConfig.gpuMemoryUtilization` | 0.80 - 0.90 | GPU memory headroom for cache growth |
 | `vllmConfig.enablePrefixCaching` | **Disabled** when LMCache is active | Avoids conflicts between the two cache systems |
 | `vllmConfig.enableChunkedPrefill` | **Disabled** | Not compatible with LMCache |
-| `replicaCount` | Adjusted to load, driven by HPA/KEDA on Prometheus metrics (`vllm:num_requests_waiting`) | Horizontal scalability |
+| `replicaCount` | Adjusted to load, driven by HPA/KEDA on queue depth metrics (`vllm:num_requests_waiting`) | Horizontal scalability |
 
 ### 13.7 Key Production Considerations
 
@@ -971,55 +962,12 @@ KV-aware and prefix-aware routing, initially available on the application router
 
 ---
 
-<a id="15-observability-and-metrics"></a>
-## 15. Observability and Metrics
-
-### 15.1 LMCache Metrics Exposed
-
-LMCache exposes detailed metrics via vLLM's `/metrics` endpoint (prefix `lmcache:`).
-
-| Category | Metric | Description |
-|---|---|---|
-| **Requests** | `lmcache:num_retrieve_requests` | Total number of retrieval requests |
-| | `lmcache:num_store_requests` | Total number of store requests |
-| **Tokens** | `lmcache:num_requested_tokens` | Tokens requested for retrieval |
-| | `lmcache:num_hit_tokens` | Tokens found in cache |
-| **Hit Rate** | `lmcache:retrieve_hit_rate` | Hit rate for retrievals |
-| | `lmcache:lookup_hit_rate` | Hit rate for lookups |
-| **Utilization** | `lmcache:local_cache_usage` | Local cache (RAM) utilization |
-| | `lmcache:remote_cache_usage` | Remote cache utilization |
-| **Performance** | `lmcache:time_to_retrieve` | Cache retrieval time |
-
-### 15.2 Prometheus Configuration
-
-```yaml
-scrape_configs:
-  - job_name: 'lmcache'
-    static_configs:
-      - targets: ['<vllm-worker-ip>:8000']
-    scrape_interval: 15s
-```
-
-**Important note**: in v1 mode, vLLM and LMCache run in separate processes. The `PROMETHEUS_MULTIPROC_DIR` variable must be identical in both processes for correct metric aggregation.
-
-### 15.3 What to Monitor Continuously
-
-- The **cache hit rate**, measured **per token** (not just per request), to detect progressive degradation.
-- The **per-level utilization rate** (L1 vs L2) to adjust RAM/disk sizing.
-- **Overall HBM pressure**: LMCache provides a net benefit only when the KV cache footprint exceeds available VRAM capacity; under low memory pressure, the additional layer can represent a net cost on the order of a few percent.
-- **Latency (TTFT)** and **throughput**.
-- **Memory utilization** (GPU, CPU, disk).
-
-### 15.4 Observed Resilience in Logs
-
-LMCache logs constitute direct, measurable proof of proper routing and reuse operation, by precisely detailing the number of tokens retrieved from cache relative to the request total (see examples in section 5.3).
-
 ---
 
-<a id="16-configuration-reference"></a>
-## 16. Complete Configuration Reference
+<a id="15-configuration-reference"></a>
+## 15. Complete Configuration Reference
 
-### 16.1 vLLM Parameters for LMCache
+### 15.1 vLLM Parameters for LMCache
 
 | Parameter | Recommended Value | Reason |
 |---|---|---|
@@ -1030,7 +978,7 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 | `--gpu-memory-utilization` | 0.80-0.90 | Headroom for cache growth |
 | `--disable-hybrid-kv-cache-manager` | Enabled when needed (hybrid models, or `--kv-offloading-backend` shortcut) | Disables vLLM's internal hybrid cache |
 
-### 16.2 Key LMCache Environment Variables
+### 15.2 Key LMCache Environment Variables
 
 | Variable | Role | Typical Default |
 |---|---|---|
@@ -1043,9 +991,8 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 | `LMCACHE_BLEND_RECOMPUTE_RATIOS` | Fraction of tokens recomputed in blending | 0.15 |
 | `NO_GPU_EXT` | Disables GPU dependencies (useful in CPU-only environments, e.g. Apple Silicon) | — |
 | `PYTHONHASHSEED` | Set to `0` to ensure deterministic hashes across processes | — |
-| `PROMETHEUS_MULTIPROC_DIR` | Shared directory for multi-process metric aggregation | — |
 
-### 16.3 `lmcache server` Options (MP Mode)
+### 15.3 `lmcache server` Options (MP Mode)
 
 | Option | Role |
 |---|---|
@@ -1055,7 +1002,7 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 | `--eviction-policy` | Eviction policy (LRU by default) |
 | `--chunk-size` | Chunk size (use a small value like 16 only for demo) |
 
-### 16.4 `kv_transfer_config` — Key Fields
+### 15.4 `kv_transfer_config` — Key Fields
 
 | Field | Possible Values | Role |
 |---|---|---|
@@ -1065,7 +1012,7 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 | `kv_connector_extra_config.lmcache.mp.host` / `.port` | LMCache server address | Required in MP mode with non-local host |
 | `kv_connector_extra_config.lmcache.mp.mp_transfer_mode` | `lmcache_driven` (recommended) or `cpu` | Who drives block transfer |
 
-### 16.5 Roles (`kv_role`) — Detailed Table
+### 15.5 Roles (`kv_role`) — Detailed Table
 
 | Role | Description |
 |---|---|
@@ -1075,12 +1022,12 @@ LMCache logs constitute direct, measurable proof of proper routing and reuse ope
 
 ---
 
-<a id="17-local-guide"></a>
-## 17. Practical Guide: Setting Up a Local Test Environment
+<a id="16-local-guide"></a>
+## 16. Practical Guide: Setting Up a Local Test Environment
 
 This guide helps understand the mechanism on a development machine, **even without a GPU** (CPU mode), before a production deployment.
 
-### 17.1 Prerequisites
+### 16.1 Prerequisites
 
 | Item | Specification |
 |---|---|
@@ -1089,7 +1036,7 @@ This guide helps understand the mechanism on a development machine, **even witho
 | cmake | Installed (`brew install cmake` on macOS) |
 | Disk space | ~5 GB for sources and model |
 
-### 17.2 Installation
+### 16.2 Installation
 
 ```bash
 mkdir -p ~/projects-test && cd ~/projects-test
@@ -1129,7 +1076,7 @@ cd ~/projects-test/LMCache
 NO_GPU_EXT=1 pip install -e .
 ```
 
-### 17.3 Start the LMCache Server (Terminal A)
+### 16.3 Start the LMCache Server (Terminal A)
 
 ```bash
 cd ~/projects-test
@@ -1143,7 +1090,7 @@ Verification:
 curl http://localhost:8080/healthcheck
 ```
 
-### 17.4 Start vLLM with LMCache (Terminal B)
+### 16.4 Start vLLM with LMCache (Terminal B)
 
 ```bash
 cd ~/projects-test
@@ -1178,7 +1125,7 @@ vllm serve facebook/opt-125m \
   }'
 ```
 
-### 17.5 Test the Cache
+### 16.5 Test the Cache
 
 **First request (populates the cache)**:
 
@@ -1207,7 +1154,7 @@ curl http://localhost:8080/healthcheck
 curl http://localhost:8080/metrics
 ```
 
-### 17.6 Integrated Benchmark
+### 16.6 Integrated Benchmark
 
 ```bash
 lmcache bench server \
@@ -1221,7 +1168,7 @@ lmcache bench server \
 
 A success displays `CHECKSUM MATCH OK` × 3.
 
-### 17.7 Docker Version for GPU (Optional)
+### 16.7 Docker Version for GPU (Optional)
 
 ```bash
 git clone https://github.com/LMCache/LMCache-Examples.git
@@ -1234,8 +1181,8 @@ This demo launches two vLLM instances side by side: one with LMCache + CacheBlen
 
 ---
 
-<a id="18-kubernetes-guide"></a>
-## 18. Practical Guide: Production Kubernetes Deployment
+<a id="17-kubernetes-guide"></a>
+## 17. Practical Guide: Production Kubernetes Deployment
 
 See section 13 for the architecture and detailed `values.yaml` files. Summary of essential commands:
 
@@ -1245,13 +1192,13 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 | **Basic LMCache config** | `lmcacheConfig.enabled: true` and `cpuOffloadingBufferSize: "20"` |
 | **Remote cache config** | `cacheserverSpec` section in `values.yaml` |
 | **Verification logs** | `kubectl logs -f <vllm-pod>` (search for `LMCacheConfig`) |
-| **Prometheus metrics** | `/metrics` endpoint on vLLM pods |
+| **Metrics endpoint** | `/metrics` endpoint on vLLM pods |
 | **KServe alternative** | Dedicated manifests for HuggingFace vLLM backend with LMCache mounted as config volume (support added via KServe PR #4320) |
 
 ---
 
-<a id="19-troubleshooting"></a>
-## 19. Troubleshooting
+<a id="18-troubleshooting"></a>
+## 18. Troubleshooting
 
 | Problem | Cause | Solution |
 |---|---|---|
@@ -1266,8 +1213,8 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 
 ---
 
-<a id="20-checklist"></a>
-## 20. Optimal Deployment Checklist
+<a id="19-checklist"></a>
+## 19. Optimal Deployment Checklist
 
 - [ ] Connector choice (in-process vs multiprocess) aligned with actual cluster topology
 - [ ] `--kv-cache-dtype` strictly identical across all workers
@@ -1280,15 +1227,14 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 - [ ] KV-aware routing enabled beyond a handful of replicas
 - [ ] Request migration configured to tolerate instance crashes
 - [ ] `hostIPC: true` configured if CUDA IPC is used between pods (handled automatically by operator)
-- [ ] Monitoring of per-token hit rate, per storage level, and overall HBM pressure
-- [ ] `PROMETHEUS_MULTIPROC_DIR` consistent between vLLM process and LMCache process
+- [ ] Tracking of per-token hit rate, per storage level, and overall HBM pressure
 - [ ] Net benefit validation via A/B test before/after LMCache activation on real workload (gain is significant only if GPU memory pressure is real — rule of thumb: ≥ 50% of tokens in shared prefixes)
 - [ ] Versioned Docker tags (not `latest`) in production
 
 ---
 
-<a id="21-glossary"></a>
-## 21. Technical Glossary
+<a id="20-glossary"></a>
+## 20. Technical Glossary
 
 | Term | Definition |
 |---|---|
@@ -1310,12 +1256,12 @@ See section 13 for the architecture and detailed `values.yaml` files. Summary of
 | **kv_producer / kv_consumer** (or kv_sender / kv_retriever) | Roles declared by vLLM instances in a disaggregated prefill/decode architecture |
 | **No fate-sharing** | Property whereby the KV cache survives independently of the inference engine's lifecycle |
 | **KV-aware routing** | Routing strategy directing a request to the instance with the best expected cache hit rate |
-| **vLLM Production Stack** | Official reference Kubernetes deployment, integrating vLLM + LMCache + router + observability |
+| **vLLM Production Stack** | Official reference Kubernetes deployment, integrating vLLM + LMCache + router |
 
 ---
 
-<a id="22-sources"></a>
-## 22. Sources
+<a id="21-sources"></a>
+## 21. Sources
 
 This document consolidates all technical explanations previously exchanged on this subject, completed and verified by the following sources (consulted in July 2026):
 

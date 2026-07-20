@@ -15,9 +15,6 @@ spec:
     - Egress
   ingress:
     - from:
-        - namespaceSelector:
-            matchLabels:
-              name: envoy-gateway
         {{- range .Values.networkPolicy.ingressFrom }}
         - {{ toYaml . | nindent 10 }}
         {{- end }}
@@ -25,20 +22,40 @@ spec:
         - port: {{ include "model-serving-engine.enginePort" . }}
           protocol: TCP
   egress:
+    # DNS resolution (kube-system)
     - to:
         - namespaceSelector:
             matchLabels:
-              name: kube-system
+              kubernetes.io/metadata.name: kube-system
       ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
+    # L3 Redis cache connectivity (for LMCache L3 tier when enabled)
     - to:
         - namespaceSelector:
             matchLabels:
-              name: monitoring
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
       ports:
-        - port: 9090
+        - port: 6379
+          protocol: TCP
+    # Kubernetes API server (for leader election, pod metadata)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
           protocol: TCP
 {{- end }}

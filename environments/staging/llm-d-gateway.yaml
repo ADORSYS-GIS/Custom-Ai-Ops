@@ -1,0 +1,205 @@
+---
+# Gateway API Gateway for llm-d routing in staging
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: llm-d-gateway-staging
+  namespace: model-serving-staging
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: gateway
+    environment: staging
+  annotations:
+    # Enable access logging for staging validation
+    gateway.llm-d.io/access-log: "true"
+    # Enable detailed metrics for performance testing
+    gateway.llm-d.io/detailed-metrics: "true"
+spec:
+  gatewayClassName: llm-d-gateway-class
+  
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+      
+      # Rate limiting for staging (prevent abuse)
+      hostname: "*.staging.example.com"
+
+---
+# HTTPRoute for routing inference requests through llm-d Router
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-d-inference-route-staging
+  namespace: model-serving-staging
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: httproute
+    environment: staging
+  annotations:
+    # Enable request/response logging for debugging
+    gateway.llm-d.io/log-level: "debug"
+spec:
+  parentRefs:
+    - name: llm-d-gateway-staging
+      namespace: model-serving-staging
+  
+  # Route OpenAI-compatible inference requests
+  rules:
+    # Rule 1: Chat completions with cache-aware routing
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+          method: POST
+      
+      # Apply ext-proc filter for cache-aware routing
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: inference.networking.x-k8s.io
+            kind: EndpointPicker
+            name: llm-d-epp
+            namespace: llm-d-system
+        
+        # Add timeout for long-running requests
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Request-Timeout
+                value: "120"
+              - name: X-Cache-Aware-Routing
+                value: "enabled"
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-staging-pool
+          port: 8000
+      
+      # Set timeout for staging (2 minutes)
+      timeouts:
+        request: 120s
+    
+    # Rule 2: Completions (legacy OpenAI API)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/completions
+          method: POST
+      
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: inference.networking.x-k8s.io
+            kind: EndpointPicker
+            name: llm-d-epp
+            namespace: llm-d-system
+        
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Request-Timeout
+                value: "120"
+              - name: X-Cache-Aware-Routing
+                value: "enabled"
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-staging-pool
+          port: 8000
+      
+      timeouts:
+        request: 120s
+    
+    # Rule 3: Health checks (direct passthrough, no EPP)
+    - matches:
+        - path:
+            type: Exact
+            value: /health
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-staging-pool
+          port: 8000
+      
+      timeouts:
+        request: 10s
+    
+    # Rule 4: Metrics (direct passthrough, no EPP)
+    - matches:
+        - path:
+            type: Exact
+            value: /metrics
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-staging-pool
+          port: 8000
+      
+      timeouts:
+        request: 10s
+    
+    # Rule 5: Model info (direct passthrough)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/models
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-staging-pool
+          port: 8000
+      
+      timeouts:
+        request: 10s
+
+---
+# InferenceObjective: Define SLO targets for staging
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: staging-default-objective
+  namespace: model-serving-staging
+  labels:
+    app.kubernetes.io/name: llm-d
+    environment: staging
+spec:
+  # Target this objective to staging pool
+  targetRef:
+    group: inference.networking.x-k8s.io
+    kind: InferencePool
+    name: vllm-staging-pool
+  
+  # Performance objectives for staging validation
+  objectives:
+    - name: ttft-p99
+      metric: time_to_first_token_p99
+      targetValue: "800ms"
+      weight: 0.5
+    
+    - name: throughput
+      metric: tokens_per_second
+      targetValue: "1000"
+      weight: 0.3
+    
+    - name: cache-hit-rate
+      metric: cache_hit_rate
+      targetValue: "0.5"  # 50% cache hit rate minimum in staging
+      weight: 0.2
+  
+  # Priority class for this objective
+  priority: medium

@@ -1,0 +1,144 @@
+# --- llm-d Helm Chart ---
+# Deploys the llm-d middleware layer between the AI Gateway and vLLM
+# engine pods.  Provides:
+#   1. Router (Envoy proxy + EPP) — cache-aware request routing
+#   2. KV-Cache Indexer — cluster-wide cache block map
+#   3. InferencePool CRD — groups vLLM replicas serving one model
+#
+# See docs/explain/llm-d.md for the full architecture reference.
+
+global:
+  imageRegistry: ""
+  imagePullSecrets:
+    - name: registry-credentials
+  namespace: llm-d-system
+
+# --- Router (Envoy proxy + EPP) ---
+router:
+  enabled: true
+  image:
+    repository: llmdocker/llm-d-router
+    tag: v0.8.1
+    pullPolicy: IfNotPresent
+
+  # EPP image (Endpoint Picker brain)
+  eppImage:
+    repository: llmdocker/llm-d-epp
+    tag: v0.8.1
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  # EPP configuration — controls the 4-stage routing pipeline
+  # (Discover → Filter → Score → Select)
+  epp:
+    # Scoring plugin: prefix-cache (default), predicted-latency, flow-control
+    plugin: prefix-cache
+    # Discovery: how EPP discovers vLLM replicas
+    discovery: kubernetes
+    # Filter: minimum replicas to consider
+    minReplicas: 1
+    # Score: weight factors for scoring
+    scoringWeights:
+      cacheHit: 0.7
+      queueDepth: 0.2
+      gpuUtilization: 0.1
+    # Flow control: max inflight requests per replica
+    maxInflightPerReplica: 128
+
+  # Envoy proxy configuration
+  envoy:
+    port: 8080
+    adminPort: 9901
+
+  resources:
+    limits:
+      cpu: "2"
+      memory: 4Gi
+    requests:
+      cpu: "500m"
+      memory: 1Gi
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# --- KV-Cache Indexer ---
+kvCacheIndexer:
+  enabled: false
+  image:
+    repository: llmdocker/llm-d-kv-cache-indexer
+    tag: v0.8.1
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # Storage for the KV-cache index (in-memory by default, Redis for HA)
+  storage:
+    type: memory  # memory | redis
+    redis:
+      host: ""
+      port: 6379
+
+  # How often to reconcile the cache map from vLLM KV events
+  reconcileInterval: 5s
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: 2Gi
+    requests:
+      cpu: "250m"
+      memory: 512Mi
+
+  service:
+    type: ClusterIP
+    port: 8090
+    targetPort: 8090
+
+# --- InferencePool CRD ---
+# Groups vLLM replicas serving one model.  The EPP uses this
+# to discover available endpoints.
+inferencePool:
+  enabled: true
+  # The model name that this pool serves
+  modelName: ""
+  # Reference to the vLLM Service that fronts the engine pods
+  targetService:
+    name: ""
+    port: 80
+
+# --- Disaggregated P/D mode ---
+disaggregation:
+  enabled: false
+  # Prefill pool
+  prefill:
+    targetService:
+      name: ""
+      port: 80
+    minReplicas: 1
+    maxReplicas: 4
+  # Decode pool
+  decode:
+    targetService:
+      name: ""
+      port: 80
+    minReplicas: 1
+    maxReplicas: 4
+
+# --- RBAC ---
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+commonLabels: {}
+commonAnnotations: {}

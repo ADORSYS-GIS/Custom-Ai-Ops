@@ -1,0 +1,25 @@
+{{- if and .Values.gateway .Values.llmD.enabled }}
+{{- if .Values.llmD.inferencePoolName }}
+# ReferenceGrant allows the HTTPRoute in envoy-gateway-system
+# to reference the InferencePool in the llm-d-system namespace.
+# Required by Gateway API for cross-namespace backendRefs.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}-to-{{ .Values.llmD.inferencePoolName }}
+  namespace: {{ .Values.llmD.inferencePoolNamespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ .Values.gateway.namespace }}
+  to:
+    - group: inference.networking.x-k8s.io
+      kind: InferencePool
+      name: {{ .Values.llmD.inferencePoolName }}
+{{- end }}
+{{- end }}

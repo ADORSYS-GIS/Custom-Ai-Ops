@@ -1,0 +1,56 @@
+# --- Primary service (always points to the current master) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis.primaryServiceName" . }}
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: primary
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+    {{- with .Values.service.primary.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: {{ .Values.service.primary.port }}
+      targetPort: redis
+      protocol: TCP
+  selector:
+    {{ include "redis.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  {{- if eq .Values.architecture "sentinel" }}
+    redis.io/role: master
+  {{- end }}
+---
+# --- Headless service (needed for StatefulSet + sentinel discovery) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis.headlessServiceName" . }}
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: headless
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: redis
+      port: {{ .Values.service.primary.port }}
+      targetPort: redis
+      protocol: TCP
+    {{- if eq .Values.architecture "sentinel" }}
+    - name: sentinel
+      port: 26379
+      targetPort: sentinel
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{ include "redis.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis

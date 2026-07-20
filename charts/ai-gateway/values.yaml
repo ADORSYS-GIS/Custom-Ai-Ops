@@ -8,7 +8,7 @@ backends: []
   # - name: mistral-7b-local
   #   schema: OpenAI
   #   prefix: /v1
-  #   hostname: model-serving-vllm.model-serving-prod.svc.cluster.local
+  #   hostname: model-serving-engine.model-serving-prod.svc.cluster.local
   #   port: 80
   #   securityType: APIKey
   #   tlsHostname: ""
@@ -68,3 +68,15 @@ payloadValidation:
 
 commonLabels: {}
 commonAnnotations: {}
+
+# --- llm-d integration ---
+# When enabled, the HTTPRoute targets the llm-d InferencePool
+# instead of direct backendRefs.  The EPP handles cache-aware
+# routing, replacing the consistent-hash heuristic.
+# See docs/explain/llm-d.md for the full integration guide.
+llmD:
+  enabled: false
+  # InferencePool name (must match the llm-d chart)
+  inferencePoolName: ""
+  # InferencePool namespace
+  inferencePoolNamespace: "llm-d-system"

@@ -1,0 +1,4 @@
+# Dev ai-gateway overrides
+# llm-d disabled in dev (Phase 0 — no EPP routing)
+llmD:
+  enabled: false

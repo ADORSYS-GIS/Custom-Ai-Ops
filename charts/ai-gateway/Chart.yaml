@@ -1,8 +1,8 @@
 apiVersion: v2
 name: ai-gateway
-description: Envoy AI Gateway configuration for OpenAI-compatible model federation with priority routing and failover
+description: AI Gateway for vLLM + LMCache + llm-d — rate limiting, payload validation, cache-aware routing
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "1.0"
 maintainers:
   - name: Custom-Ai-Ops

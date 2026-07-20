@@ -1,0 +1,127 @@
+# Redis configuration for LMCache L3 distributed KV cache
+# Two architectures: standalone (no HA) or sentinel (HA with auto-failover)
+
+global:
+  # namespace: ""  # Unset → use .Release.Namespace from helm --namespace.
+  # Set this explicitly only when deploying as a subchart (parent chart
+  # passes it via --set global.namespace=... or in parent values.yaml).
+  namespace: ""
+  imageRegistry: ""
+
+# --- Architecture ---
+# standalone : single Redis pod, no HA (for dev/staging)
+# sentinel   : 1 primary + N replicas + 3 sentinels (for prod, auto-failover)
+architecture: standalone
+
+image:
+  repository: redis
+  tag: 7.4.9-alpine
+  pullPolicy: IfNotPresent
+
+# --- Authentication ---
+# WARNING: Disabling auth is convenient for dev but NOT for production.
+# In prod, enable auth and create the secret before deploying.
+auth:
+  enabled: false
+  # existingSecret: redis-auth  # if you pre-created the secret
+  # secretKey: redis-password
+  # password: ""  # auto-generated if empty
+
+# --- Redis config overrides ---
+config:
+  maxmemory: "8gb"
+  maxmemoryPolicy: allkeys-lru
+  appendonly: "yes"
+  save: '""'  # disable RDB persistence (KV cache is ephemeral)
+  # Additional redis.conf lines
+  extraLines: ""
+
+# --- Master (primary write node) ---
+master:
+  replicaCount: 1  # always 1 for the primary
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Replicas (read-only copies, only used in sentinel mode) ---
+replica:
+  replicaCount: 2
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Sentinel (HA monitoring, only used in sentinel mode) ---
+sentinel:
+  image:
+    repository: bitnami/redis-sentinel
+    tag: 7.4.9
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  quorum: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Services ---
+service:
+  # Primary service (always points to the current master)
+  primary:
+    port: 6379
+    annotations: {}
+
+# --- PodDisruptionBudget ---
+pdb:
+  enabled: true
+  minAvailable: 2
+
+# --- Health probes ---
+probes:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+# --- Lifecycle hooks ---
+terminationGracePeriodSeconds: 60
+
+# --- NetworkPolicy ---
+networkPolicy:
+  enabled: true
+
+# --- Common labels / annotations ---
+commonLabels: {}
+commonAnnotations: {}

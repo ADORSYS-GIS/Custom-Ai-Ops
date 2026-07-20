@@ -1,0 +1,57 @@
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferencePool
+metadata:
+  name: vllm-dev-pool
+  namespace: model-serving-dev
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: inferencepool
+    app.kubernetes.io/part-of: model-serving-dev
+    environment: dev
+spec:
+  # Target port where vLLM serves inference requests
+  targetPortNumber: 8000
+  
+  # Selector to discover vLLM pods in this pool
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: model-serving-engine
+      app.kubernetes.io/instance: vllm-dev
+  
+  # Reference to llm-d Endpoint Picker (EPP) for cache-aware routing
+  endpointPickerConfig:
+    extensionRef:
+      group: inference.networking.x-k8s.io
+      kind: EndpointPicker
+      name: llm-d-epp
+      namespace: llm-d-system
+    
+    # EPP configuration specific to this pool
+    config:
+      # Cache-aware routing disabled in dev (single replica, no distributed cache)
+      cacheAwareRouting: false
+      
+      # Basic load balancing for dev
+      scoringAlgorithms:
+        - name: load-balancing
+          weight: 1.0
+          enabled: true
+      
+      # Simple round-robin selection
+      selectionStrategy: round-robin
+  
+  # Health check configuration
+  healthCheck:
+    path: /health
+    intervalSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  # Model metadata (optional, for multi-model environments)
+  modelMetadata:
+    modelName: "meta-llama/Llama-3.1-8B"
+    modelVersion: "main"
+    maxModelLen: 4096
+    cachingEnabled: true
+    cacheBlockSize: 16

@@ -1,0 +1,60 @@
+apiVersion: v2
+name: llm-d-router
+description: |
+  llm-d Router - Intelligent request routing for distributed LLM inference.
+  
+  The Router consists of two components:
+  - Proxy (data-plane): Gateway proxy that terminates client connections
+  - Endpoint Picker (EPP): Scheduling brain that selects the best replica
+  
+  The EPP runs a 4-stage scheduling pipeline:
+  1. Discover - Enumerate InferencePool pods, collect metrics
+  2. Filter - Drop overloaded/incompatible pods
+  3. Score - Run pluggable scorers (cache-aware, load, affinity)
+  4. Select - Choose highest-scoring pod
+  
+  Features:
+  - Cache-aware routing (heuristic or precise with Indexer)
+  - Session affinity for multi-turn conversations
+  - Load-based routing (queue depth, GPU utilization)
+  - Pluggable scoring system
+  - Gateway API Inference Extension (GAIE) compliant
+
+type: application
+version: 0.1.0
+appVersion: "0.8.1"
+
+keywords:
+  - llm-d
+  - router
+  - endpoint-picker
+  - epp
+  - gateway
+  - inference
+  - cache-aware
+  - kubernetes
+
+home: https://llm-d.ai
+sources:
+  - https://github.com/llm-d/llm-d
+  - https://github.com/llm-d/llm-d-router
+
+maintainers:
+  - name: llm-d Project
+    url: https://llm-d.ai
+
+icon: https://llm-d.ai/img/router-icon.svg
+
+dependencies:
+  # Requires Gateway API and GAIE CRDs
+  # Install with: helm install llm-d-infrastructure charts/llm-d-infrastructure
+
+annotations:
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial release with Proxy + EPP, heuristic cache-aware routing
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://llm-d.ai/docs/router
+    - name: EPP Protocol
+      url: https://github.com/kubernetes-sigs/gateway-api-inference-extension

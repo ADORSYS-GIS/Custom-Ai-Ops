@@ -76,6 +76,8 @@ Engine image config for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.image | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.image | toJson -}}
 {{- end -}}
 {{- end }}
 
@@ -86,6 +88,8 @@ Engine args for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.args | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.args | toJson -}}
 {{- end -}}
 {{- end }}
 
@@ -96,6 +100,8 @@ Engine command for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.command | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.command | toJson -}}
 {{- end -}}
 {{- end }}
 
@@ -106,6 +112,8 @@ Engine resource limits/requests for the selected engine type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 {{- .Values.engine.vllm.resources | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.resources | toJson -}}
 {{- end -}}
 {{- end }}
 
@@ -116,6 +124,56 @@ Engine container port for the selected type.
 {{- $type := .Values.engine.type -}}
 {{- if eq $type "vllm" -}}
 8000
+{{- else if eq $type "image-gen" -}}
+8000
+{{- end -}}
+{{- end }}
+
+{{/*
+Engine target port for the selected type (service target).
+*/}}
+{{- define "model-serving-engine.engineTargetPort" -}}
+{{- $type := .Values.engine.type -}}
+{{- if eq $type "vllm" -}}
+8000
+{{- else if eq $type "image-gen" -}}
+8000
+{{- end -}}
+{{- end }}
+
+{{/*
+Engine readiness probe config for the selected type.
+*/}}
+{{- define "model-serving-engine.engineReadinessProbe" -}}
+{{- $type := .Values.engine.type -}}
+{{- if eq $type "vllm" -}}
+{{- .Values.engine.vllm.readinessProbe | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.readinessProbe | toJson -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Engine liveness probe config for the selected type.
+*/}}
+{{- define "model-serving-engine.engineLivenessProbe" -}}
+{{- $type := .Values.engine.type -}}
+{{- if eq $type "vllm" -}}
+{{- .Values.engine.vllm.livenessProbe | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.livenessProbe | toJson -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Engine startup probe config for the selected type.
+*/}}
+{{- define "model-serving-engine.engineStartupProbe" -}}
+{{- $type := .Values.engine.type -}}
+{{- if eq $type "vllm" -}}
+{{- .Values.engine.vllm.startupProbe | toJson -}}
+{{- else if eq $type "image-gen" -}}
+{{- .Values.engine.imageGen.startupProbe | toJson -}}
 {{- end -}}
 {{- end }}
 
@@ -123,26 +181,50 @@ Engine container port for the selected type.
 Build the JSON string for vLLM --kv-transfer-config when LMCache is active.
 Returns a JSON string suitable for the --kv-transfer-config CLI argument.
 See docs/explain/vllm+lmcache.md for the full parameter reference.
+
+When NIXL (RDMA) is enabled for PD disaggregation, this helper generates
+a NixlConnector config instead of LMCacheMPConnector. The NixlConnector
+handles GPU-to-GPU KV-cache transfer over RDMA/NVLink, required for
+prefill/decode disaggregation with FastSocket.
+
+NIXL reference: docs/explain/llm-d.md §20
 */}}
 {{- define "model-serving-engine.kvTransferConfig" -}}
 {{- $cfg := .Values.lmcache.kvTransferConfig -}}
-{{- if not $cfg.connector -}}{{- $cfg = .Values.lmcache.kvTransferConfig -}}{{- end -}}
+{{- $nixl := .Values.disaggregation.nixl -}}
+{{- $disagg := .Values.disaggregation -}}
 {{- $connector := $cfg.connector | default "LMCacheMPConnector" -}}
+{{- /* Map disaggregation role to vLLM KV role */ -}}
 {{- $role := $cfg.role | default "kv_both" -}}
+{{- if and $disagg $disagg.enabled -}}
+{{-   if eq $disagg.role "prefill" -}}{{- $role = "kv_producer" -}}{{- end -}}
+{{-   if eq $disagg.role "decode" -}}{{- $role = "kv_consumer" -}}{{- end -}}
+{{-   if eq $disagg.role "unified" -}}{{- $role = "kv_both" -}}{{- end -}}
+{{- end -}}
 {{- $modulePath := $cfg.modulePath | default "lmcache.integration.vllm" -}}
-{{- $extra := dict -}}
-{{- if $cfg.extraConfig -}}{{- $extra = $cfg.extraConfig -}}{{- end -}}
 {{- $mpHost := .Values.lmcache.mp.host | default "127.0.0.1" -}}
 {{- $mpPort := .Values.lmcache.mp.port | default 5555 -}}
 {{- $mpMode := .Values.lmcache.mp.transferMode | default "zmq" -}}
 {{- $result := dict -}}
-{{- $_ := set $result "kv_connector" $connector -}}
-{{- $_ := set $result "kv_role" $role -}}
-{{- $_ := set $result "kv_connector_module_path" $modulePath -}}
-{{- $lmcacheExtra := dict "mp" (dict "host" $mpHost "port" $mpPort "transfer_mode" $mpMode) -}}
-{{- $_ := set $result "kv_connector_extra_config" (dict "lmcache" $lmcacheExtra) -}}
-{{- if $cfg.disableHybridKvCacheManager -}}
-{{- $_ := set $result "disable_hybrid_kv_cache_manager" true -}}
+{{- if and $nixl $nixl.enabled -}}
+{{-   $_ := set $result "kv_connector" "NixlConnector" -}}
+{{-   $_ := set $result "kv_role" $role -}}
+{{-   $_ := set $result "kv_connector_module_path" "vllm.distributed.kv_transfer.nixl_connector" -}}
+{{-   $nixlExtra := dict -}}
+{{-   $_ := set $nixlExtra "side_channel_port" ($nixl.sideChannelPort | default 5600) -}}
+{{-   if $nixl.ibPorts -}}{{- $_ := set $nixlExtra "ib_ports" $nixl.ibPorts -}}{{- end -}}
+{{-   $_ := set $nixlExtra "transport" ($nixl.transport | default "rdma") -}}
+{{-   $_ := set $nixlExtra "gpu_direct" ($nixl.useGpuDirect | default true) -}}
+{{-   $_ := set $result "kv_connector_extra_config" (dict "nixl" $nixlExtra) -}}
+{{- else -}}
+{{-   $_ := set $result "kv_connector" $connector -}}
+{{-   $_ := set $result "kv_role" $role -}}
+{{-   $_ := set $result "kv_connector_module_path" $modulePath -}}
+{{-   $lmcacheExtra := dict "mp" (dict "host" $mpHost "port" $mpPort "transfer_mode" $mpMode) -}}
+{{-   $_ := set $result "kv_connector_extra_config" (dict "lmcache" $lmcacheExtra) -}}
+{{-   if $cfg.disableHybridKvCacheManager -}}
+{{-   $_ := set $result "disable_hybrid_kv_cache_manager" true -}}
+{{-   end -}}
 {{- end -}}
 {{- $result | toJson -}}
 {{- end }}

@@ -432,8 +432,7 @@ flowchart LR
         D4["Distributed cache\n(LMCache/HiCache)"]
         D5["Persistent storage\n(Redis/S3/Mooncake)"]
     end
-    subgraph OPS["Observability & GitOps"]
-        D6["Prometheus/Grafana"]
+    subgraph OPS["GitOps"]
         D7["KEDA (autoscaling)"]
         D8["ArgoCD (continuous deployment)"]
     end
@@ -531,7 +530,7 @@ Managing the cache is not a one-time configuration operation: it is a **continuo
 ```mermaid
 flowchart LR
     A["Size\n(memory formulas, load tests)"] --> B["Deploy\n(GitOps, Helm, ArgoCD)"]
-    B --> C["Observe\n(Prometheus, Grafana)"]
+    B --> C["Observe\n(metrics)"]
     C --> D["React\n(KEDA, alerting, load shedding)"]
     D --> E["Audit\n(hit rate, costs, freshness)"]
     E --> A
@@ -556,7 +555,7 @@ flowchart LR
 - [ ] Prompts structured with static content at the beginning
 - [ ] L0/L1/L2 layered architecture in place if volume justifies it
 - [ ] Cache-aware routing in place beyond a handful of instances
-- [ ] High-frequency monitoring (5-10s) of cache metrics
+- [ ] High-frequency tracking (5-10s) of cache metrics
 - [ ] Autoscaling driven by cache metrics, not by CPU
 - [ ] Cache invalidation policy documented and tested
 - [ ] The model format and its associated engine are consistent with the chosen cache strategy

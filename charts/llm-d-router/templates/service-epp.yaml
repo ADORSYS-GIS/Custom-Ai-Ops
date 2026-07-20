@@ -1,0 +1,22 @@
+{{- if .Values.epp.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.epp.service.name }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d-router.eppLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.epp.service.type }}
+  ports:
+    - port: {{ .Values.epp.service.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: 8081
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "llm-d-router.eppSelectorLabels" . | nindent 4 }}
+{{- end }}

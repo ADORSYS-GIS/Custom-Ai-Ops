@@ -1,0 +1,32 @@
+{{- if .Values.inferencePool.enabled -}}
+apiVersion: inference.networking.x-k8s.io/v1alpha1
+kind: InferencePool
+metadata:
+  name: {{ include "llm-d.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "llm-d.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    name: {{ .Values.inferencePool.targetService.name | default (include "llm-d.fullname" .) }}
+    port: {{ .Values.inferencePool.targetService.port | default 80 }}
+  {{- if .Values.inferencePool.modelName }}
+  modelName: {{ .Values.inferencePool.modelName | quote }}
+  {{- end }}
+  {{- if .Values.disaggregation.enabled }}
+  disaggregation:
+    enabled: true
+    prefill:
+      targetRef:
+        name: {{ .Values.disaggregation.prefill.targetService.name }}
+        port: {{ .Values.disaggregation.prefill.targetService.port }}
+      minReplicas: {{ .Values.disaggregation.prefill.minReplicas }}
+      maxReplicas: {{ .Values.disaggregation.prefill.maxReplicas }}
+    decode:
+      targetRef:
+        name: {{ .Values.disaggregation.decode.targetService.name }}
+        port: {{ .Values.disaggregation.decode.targetService.port }}
+      minReplicas: {{ .Values.disaggregation.decode.minReplicas }}
+      maxReplicas: {{ .Values.disaggregation.decode.maxReplicas }}
+  {{- end }}
+{{- end }}

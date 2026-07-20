@@ -1,0 +1,83 @@
+apiVersion: v2
+name: llm-d
+description: |
+  llm-d - Kubernetes-native distributed inference middleware for LLMs
+  
+  ⚠️ EXPERIMENTAL ADDON - NOT ENABLED BY DEFAULT
+  
+  This chart provides a reference to the official llm-d Helm chart for users who want
+  to enable cache-aware routing, disaggregated prefill/decode, and SLO-aware autoscaling.
+  
+  llm-d is a CNCF Sandbox project (early-stage) - expect breaking changes between releases.
+  
+  Prerequisites:
+  - Gateway API CRDs v1.5.1+
+  - Gateway API Inference Extension (GAIE) v1.5.0+
+  - RDMA/InfiniBand network (for disaggregated serving)
+  - Dedicated MLOps team for operation
+  
+  See README.md for activation guide.
+
+type: application
+version: 0.8.1
+appVersion: "0.8.1"
+
+keywords:
+  - llm
+  - inference
+  - distributed
+  - cache-aware
+  - routing
+  - kubernetes
+  - experimental
+
+home: https://llm-d.ai
+sources:
+  - https://github.com/llm-d/llm-d
+  - https://github.com/llm-d/llm-d-router
+  - https://github.com/llm-d/llm-d-deployer
+
+maintainers:
+  - name: Red Hat
+    url: https://www.redhat.com
+  - name: CNCF Sandbox
+    url: https://www.cncf.io/projects/llm-d
+
+icon: https://llm-d.ai/img/logo.svg
+
+dependencies:
+  # Reference to official llm-d chart
+  # Users should pull from official Helm repo: helm repo add llm-d https://llm-d.github.io/llm-d-deployer
+  - name: llm-d
+    version: "^0.8.1"
+    repository: "https://llm-d.github.io/llm-d-deployer"
+    condition: enabled
+
+annotations:
+  # Mark as experimental
+  artifacthub.io/prerelease: "true"
+  artifacthub.io/experimentalFeature: "true"
+  
+  # CNCF project info
+  artifacthub.io/cncfProject: "sandbox"
+  
+  # Operator metadata
+  artifacthub.io/operator: "true"
+  artifacthub.io/operatorCapabilities: "Deep Insights"
+  
+  # Links
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://llm-d.ai/docs
+    - name: CNCF Sandbox
+      url: https://github.com/cncf/sandbox/issues/462
+    - name: GitHub
+      url: https://github.com/llm-d/llm-d
+  
+  # Changes
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial llm-d addon (experimental)
+      links:
+        - name: ADR-0004
+          url: https://github.com/YOURORG/custom-ai-ops/blob/main/docs/adr/0004-llm-d-not-implemented.md

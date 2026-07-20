@@ -191,7 +191,7 @@ Example: Llama 70B in FP16 = 70 × 2 = **140 GB** of weights alone, before even 
 
 **How to operate it:**
 - Migrate weights to FP4/FP6 as soon as the model's output precision allows — this is the main lever to fully exploit this generation's memory capacity.
-- The autonomous RAS engine can detect thermal drift or silent failures before service interruption — integrate it into cluster monitoring rather than leaving it as an ignored background task.
+- The autonomous RAS engine can detect thermal drift or silent failures before service interruption — integrate it into cluster operations rather than leaving it as an ignored background task.
 - Anticipate the TDP (up to 1,200 W/card): liquid cooling is mandatory, traditional forced air is no longer sufficient (see §6).
 
 ---

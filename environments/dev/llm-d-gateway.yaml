@@ -1,0 +1,124 @@
+---
+# Gateway API Gateway for llm-d routing in dev
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: llm-d-gateway-dev
+  namespace: model-serving-dev
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: gateway
+    environment: dev
+spec:
+  gatewayClassName: llm-d-gateway-class
+  
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+
+---
+# HTTPRoute for routing inference requests through llm-d Router
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-d-inference-route-dev
+  namespace: model-serving-dev
+  labels:
+    app.kubernetes.io/name: llm-d
+    app.kubernetes.io/component: httproute
+    environment: dev
+spec:
+  parentRefs:
+    - name: llm-d-gateway-dev
+      namespace: model-serving-dev
+  
+  # Route OpenAI-compatible inference requests
+  rules:
+    # Rule 1: Chat completions (most common)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+          method: POST
+      
+      # Apply ext-proc filter for cache-aware routing
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: inference.networking.x-k8s.io
+            kind: EndpointPicker
+            name: llm-d-epp
+            namespace: llm-d-system
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-dev-pool
+          port: 8000
+    
+    # Rule 2: Completions (legacy OpenAI API)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/completions
+          method: POST
+      
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: inference.networking.x-k8s.io
+            kind: EndpointPicker
+            name: llm-d-epp
+            namespace: llm-d-system
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-dev-pool
+          port: 8000
+    
+    # Rule 3: Health checks (direct passthrough, no EPP)
+    - matches:
+        - path:
+            type: Exact
+            value: /health
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-dev-pool
+          port: 8000
+    
+    # Rule 4: Metrics (direct passthrough, no EPP)
+    - matches:
+        - path:
+            type: Exact
+            value: /metrics
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-dev-pool
+          port: 8000
+    
+    # Rule 5: Model info (direct passthrough)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/models
+          method: GET
+      
+      backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: vllm-dev-pool
+          port: 8000

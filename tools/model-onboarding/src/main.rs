@@ -29,7 +29,7 @@ struct RegistryEntry {
     gpu_pool: String,
     context_length: u32,
     quantisation: String,
-    gateway_backend: String,
+    backend: String,
     notes: String,
 }
 
@@ -41,7 +41,11 @@ struct RegistryEntry {
     long_about = None
 )]
 struct Cli {
-    #[arg(short, long, help = "Model name (kebab-case, e.g. mistral-7b-instruct)")]
+    #[arg(
+        short,
+        long,
+        help = "Model name (kebab-case, e.g. mistral-7b-instruct)"
+    )]
     name: String,
 
     #[arg(short, long, help = "Model format (safetensors, awq, gptq)")]
@@ -105,7 +109,7 @@ fn main() -> Result<()> {
     let fmt = parse_format(&cli.format)?;
     let chart = format_to_chart(fmt);
     let engine = format_to_engine(fmt);
-    let gateway_backend = format!("{}-local", cli.name);
+    let backend = format!("{}-local", cli.name);
 
     let usable_vram = cli.vram * 0.90;
     let fixed_overhead = 1.0;
@@ -119,10 +123,12 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let notes = cli.notes.unwrap_or_else(|| format!(
-        "Model onboarded via model-onboarding tool, {} format on {} pool",
-        cli.format, cli.gpu_pool
-    ));
+    let notes = cli.notes.unwrap_or_else(|| {
+        format!(
+            "Model onboarded via model-onboarding tool, {} format on {} pool",
+            cli.format, cli.gpu_pool
+        )
+    });
 
     let registry_entry = RegistryEntry {
         name: cli.name.clone(),
@@ -133,8 +139,11 @@ fn main() -> Result<()> {
         vram_budget_gb: cli.vram,
         gpu_pool: cli.gpu_pool.clone(),
         context_length: cli.context_length,
-        quantisation: cli.quantisation.clone().unwrap_or_else(|| "unknown".to_string()),
-        gateway_backend: gateway_backend.clone(),
+        quantisation: cli
+            .quantisation
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string()),
+        backend: backend.clone(),
         notes,
     };
 
@@ -152,7 +161,7 @@ fn main() -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&registry_entry)?);
         println!();
         println!("Helm chart to use: charts/{}/", chart);
-        println!("Gateway backend: {}", gateway_backend);
+        println!("Backend: {}", backend);
         return Ok(());
     }
 
@@ -192,7 +201,7 @@ fn main() -> Result<()> {
         model_size = cli.model_size,
         usable = usable_vram,
         remaining = remaining,
-        backend = gateway_backend,
+        backend = backend,
         chart = chart,
         date = chrono_like_date(),
     );
@@ -254,10 +263,16 @@ fn main() -> Result<()> {
     println!("  - {}/eval-report.md", model_dir);
     println!();
     println!("To complete onboarding:");
-    println!("  1. Run: vram-budget-calc -V {} --model-size {} --quant {} --gpu \"{}\"", cli.vram, cli.model_size, cli.quantisation.as_deref().unwrap_or("fp16"), cli.gpu.as_deref().unwrap_or("unspecified"));
+    println!(
+        "  1. Run: vram-budget-calc -V {} --model-size {} --quant {} --gpu \"{}\"",
+        cli.vram,
+        cli.model_size,
+        cli.quantisation.as_deref().unwrap_or("fp16"),
+        cli.gpu.as_deref().unwrap_or("unspecified")
+    );
     println!("  2. Add entry to models/registry.yaml:");
     println!("{}", serde_json::to_string_pretty(&registry_entry)?);
-    println!("  3. Add gateway backend in charts/ai-gateway/values.yaml");
+    println!("  3. Add backend in charts/model-serving-engine/values.yaml");
     println!("  4. Deploy with chart: charts/{}/", chart);
     println!("  5. Run smoke tests: tests/smoke/");
     println!("  6. Fill evaluation report: {}/eval-report.md", model_dir);
@@ -267,9 +282,7 @@ fn main() -> Result<()> {
 }
 
 fn chrono_like_date() -> String {
-    let output = std::process::Command::new("date")
-        .arg("+%Y-%m-%d")
-        .output();
+    let output = std::process::Command::new("date").arg("+%Y-%m-%d").output();
     match output {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "YYYY-MM-DD".to_string(),
@@ -282,8 +295,14 @@ mod tests {
 
     #[test]
     fn test_parse_format_safetensors() {
-        assert_eq!(parse_format("safetensors").unwrap(), ModelFormat::Safetensors);
-        assert_eq!(parse_format("SAFETENSORS").unwrap(), ModelFormat::Safetensors);
+        assert_eq!(
+            parse_format("safetensors").unwrap(),
+            ModelFormat::Safetensors
+        );
+        assert_eq!(
+            parse_format("SAFETENSORS").unwrap(),
+            ModelFormat::Safetensors
+        );
     }
 
     #[test]
@@ -311,7 +330,10 @@ mod tests {
 
     #[test]
     fn test_format_to_chart_safetensors() {
-        assert_eq!(format_to_chart(ModelFormat::Safetensors), "model-serving-engine");
+        assert_eq!(
+            format_to_chart(ModelFormat::Safetensors),
+            "model-serving-engine"
+        );
     }
 
     #[test]

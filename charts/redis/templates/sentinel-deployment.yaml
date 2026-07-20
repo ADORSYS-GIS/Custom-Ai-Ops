@@ -1,0 +1,126 @@
+{{- if eq .Values.architecture "sentinel" }}
+# --- Sentinel deployment: monitors the Redis primary and manages failover ---
+# Uses bitnami/redis-sentinel entrypoint which:
+#   1. Auto-generates sentinel.conf from env vars
+#   2. Updates the redis-primary Service endpoints on failover
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "redis.fullname" . }}-sentinel
+  namespace: {{ include "redis.namespace" . }}
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sentinel
+  annotations:
+    {{- include "redis.annotations" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.sentinel.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "redis.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sentinel
+  template:
+    metadata:
+      labels:
+        {{- include "redis.labels" . | nindent 8 }}
+        {{ include "redis.sentinelLabels" . | nindent 8 }}
+      annotations:
+        {{- include "redis.annotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "redis.fullname" . }}-sentinel
+      {{- if .Values.global.imageRegistry }}
+      imagePullSecrets:
+        - name: registry-credentials
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.sentinel.nodeSelector }}
+      nodeSelector:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sentinel.tolerations }}
+      tolerations:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sentinel.affinity }}
+      affinity:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sentinel
+          image: "{{ .Values.sentinel.image.repository }}:{{ .Values.sentinel.image.tag }}"
+          imagePullPolicy: {{ .Values.sentinel.image.pullPolicy }}
+          # Uses bitnami/redis-sentinel entrypoint (auto-generates config from env vars)
+          ports:
+            - name: sentinel
+              containerPort: 26379
+              protocol: TCP
+          env:
+            # --- Redis master to monitor ---
+            - name: REDIS_SENTINEL_MASTER_NAME
+              value: {{ include "redis.sentinelMasterName" . }}
+            - name: REDIS_SENTINEL_MASTER_HOST
+              value: "{{ include "redis.fullname" . }}-primary-0.{{ include "redis.headlessServiceName" . }}.{{ include "redis.namespace" . }}.svc.cluster.local"
+            - name: REDIS_SENTINEL_MASTER_PORT
+              value: {{ .Values.service.primary.port | quote }}
+            # --- Sentinel quorum ---
+            - name: REDIS_SENTINEL_QUORUM
+              value: {{ .Values.sentinel.quorum | quote }}
+            # --- Timeouts ---
+            - name: REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS
+              value: "5000"
+            - name: REDIS_SENTINEL_FAILOVER_TIMEOUT
+              value: "10000"
+            - name: REDIS_SENTINEL_PARALLEL_SYNCS
+              value: "1"
+            # --- K8s Service management (auto-updates on failover) ---
+            - name: REDIS_SENTINEL_MASTER_SERVICE
+              value: {{ include "redis.primaryServiceName" . }}
+            - name: REDIS_SENTINEL_SERVICE_NAME
+              value: {{ include "redis.headlessServiceName" . }}
+            {{- if .Values.auth.enabled }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "redis.secretName" . }}
+                  key: {{ include "redis.secretPasswordKey" . }}
+            {{- end }}
+          {{- if .Values.probes.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -p
+                - "26379"
+                - ping
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - redis-cli -p 26379 ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          resources:
+            {{- toYaml .Values.sentinel.resources | nindent 12 }}
+{{- end }}
