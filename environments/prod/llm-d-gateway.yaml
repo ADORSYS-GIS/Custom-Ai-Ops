@@ -433,7 +433,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: redis
+              app.kubernetes.io/name: redis
       ports:
         - protocol: TCP
           port: 6379

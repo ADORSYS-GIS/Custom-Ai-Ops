@@ -1,0 +1,36 @@
+apiVersion: v2
+name: redis
+description: |
+  Redis for LMCache L3 distributed KV cache — HA with Sentinel.
+
+  Two architectures:
+  - standalone : single Redis node with PVC (dev/staging, no HA)
+  - sentinel   : 1 primary + 2 replicas + 3 sentinels (prod, auto-failover)
+
+  In sentinel mode the chart uses bitnami/redis-sentinel to automatically
+  update the redis-primary Service endpoint when a failover occurs, so
+  applications (LMCache, KV-Cache Indexer) always connect to the current
+  master via a stable ClusterIP address.
+
+type: application
+version: 0.1.0
+appVersion: "7.4.9"
+
+keywords:
+  - redis
+  - kv-cache
+  - lmcache
+  - l3
+  - distributed-cache
+  - sentinel
+  - ha
+
+home: https://redis.io/
+sources:
+  - https://github.com/rustnew/custom-ai-ops
+
+maintainers:
+  - name: Custom-Ai-Ops
+    home: https://github.com/rustnew/custom-ai-ops
+
+icon: https://redis.io/wp-content/uploads/2024/04/Redis-logo.svg

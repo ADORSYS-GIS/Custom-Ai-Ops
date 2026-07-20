@@ -24,6 +24,12 @@ spec:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "llm-d.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: indexer
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ .Values.kvCacheIndexer.image.repository }}:{{ .Values.kvCacheIndexer.image.tag }}"
@@ -46,6 +52,14 @@ spec:
             {{- end }}
             - name: RECONCILE_INTERVAL
               value: {{ .Values.kvCacheIndexer.reconcileInterval | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
           resources:
             {{- toYaml .Values.kvCacheIndexer.resources | nindent 12 }}
           readinessProbe:

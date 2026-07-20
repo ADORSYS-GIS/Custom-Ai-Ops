@@ -1,0 +1,140 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: redis-chaos
+  namespace: model-serving-prod
+spec:
+  appinfo:
+    appns: model-serving-prod
+    applabel: "app.kubernetes.io/name=redis-cache"
+    appkind: statefulset
+  chaosServiceAccount: litmus-admin
+  experiments:
+    # ── Sentinel / Primary Failure ──────────────────────────────────────
+    # Simulates the Redis primary going down, triggering Sentinel
+    # auto-failover. Validates that L3 cache resumes after failover
+    # and that the downstream LMCache circuit breaker trips and recovers.
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "90"
+            - name: CHAOS_INTERVAL
+              value: "30"
+            - name: FORCE
+              value: "false"
+            - name: TARGET_PODS
+              value: "redis-cache-0"         # Primary pod in sentinel mode
+            - name: PODS_AFFECTED_PERC
+              value: "100"
+
+    # ── Network Partition ───────────────────────────────────────────────
+    # Adds latency between vLLM pods and Redis. LMCache circuit breaker
+    # should trip (maxFailures=5), fall back to cache miss, then recover
+    # when latency normalizes.
+    - name: pod-network-latency
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+            - name: NETWORK_LATENCY
+              value: "2000"                  # 2s — exceeds circuit breaker timeout
+            - name: JITTER
+              value: "500"
+            - name: TARGET_PODS
+              value: "redis-cache-0,redis-cache-1,redis-cache-2"
+            - name: PODS_AFFECTED_PERC
+              value: "100"
+
+    # ── CPU Pressure ────────────────────────────────────────────────────
+    # Saturates Redis CPU to simulate slow responses. Validates that
+    # LMCache's circuit breaker correctly counts consecutive failures
+    # and opens the circuit after maxFailures=5.
+    - name: pod-cpu-hog
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CPU_CORES
+              value: "2"
+            - name: TARGET_PODS
+              value: "redis-cache-0"
+            - name: PODS_AFFECTED_PERC
+              value: "100"
+
+    # ── Memory Pressure ─────────────────────────────────────────────────
+    # Fills Redis memory to trigger allkeys-lru eviction. Validates that
+    # L3 entries are correctly evicted and LMCache re-populates on next
+    # cache-hit request.
+    - name: pod-memory-hog
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: MEMORY_CONSUMPTION_PERCENTAGE
+              value: "90"
+            - name: TARGET_PODS
+              value: "redis-cache-0"
+            - name: PODS_AFFECTED_PERC
+              value: "100"
+
+    # ── Sentinel Quorum Loss ────────────────────────────────────────────
+    # Kills multiple sentinel pods to break the quorum (needs > ceil(N/2)).
+    # Validates that the cluster detects the quorum loss and that
+    # Kubernetes service endpoints remain stable.
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+            - name: CHAOS_INTERVAL
+              value: "20"
+            - name: FORCE
+              value: "false"
+            - name: TARGET_LABEL
+              value: "app.kubernetes.io/component=sentinel"
+            - name: PODS_AFFECTED_PERC
+              value: "67"                    # Kill 2 of 3 sentinels → quorum loss
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: redis-failover-validation
+  namespace: model-serving-prod
+spec:
+  appinfo:
+    appns: model-serving-prod
+    applabel: "app.kubernetes.io/component=sentinel"
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  experiments:
+    # Validate that after a primary pod-delete, the new primary is
+    # elected and the redis-cache-primary Service points to it.
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "30"
+            - name: FORCE
+              value: "false"
+            - name: TARGET_LABEL
+              value: "app.kubernetes.io/component=sentinel"
+            - name: PODS_AFFECTED_PERC
+              value: "33"                    # Kill 1 of 3 sentinels — quorum intact
+  # Post-checks (must be validated manually or via separate probe):
+  #   1. kubectl get pods -l app.kubernetes.io/name=redis-cache -n model-serving-prod
+  #      → Verify at least one pod is in Running state
+  #   2. kubectl exec redis-cache-0 -- redis-cli ROLE
+  #      → Should return "master" (or "slave" with valid master link)
+  #   3. kubectl exec redis-cache-1 -- redis-cli ROLE
+  #      → Should return "slave" (connected to master)
+  #   4. curl -s http://redis-cache-primary.model-serving-prod:6379/ping
+  #      → Should return +PONG (service endpoint updated after failover)

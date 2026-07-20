@@ -937,7 +937,7 @@ Before deploying any llm-d well-lit path, the documented prerequisites are:
 ### 18.1 Client Tooling (on the operator's machine)
 
 ```bash
-kubectl version --client   # v1.30+ recommended
+kubectl version --client   # v1.36+ recommended
 helm version                # v3.12+
 yq --version
 kustomize version
@@ -949,10 +949,10 @@ nvidia-smi                  # confirm GPU driver / visibility
 
 ```bash
 # 1. Gateway API CRDs
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
 
 # 2. Gateway API Inference Extension (GAIE) CRDs
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v0.3.0/manifests.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.5.0/manifests.yaml
 ```
 
 ### 18.3 Secrets

@@ -22,9 +22,7 @@ engine:
       # Note: --enable-chunked-prefill is DISABLED when LMCache is enabled
       # (StatefulSet template forces it to false for LMCache cache coherence)
       # llm-d cache-aware routing works with LMCache's prefix cache management
-      # Future: add --kv-cache-event-endpoint when KV-Cache Indexer is deployed
-      # - --kv-cache-event-endpoint
-      # - "http://llm-d-kv-cache-indexer.llm-d-system.svc.cluster.local:8080/events"
+      # KV-cache events are emitted via llm-d env vars (LLM_D_KV_EVENTS) — see llmD.emitKvEvents below
     resources:
       # QoS Guaranteed: requests == limits for all resources.
       limits:

@@ -142,7 +142,7 @@ epp:
       - name: version-check
         enabled: true
         config:
-          allowedVersions: ["v0.23.0"]
+          allowedVersions: ["v0.25.1"]
     
     selector:
       strategy: weighted

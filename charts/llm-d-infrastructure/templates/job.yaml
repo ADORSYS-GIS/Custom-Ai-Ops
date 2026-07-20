@@ -20,6 +20,12 @@ spec:
     spec:
       serviceAccountName: {{ include "llm-d-infrastructure.serviceAccountName" . }}
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: crd-installer
           image: "{{ .Values.job.image }}"
@@ -68,6 +74,14 @@ spec:
               echo "================================================================"
               echo "✓ llm-d Infrastructure CRDs installation complete!"
               echo "================================================================"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
           resources:
             {{- toYaml .Values.job.resources | nindent 12 }}
 {{- end }}

@@ -32,7 +32,11 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "model-serving-engine.serviceAccountName" . }}
       securityContext:
-        runAsNonRoot: false
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: lmcache
           image: "{{ .Values.lmcache.image.repository }}:{{ .Values.lmcache.image.tag }}"
@@ -90,6 +94,14 @@ spec:
             {{- end }}
             - name: lmcache-shm
               mountPath: /dev/shm
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
           resources:
             requests:
               cpu: {{ .Values.lmcache.resources.requests.cpu | default "500m" | quote }}

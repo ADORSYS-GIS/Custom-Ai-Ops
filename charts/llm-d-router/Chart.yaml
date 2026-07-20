@@ -22,7 +22,7 @@ description: |
 
 type: application
 version: 0.1.0
-appVersion: "0.3.0"
+appVersion: "0.8.1"
 
 keywords:
   - llm-d

@@ -3,7 +3,7 @@ engine:
   vllm:
     image:
       repository: vllm/vllm-openai
-      tag: v0.23.0
+      tag: v0.25.1
       pullPolicy: IfNotPresent
     args:
       - --model

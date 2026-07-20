@@ -1,0 +1,10 @@
+# Ignorer les fichiers de configuration locale
+.env
+
+# Ignorer les données de test locales (logs, artefacts)
+data/
+*.log
+*.json
+
+# Ignorer les modèles téléchargés localement
+models/

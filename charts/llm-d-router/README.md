@@ -22,8 +22,8 @@ Client Request → Proxy → EPP → vLLM Backend (with cache affinity)
 
 - Kubernetes 1.24+
 - Helm 3.8+
-- Gateway API CRDs v1.2.1+ installed (use `llm-d-infrastructure` chart)
-- Gateway API Implementation Extension (GAIE) v0.3.0+ installed
+- Gateway API CRDs v1.5.1+ installed (use `llm-d-infrastructure` chart)
+- Gateway API Inference Extension (GAIE) v1.5.0+ installed
 
 ## Installation
 
@@ -53,13 +53,13 @@ helm install llm-d-router ./charts/llm-d-router \
 | `proxy.enabled` | Enable Proxy deployment | `true` |
 | `proxy.replicaCount` | Number of Proxy replicas | `2` |
 | `proxy.image.repository` | Proxy container image | `ghcr.io/llm-d/proxy` |
-| `proxy.image.tag` | Proxy image tag | `v0.3.0` |
+| `proxy.image.tag` | Proxy image tag | `v0.8.1` |
 | `proxy.service.type` | Proxy service type | `ClusterIP` |
 | `proxy.service.port` | Proxy service port | `8080` |
 | `epp.enabled` | Enable Endpoint Picker deployment | `true` |
 | `epp.replicaCount` | Number of EPP replicas | `2` |
 | `epp.image.repository` | EPP container image | `ghcr.io/llm-d/endpoint-picker` |
-| `epp.image.tag` | EPP image tag | `v0.3.0` |
+| `epp.image.tag` | EPP image tag | `v0.8.1` |
 | `epp.config.scorers` | List of scoring algorithms | See values.yaml |
 | `epp.config.filters` | Request filtering rules | See values.yaml |
 | `epp.config.selector.strategy` | Endpoint selection strategy | `weighted` |

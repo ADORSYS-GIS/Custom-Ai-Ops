@@ -1,0 +1,102 @@
+# RDMA Device Plugin
+#
+# The RDMA Device Plugin enables Kubernetes to discover and expose
+# RDMA-capable devices (InfiniBand / RoCE) as extended resources.
+# Required for NIXL (NVIDIA Inference Xfer Library) when running
+# prefill/decode disaggregation with GPU-to-GPU KV-cache transfer.
+#
+# --- Prerequisites ---
+# - InfiniBand or RoCE-capable NICs on GPU nodes
+# - RDMA core packages (rdma-core, ibverbs-utils) installed on nodes
+# - NVIDIA GPU Operator (addons/nvidia-gpu-operator/) must be installed
+#   to provide GPU drivers + device plugin
+#
+# --- Installation ---
+# Add the Helm repository:
+#   helm repo add mellanox https://mellanox.github.io/network-operator
+#   helm repo update
+#
+# Install via ArgoCD (referenced by the infrastructure AppSet):
+#   The AppSet at apps/argocd-appset-prod.yaml deploys this automatically.
+#
+# Manual install:
+#   helm install rdma-device-plugin mellanox/network-operator \
+#     --namespace rdma \
+#     --create-namespace \
+#     --set rdmaSharedDevicePlugin.enabled=true
+#
+# --- Verification ---
+#   kubectl get pods -n rdma
+#   kubectl get nodes -o custom-columns="NAME:.metadata.name,RDMA:.status.capacity.rdma/ib"
+#   kubectl describe node <node-name> | grep rdma
+#
+# --- Node Labels ---
+# After the plugin discovers RDMA devices, label your GPU nodes:
+#   kubectl label node <node-name> rdma/device=true
+# This label is used by:
+#   - model-serving-engine disaggregation.nixl.nodeSelector
+#   - NIXL DaemonSet nodeSelector (if separate)
+#
+# --- Compatibility ---
+# Tested with:
+#   - NVIDIA ConnectX-6 / ConnectX-7 (InfiniBand)
+#   - NVIDIA ConnectX-6 Lx / ConnectX-7 (RoCE v2)
+#   - BlueField-2 / BlueField-3 DPU
+#
+# See docs/explain/llm-d.md §20 for the full NIXL integration guide.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rdma
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rdma-device-plugin
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://mellanox.github.io/network-operator
+    chart: network-operator
+    targetRevision: v1.10.0
+    helm:
+      values: |
+        rdmaSharedDevicePlugin:
+          enabled: true
+          config:
+            name: rdma-config
+            config:
+              - deviceCount: 1
+                deviceIDs:
+                  - "0d5e"
+                  - "15b3"
+                resourceName: ib
+        nvPeerMemory:
+          enabled: true
+        # Disable components not needed for NIXL
+        sriovNetworkOperator:
+          enabled: false
+        ibKubernetes:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rdma
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m

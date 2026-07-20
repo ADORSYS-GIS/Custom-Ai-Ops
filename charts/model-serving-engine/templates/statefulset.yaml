@@ -68,8 +68,10 @@ spec:
           {{- $engineType := .Values.engine.type }}
           {{- $args := list }}
           {{- if eq $engineType "vllm" }}{{- $args = .Values.engine.vllm.args }}{{- end }}
+          {{- if eq $engineType "image-gen" }}{{- $args = .Values.engine.imageGen.args }}{{- end }}
           {{- $command := list }}
           {{- if eq $engineType "vllm" }}{{- $command = .Values.engine.vllm.command }}{{- end }}
+          {{- if eq $engineType "image-gen" }}{{- $command = .Values.engine.imageGen.command }}{{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"
@@ -78,6 +80,20 @@ spec:
           command:
             {{- toYaml $command | nindent 12 }}
           {{- end }}
+          {{- if eq $engineType "image-gen" }}
+          args:
+            - "--model-id"
+            - {{ .Values.model.imageGen.modelId | quote }}
+            - "--cache-dir"
+            - "/models/cache"
+            - "--steps"
+            - {{ .Values.model.imageGen.defaultSteps | default 25 | quote }}
+            - "--guidance"
+            - {{ .Values.model.imageGen.defaultGuidance | default 7.5 | quote }}
+            {{- range $arg := $args }}
+            - {{ $arg | quote }}
+            {{- end }}
+          {{- else }}
           args:
             {{- $filteredArgs := list }}
             {{- range $arg := $args }}
@@ -100,13 +116,34 @@ spec:
             - --disable-hybrid-kv-cache-manager
             {{- end }}
             {{- end }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ include "model-serving-engine.enginePort" . }}
               protocol: TCP
+            {{- if and .Values.disaggregation.enabled .Values.disaggregation.nixl.enabled }}
+            - name: nixl
+              containerPort: {{ .Values.disaggregation.nixl.sideChannelPort | default 5600 }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: MODEL_NAME
               value: {{ .Values.model.name | quote }}
+            {{- if eq $engineType "image-gen" }}
+            # --- Image-gen engine env vars ---
+            - name: MODEL_ID
+              value: {{ .Values.model.imageGen.modelId | quote }}
+            - name: HF_HOME
+              value: /models/cache
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            - name: IMAGE_GEN_CACHE_DIR
+              value: /models/cache
+            - name: IMAGE_GEN_STEPS
+              value: {{ .Values.model.imageGen.defaultSteps | default 25 | quote }}
+            - name: IMAGE_GEN_GUIDANCE
+              value: {{ .Values.model.imageGen.defaultGuidance | default 7.5 | quote }}
+            {{- end }}
             {{- if .Values.lmcache.enabled }}
             # --- LMCache integration (vllm+lmcache.md §2) ---
             # Enables distributed KV cache sharing across pods/nodes.
@@ -176,6 +213,21 @@ spec:
             - name: VLLM_KV_ROLE
               value: {{ .Values.disaggregation.role | default "unified" | quote }}
             {{- end }}
+            {{- if and .Values.disaggregation.enabled .Values.disaggregation.nixl.enabled }}
+            # --- NIXL (NVIDIA Inference Xfer Library) ---
+            # RDMA/NVLink KV-cache transport for PD disaggregation.
+            # NixlConnector handles GPU-to-GPU cache transfer.
+            - name: NIXL_SIDE_CHANNEL_PORT
+              value: {{ .Values.disaggregation.nixl.sideChannelPort | default 5600 | quote }}
+            - name: NIXL_TRANSPORT
+              value: {{ .Values.disaggregation.nixl.transport | default "rdma" | quote }}
+            - name: NIXL_GPU_DIRECT
+              value: {{ .Values.disaggregation.nixl.useGpuDirect | default true | quote }}
+            {{- if .Values.disaggregation.nixl.ibPorts }}
+            - name: NIXL_IB_PORTS
+              value: {{ .Values.disaggregation.nixl.ibPorts | quote }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- range .Values.extraEnv }}
             - name: {{ .name }}
@@ -183,6 +235,11 @@ spec:
             {{- end }}
           resources:
             {{- toYaml $resources | nindent 12 }}
+            {{- if and .Values.disaggregation.enabled .Values.disaggregation.nixl.enabled }}
+            {{- with .Values.disaggregation.nixl.resources }}
+            {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: model-storage
               mountPath: /models
@@ -208,16 +265,20 @@ spec:
               subPath: {{ .subPath }}
               {{- end }}
             {{- end }}
-          {{- $engineType := .Values.engine.type }}
-          {{- if eq $engineType "vllm" }}
+          {{- $liveness := (include "model-serving-engine.engineLivenessProbe" . | fromJson) }}
+          {{- if $liveness }}
           livenessProbe:
-            {{- toYaml .Values.engine.vllm.livenessProbe | nindent 12 }}
-          {{- if .Values.engine.vllm.readinessProbe }}
-          readinessProbe:
-            {{- toYaml .Values.engine.vllm.readinessProbe | nindent 12 }}
+            {{- toYaml $liveness | nindent 12 }}
           {{- end }}
+          {{- $readiness := (include "model-serving-engine.engineReadinessProbe" . | fromJson) }}
+          {{- if $readiness }}
+          readinessProbe:
+            {{- toYaml $readiness | nindent 12 }}
+          {{- end }}
+          {{- $startup := (include "model-serving-engine.engineStartupProbe" . | fromJson) }}
+          {{- if $startup }}
           startupProbe:
-            {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
+            {{- toYaml $startup | nindent 12 }}
           {{- end }}
       volumes:
         - name: tmp

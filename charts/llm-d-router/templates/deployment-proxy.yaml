@@ -24,6 +24,8 @@ spec:
       serviceAccountName: {{ include "llm-d-router.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: proxy
           image: "{{ .Values.proxy.image.repository }}:{{ .Values.proxy.image.tag }}"

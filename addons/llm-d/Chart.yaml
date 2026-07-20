@@ -11,16 +11,16 @@ description: |
   llm-d is a CNCF Sandbox project (early-stage) - expect breaking changes between releases.
   
   Prerequisites:
-  - Gateway API CRDs v1.2.1+
-  - Gateway API Inference Extension (GAIE) v0.3.0+
+  - Gateway API CRDs v1.5.1+
+  - Gateway API Inference Extension (GAIE) v1.5.0+
   - RDMA/InfiniBand network (for disaggregated serving)
   - Dedicated MLOps team for operation
   
   See README.md for activation guide.
 
 type: application
-version: 0.3.0
-appVersion: "0.3.0"
+version: 0.8.1
+appVersion: "0.8.1"
 
 keywords:
   - llm
@@ -49,7 +49,7 @@ dependencies:
   # Reference to official llm-d chart
   # Users should pull from official Helm repo: helm repo add llm-d https://llm-d.github.io/llm-d-deployer
   - name: llm-d
-    version: "^0.3.0"
+    version: "^0.8.1"
     repository: "https://llm-d.github.io/llm-d-deployer"
     condition: enabled
 

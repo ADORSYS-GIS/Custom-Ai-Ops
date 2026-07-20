@@ -27,9 +27,15 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "llm-d.serviceAccountName" . }}
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: envoy-proxy
-          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}envoyproxy/envoy:distroless-v1.31-latest"
+          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}envoyproxy/envoy:distroless-v1.39.0-latest"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -47,6 +53,14 @@ spec:
             - name: llm-d-config
               mountPath: /etc/llm-d
               readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
           resources:
             limits:
               cpu: "1"
@@ -87,6 +101,14 @@ spec:
             - name: llm-d-config
               mountPath: /etc/llm-d
               readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
           resources:
             {{- toYaml .Values.router.resources | nindent 12 }}
           readinessProbe:

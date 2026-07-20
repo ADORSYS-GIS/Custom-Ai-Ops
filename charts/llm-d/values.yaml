@@ -18,13 +18,13 @@ router:
   enabled: true
   image:
     repository: llmdocker/llm-d-router
-    tag: v0.1.0
+    tag: v0.8.1
     pullPolicy: IfNotPresent
 
   # EPP image (Endpoint Picker brain)
   eppImage:
     repository: llmdocker/llm-d-epp
-    tag: v0.1.0
+    tag: v0.8.1
     pullPolicy: IfNotPresent
 
   replicaCount: 2
@@ -73,7 +73,7 @@ kvCacheIndexer:
   enabled: false
   image:
     repository: llmdocker/llm-d-kv-cache-indexer
-    tag: v0.1.0
+    tag: v0.8.1
     pullPolicy: IfNotPresent
 
   replicaCount: 1

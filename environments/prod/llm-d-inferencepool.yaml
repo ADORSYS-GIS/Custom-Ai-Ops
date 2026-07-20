@@ -121,7 +121,7 @@ spec:
         priority: 2  # Medium priority (warm)
       - name: redis
         enabled: true
-        host: "redis-cache.model-serving-prod.svc.cluster.local"
+        host: "redis-cache-primary.model-serving-prod.svc.cluster.local"
         port: 6379
         priority: 3  # Lowest priority (cold, but shared across cluster)
   

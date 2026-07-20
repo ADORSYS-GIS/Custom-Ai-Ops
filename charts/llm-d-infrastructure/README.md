@@ -5,8 +5,8 @@ Gateway API and Gateway API Inference Extension (GAIE) CRDs required for llm-d.
 ## Overview
 
 This chart installs the foundational Custom Resource Definitions needed for llm-d:
-- **Gateway API v1.2.1+** - Standard Kubernetes networking API (Gateway, HTTPRoute, etc.)
-- **Gateway API Inference Extension v0.3.0+** - Inference-specific extensions (InferencePool, InferenceObjective, etc.)
+- **Gateway API v1.5.1+** - Standard Kubernetes networking API (Gateway, HTTPRoute, etc.)
+- **Gateway API Inference Extension v1.5.0+** - Inference-specific extensions (InferencePool, InferenceObjective, etc.)
 
 ## Prerequisites
 
@@ -63,11 +63,11 @@ kubectl logs -n llm-d-system -l app.kubernetes.io/name=llm-d-infrastructure
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `gatewayAPI.enabled` | Install Gateway API CRDs | `true` |
-| `gatewayAPI.version` | Gateway API version | `v1.2.1` |
+| `gatewayAPI.version` | Gateway API version | `v1.5.1` |
 | `gaie.enabled` | Install GAIE CRDs | `true` |
-| `gaie.version` | GAIE version | `v0.3.0` |
+| `gaie.version` | GAIE version | `v1.5.0` |
 | `job.enabled` | Use Job for installation | `true` |
-| `job.image` | kubectl image for job | `bitnami/kubectl:1.30` |
+| `job.image` | kubectl image for job | `bitnami/kubectl:1.36` |
 
 ### Custom Values
 

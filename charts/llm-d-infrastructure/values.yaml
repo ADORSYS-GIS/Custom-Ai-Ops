@@ -3,22 +3,22 @@
 # Gateway API CRDs version
 gatewayAPI:
   enabled: true
-  version: "v1.2.1"
+  version: "v1.5.1"
   # URL to Gateway API standard install manifest
-  manifestUrl: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
+  manifestUrl: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml"
 
 # Gateway API Inference Extension (GAIE) CRDs
 gaie:
   enabled: true
-  version: "v0.3.0"
+  version: "v1.5.0"
   # URL to GAIE manifests
-  manifestUrl: "https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v0.3.0/manifests.yaml"
+  manifestUrl: "https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.5.0/manifests.yaml"
 
 # Job configuration for CRD installation
 job:
   # Use a job to install CRDs (safer for Helm lifecycle)
   enabled: true
-  image: "bitnami/kubectl:1.30"
+  image: "bitnami/kubectl:1.36"
   imagePullPolicy: IfNotPresent
   
   # ServiceAccount for the job

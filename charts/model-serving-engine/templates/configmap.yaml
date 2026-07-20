@@ -10,3 +10,9 @@ data:
   MODEL_NAME: {{ .Values.model.name | quote }}
   VLLM_HOST: "0.0.0.0"
   VLLM_PORT: "8000"
+  {{- if eq .Values.engine.type "image-gen" }}
+  MODEL_ID: {{ .Values.model.imageGen.modelId | quote }}
+  IMAGE_GEN_CACHE_DIR: /models/cache
+  IMAGE_GEN_STEPS: {{ .Values.model.imageGen.defaultSteps | default 25 | quote }}
+  IMAGE_GEN_GUIDANCE: {{ .Values.model.imageGen.defaultGuidance | default 7.5 | quote }}
+  {{- end }}

@@ -59,17 +59,17 @@ See `LLM_D_ANALYSIS.md` for detailed analysis.
 ## 🚀 Quick Start
 
 ### Prerequisites
+1. **Gateway API CRDs** (v1.5.1+):
 
-1. **Gateway API CRDs** (v1.2.1+):
-```bash
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
-```
+   ```bash
+   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
+   ```
 
-2. **Gateway API Inference Extension** (GAIE v0.3.0+):
-```bash
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v0.3.0/manifests.yaml
-```
+2. **Gateway API Inference Extension** (GAIE v1.5.0+):
 
+   ```bash
+   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.5.0/manifests.yaml
+   ```
 3. **Secrets** (Hugging Face token):
 ```bash
 kubectl create secret generic llm-d-hf-token \

@@ -7,7 +7,7 @@ proxy:
   
   image:
     repository: ghcr.io/llm-d/proxy
-    tag: v0.3.0
+    tag: v0.8.1
     pullPolicy: IfNotPresent
   
   service:
@@ -38,7 +38,7 @@ epp:
   
   image:
     repository: ghcr.io/llm-d/endpoint-picker
-    tag: v0.3.0
+    tag: v0.8.1
     pullPolicy: IfNotPresent
   
   service:

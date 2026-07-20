@@ -11,7 +11,7 @@ proxy:
   # Image
   image:
     repository: ghcr.io/llm-d/gateway-proxy
-    tag: "v0.3.0"
+    tag: "v0.8.1"
     pullPolicy: IfNotPresent
   
   # Replicas
@@ -61,7 +61,7 @@ epp:
   # Image
   image:
     repository: ghcr.io/llm-d/endpoint-picker
-    tag: "v0.3.0"
+    tag: "v0.8.1"
     pullPolicy: IfNotPresent
   
   # Replicas

@@ -30,7 +30,8 @@ kvCacheIndexer:
   storage:
     type: redis
     redis:
-      host: "redis-cache.lmcache-system.svc.cluster.local"  # Redis for KV-Cache Indexer storage
+      # Redis deployed via charts/redis/ — same HA cluster as LMCache L3
+      host: "redis-cache-primary.model-serving-prod.svc.cluster.local"
       port: 6379
   reconcileInterval: 5s
 inferencePool:
